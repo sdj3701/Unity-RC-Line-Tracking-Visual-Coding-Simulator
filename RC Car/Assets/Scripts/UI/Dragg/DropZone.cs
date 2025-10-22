@@ -27,35 +27,28 @@ public class DropZone : MonoBehaviour, IDropHandler
         // Screen Point (마우스 위치)를 Content RectTransform의 Local Point로 변환
         if (RectTransformUtility.ScreenPointToLocalPointInRectangle(contentRect, eventData.position, eventData.pressEventCamera, out localPoint))
         {
-            // 2. 피벗 보정 계산
-            // 피벗(pivot)은 블록의 중심점 비율 (0~1)
-            // sizeDelta는 블록의 크기
-            // pivot.x * sizeDelta.x = 피벗부터 왼쪽 모서리까지의 거리
-            // (1 - pivot.x) * sizeDelta.x = 피벗부터 오른쪽 모서리까지의 거리
-            
-            // localPoint는 마우스가 클릭된 Content 내의 위치입니다.
-            // 이 위치가 블록의 피벗 위치가 되도록 설정합니다.
-            
-            // 만약 블록의 피벗이 (0.5, 0.5)라면 보정값은 (0, 0)
-            // 만약 블록의 피벗이 (0, 1) (왼쪽 상단)이라면, 블록의 왼쪽 상단이 localPoint에 오게 됩니다.
-            // 블록의 anchoredPosition = localPoint - (블록의 크기에 따른 오프셋) 이 필요할 수 있습니다.
-            
-            // **하지만, 가장 일반적인 UI 드래그앤드롭에서는**
-            // **클릭된 지점(localPoint)을 블록의 피벗 위치로 설정하는 것이 직관적입니다.**
-            // **따라서, `anchoredPosition = localPoint`를 유지하고,**
-            // **블록 프리팹의 피벗을 (0.5, 0.5) (중앙)으로 설정하는 것을 강력히 권장합니다.**
-            
-            // **임시 보정 코드 (블록의 피벗이 중앙이 아닐 경우):**
-            // Vector2 pivotOffset = new Vector2(
-            //     (0.5f - cloneRect.pivot.x) * cloneRect.sizeDelta.x,
-            //     (0.5f - cloneRect.pivot.y) * cloneRect.sizeDelta.y
-            // );
-            // cloneRect.anchoredPosition = localPoint + pivotOffset;
+            // ----------------------------------------------------------------------------------
+            // **새로운 디버그 로그 추가: 입력 및 변환 정보**
+            Debug.Log($"[DEBUG POS] 1. 마우스 드롭 위치 (스크린): {eventData.position}");
+            Debug.Log($"[DEBUG POS] 2. 드롭존 로컬 위치 (localPoint): {localPoint}");
+            // ----------------------------------------------------------------------------------
 
-            // **일반적인 정답 (Content의 로컬 좌표 = 블록의 앵커 위치):**
-            cloneRect.anchoredPosition = localPoint;
+            // **피벗 보정 적용:**
+            // 블록의 중앙 (0.5, 0.5)을 마우스 위치(localPoint)에 정확히 맞추기 위해 피벗을 보정합니다.
+            Vector2 pivotOffset = new Vector2(
+                (0.5f - cloneRect.pivot.x) * cloneRect.sizeDelta.x,
+                (0.5f - cloneRect.pivot.y) * cloneRect.sizeDelta.y
+            );
             
-            Debug.Log($"[DropZone OnDrop] 블록 '{clone.name}'을(를) 로컬 위치 {localPoint}에 배치했습니다. (클론 피벗: {cloneRect.pivot})");
+            // 마우스 위치 (localPoint)에 피벗 오프셋을 더하여 블록의 중심이 localPoint에 오도록 설정
+            cloneRect.anchoredPosition = localPoint + pivotOffset;
+            
+            // ----------------------------------------------------------------------------------
+            // **새로운 디버그 로그 추가: 보정 및 최종 위치 정보**
+            Debug.Log($"[DEBUG POS] 3. 클론 RectTransform 정보 - Pivot: {cloneRect.pivot}, SizeDelta: {cloneRect.sizeDelta}");
+            Debug.Log($"[DEBUG POS] 4. 계산된 피벗 오프셋: {pivotOffset}");
+            Debug.Log($"[DEBUG POS] 5. 최종 설정된 AnchoredPosition: {cloneRect.anchoredPosition}");
+            // ----------------------------------------------------------------------------------
         }
         else
         {

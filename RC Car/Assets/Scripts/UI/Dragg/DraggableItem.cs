@@ -31,7 +31,7 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
     public void OnDrag(PointerEventData eventData)
     {
         DragImageController.Instance.Move(eventData.position);
-        // Debug.Log($"[DraggableItem Dragging] Drag Image 이동 중."); // 너무 많은 로그 방지
+        //Debug.Log($"[DraggableItem Dragging] Drag Image 이동 중."); // 너무 많은 로그 방지
     }
 
     public void OnEndDrag(PointerEventData eventData)
