@@ -1,109 +1,129 @@
+// Assets/Scripts/UI/Dragg/DropZone.cs
+
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.UI;
+using System.Linq;
 
 public class DropZone : MonoBehaviour, IDropHandler
 {
-    // 워크스페이스에서 마지막으로 생성된 블록을 추적하는 변수 추가
-    // 이 블록의 NextBlock에 새로운 블록을 연결합니다.
-    private BlockView lastPlacedBlock = null;
+    private const float CONNECTION_DISTANCE_THRESHOLD = 300f; 
+    private const float BLOCK_GAP = 10f; 
 
     public void OnDrop(PointerEventData eventData)
     {
         DraggableItem item = eventData.pointerDrag.GetComponent<DraggableItem>();
-        if (item == null) 
+        if (item == null) return;
+
+        // 1. 드롭 위치를 워크스페이스 Content의 로컬 좌표로 변환
+        RectTransform contentRect = GetComponent<RectTransform>();
+        Vector2 dropLocalPoint;
+        if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(contentRect, eventData.position, eventData.pressEventCamera, out dropLocalPoint))
         {
-            Debug.LogWarning("[DropZone OnDrop] 드롭된 오브젝트에 DraggableItem 컴포넌트가 없습니다. 워크스페이스 내 드래그일 수 있습니다.");
             return;
         }
 
-        // 1. 새로운 오브젝트 복제 (Content B (DropZone)의 자식으로)
-        GameObject clone = Instantiate(item.gameObject, transform);
-        clone.name = item.gameObject.name + " (Workspace)";
+        // 2. 워크스페이스 내 모든 블록을 찾고, 드롭 위치와 가장 가까운 블록을 찾습니다.
+        BlockView[] existingBlocks = GetComponentsInChildren<BlockView>().Where(b => b.transform.parent == transform).ToArray();
         
-        // BlockView 컴포넌트 가져오기
-        BlockView newBlockView = clone.GetComponent<BlockView>();
-        if (newBlockView == null)
+        BlockView closestBlock = null;
+        float minDistance = CONNECTION_DISTANCE_THRESHOLD;
+
+        foreach (BlockView block in existingBlocks)
         {
-            Debug.LogError($"[DropZone OnDrop] 복제된 블록 '{clone.name}'에 BlockView 컴포넌트가 없습니다. 연결 로직을 실행할 수 없습니다.");
-            Destroy(clone); // BlockView가 없으면 블록이 아님
-            return;
-        }
+            RectTransform blockRect = block.GetComponent<RectTransform>();
+            float distance = Vector2.Distance(dropLocalPoint, blockRect.anchoredPosition);
 
-        // **새로운 로직 1: 이전 블록과의 연결**
-        if (lastPlacedBlock != null)
-        {
-            // 이전에 생성된 블록의 NextBlock 변수에 현재 생성된 블록을 연결합니다.
-            lastPlacedBlock.NextBlock = newBlockView;
-            Debug.Log($"[DropZone OnDrop] 블록 '{lastPlacedBlock.name}'을(를) 블록 '{newBlockView.name}'에 연결했습니다.");
-            
-            // **선택 사항: 연결된 블록의 위치를 이전 블록 아래로 재조정**
-            // 마우스 위치 대신, 연결된 블록의 위치를 이전 블록 바로 아래에 붙여서 생성합니다.
-            // 이 기능을 원치 않으면 아래 위치 설정 로직을 주석 처리하고 마우스 위치 로직을 사용하세요.
-            
-            RectTransform lastRect = lastPlacedBlock.GetComponent<RectTransform>();
-            RectTransform newRect = newBlockView.GetComponent<RectTransform>();
-
-            // 이전 블록의 Y 위치 - 이전 블록의 높이 - 간격
-            float newY = lastRect.anchoredPosition.y - lastRect.sizeDelta.y - 10f; // 10f는 간격 (원하는 값으로 조정)
-            
-            // X 위치는 이전 블록과 동일하게 설정
-            newRect.anchoredPosition = new Vector2(lastRect.anchoredPosition.x, newY);
-            
-            Debug.Log($"[DropZone OnDrop] 연결된 블록 '{newBlockView.name}'을(를) '{lastPlacedBlock.name}' 아래 ({newRect.anchoredPosition})로 배치했습니다.");
-        }
-
-
-        // **새로운 로직 2: 마우스 드롭 위치 설정 (첫 번째 블록이거나 연결된 블록을 자유롭게 배치할 경우)**
-        if (lastPlacedBlock == null || lastPlacedBlock.NextBlock == null)
-        {
-            // 첫 번째 블록이거나, 연결된 블록을 마우스 위치에 자유롭게 배치하고 싶다면 이 로직을 사용합니다.
-            RectTransform contentRect = GetComponent<RectTransform>();
-            RectTransform cloneRect = clone.GetComponent<RectTransform>();
-            Vector2 localPoint;
-            
-            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(contentRect, eventData.position, eventData.pressEventCamera, out localPoint))
+            if (distance < minDistance)
             {
-                // 피벗 보정 적용 (블록의 중앙을 마우스 위치에 맞춤)
-                Vector2 pivotOffset = new Vector2(
-                    (0.5f - cloneRect.pivot.x) * cloneRect.sizeDelta.x,
-                    (0.5f - cloneRect.pivot.y) * cloneRect.sizeDelta.y
-                );
-                
-                cloneRect.anchoredPosition = localPoint + pivotOffset;
-                Debug.Log($"[DropZone OnDrop] 첫 블록 또는 자유 배치 블록 '{clone.name}'을(를) 로컬 위치 {cloneRect.anchoredPosition}에 배치했습니다.");
+                minDistance = distance;
+                closestBlock = block;
             }
         }
 
+        // 3. 블록 복제 (Instantiate)
+        GameObject clone = Instantiate(item.gameObject, transform);
+        clone.name = item.gameObject.name + " (Workspace)";
+        BlockView newBlockView = clone.GetComponent<BlockView>();
+        if (newBlockView == null) { Destroy(clone); return; }
 
-        // **새로운 로직 3: 마지막 블록 업데이트**
-        // 현재 생성된 블록을 다음 연결을 위한 마지막 블록으로 설정합니다.
-        lastPlacedBlock = newBlockView;
-
-
-        // 2. 복제된 블록을 워크스페이스용으로 설정 (기존 코드)
-        
-        // 2-1. 팔레트용 DraggableItem 제거
-        DraggableItem originalDraggable = clone.GetComponent<DraggableItem>();
-        if (originalDraggable != null)
-        {
-             Destroy(originalDraggable);
-        }
-
-        // 2-2. 워크스페이스 내 이동을 위한 BlockDragHandler 추가/확인
-        BlockDragHandler workspaceDragHandler = clone.GetComponent<BlockDragHandler>();
-        if (workspaceDragHandler == null)
-        {
-            workspaceDragHandler = clone.AddComponent<BlockDragHandler>();
-        }
-        else
-        {
-            workspaceDragHandler.enabled = true;
-        }
-
-        // (선택 사항) UI 계층 구조에서 가장 위에 오도록 설정
+        // 워크스페이스용 설정
+        Destroy(clone.GetComponent<DraggableItem>());
+        if (clone.GetComponent<BlockDragHandler>() == null) { clone.AddComponent<BlockDragHandler>(); }
         clone.transform.SetAsLastSibling();
+        
+        RectTransform newRect = newBlockView.GetComponent<RectTransform>();
+        
+        // 피벗 보정 값 계산
+        Vector2 pivotOffset = new Vector2(
+            (0.5f - newRect.pivot.x) * newRect.sizeDelta.x, 
+            (0.5f - newRect.pivot.y) * newRect.sizeDelta.y
+        );
+        
+        // 4. 연결/삽입 로직 실행
+        if (closestBlock != null)
+        {
+            RectTransform closestRect = closestBlock.GetComponent<RectTransform>();
+            float closestBlockBottomY = closestRect.anchoredPosition.y - closestRect.sizeDelta.y;
+            
+            // 드롭 위치가 블록의 아래 연결 지점(NextBlock)에 가까운 경우
+            bool isNearConnectionPoint = dropLocalPoint.y < closestBlockBottomY + (BLOCK_GAP / 2);
+            
+            if (isNearConnectionPoint)
+            {
+                // 연결/삽입 위치의 Y 좌표 계산
+                float targetY = closestBlockBottomY - BLOCK_GAP;
+                float targetX = closestRect.anchoredPosition.x; // [핵심] X축은 가장 가까운 블록에 고정
+                
+                if (closestBlock.NextBlock != null)
+                {
+                    // **중간 삽입**
+                    BlockView blockAbove = closestBlock;
+                    BlockView blockBelow = closestBlock.NextBlock;
 
-        Debug.Log($"[DropZone OnDrop] 블록 '{clone.name}'이(가) 스크롤 뷰 B(워크스페이스)로 성공적으로 이동(복제)되었습니다.");
+                    blockAbove.NextBlock = newBlockView;
+                    newBlockView.PreviousBlock = blockAbove;
+                    newBlockView.NextBlock = blockBelow;
+                    blockBelow.PreviousBlock = newBlockView;
+
+                    newRect.anchoredPosition = new Vector2(targetX, targetY);
+                    newBlockView.UpdatePositionOfChain(targetX);
+                    blockAbove.UpdateNextNodeChain(); 
+                    
+                    Debug.Log($"[DropZone] 블록 '{newBlockView.name}'을(를) '{blockAbove.name}'와 '{blockBelow.name}' 사이에 삽입했습니다. X={targetX}로 정렬.");
+                }
+                else
+                {
+                    // **끝에 연결**
+                    closestBlock.NextBlock = newBlockView;
+                    newBlockView.PreviousBlock = closestBlock;
+                    
+                    newRect.anchoredPosition = new Vector2(targetX, targetY);
+                    closestBlock.UpdateNextNodeChain();
+                    
+                    Debug.Log($"[DropZone] 블록 '{newBlockView.name}'을(를) '{closestBlock.name}' 끝에 연결했습니다. X={targetX}로 정렬.");
+                }
+            }
+            else
+            {
+                // **자유 배치** (가장 가까운 블록은 있지만 연결 지점이 아닌 경우)
+                // [수정] Y는 마우스 위치를 따르되, X는 가장 가까운 블록의 X축을 따릅니다.
+                float targetX = closestRect.anchoredPosition.x; // [핵심] X축은 가장 가까운 블록에 고정
+                float targetY = dropLocalPoint.y + pivotOffset.y;
+                
+                newRect.anchoredPosition = new Vector2(targetX, targetY);
+                newBlockView.UpdateNextNodeChain();
+                
+                Debug.Log($"[DropZone] 블록 '{newBlockView.name}'을(를) 자유 배치했습니다. X={targetX}로 정렬.");
+            }
+        }
+        else 
+        {
+            // 5. 가장 가까운 블록이 없는 경우 (새 체인 시작)
+            // [수정] 마우스 위치를 따릅니다. (가장 가까운 블록이 없으므로 정렬 기준이 없습니다.)
+            newRect.anchoredPosition = dropLocalPoint + pivotOffset;
+            newBlockView.UpdateNextNodeChain();
+            
+            Debug.Log($"[DropZone] 블록 '{newBlockView.name}'을(를) 새 체인으로 시작했습니다.");
+        }
     }
 }
