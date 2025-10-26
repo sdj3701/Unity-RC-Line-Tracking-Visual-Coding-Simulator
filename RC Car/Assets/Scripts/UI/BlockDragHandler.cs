@@ -33,6 +33,13 @@ public class BlockDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, 
         rectTransform.SetParent(canvas.transform); 
         rectTransform.SetAsLastSibling(); 
 
+        // **[추가된 로직]** 드래그 시작 시 블록 체인에서 논리적으로 분리
+        BlockView blockView = GetComponent<BlockView>();
+        if (blockView != null)
+        {
+            blockView.DisconnectFromChain();
+        }
+
         Debug.Log($"[BlockDragHandler BeginDrag] 워크스페이스 블록 '{gameObject.name}' 드래그 시작. 원래 부모: {originalParent.name}. 레이아웃 그룹에서 분리.");
     }
 

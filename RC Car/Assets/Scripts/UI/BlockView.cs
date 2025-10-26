@@ -70,12 +70,49 @@ public class BlockView : MonoBehaviour
             RectTransform currentR = current.GetComponent<RectTransform>();
             
             // 다음 블록의 Y 위치 = 현재 블록의 Y 위치 - 현재 블록의 높이 - 간격
-            float newY = currentR.anchoredPosition.y - currentR.sizeDelta.y - 10f; // 10f는 간격
+            // sizeDelta.y 대신 rect.height를 사용하여 정확한 높이를 가져옵니다.
+            float currentBlockHeight = currentR.rect.height; // <--- 높이 계산 수정
+            
+            float newY = currentR.anchoredPosition.y - currentBlockHeight - 10f; // 10f는 간격
             
             // X 위치는 xPosition으로 고정
             nextRect.anchoredPosition = new Vector2(xPosition, newY); 
             
             current = current.NextBlock;
         }
+    }
+
+    // **[추가된 로직]** 블록을 체인에서 논리적으로 분리하고 아래 체인을 당겨 올리는 메서드
+    public void DisconnectFromChain()
+    {
+        BlockView blockAbove = PreviousBlock;
+        BlockView blockBelow = NextBlock;
+
+        // 1. 위쪽 블록과 아래쪽 블록을 직접 연결
+        if (blockAbove != null)
+        {
+            blockAbove.NextBlock = blockBelow;
+            blockAbove.UpdateNextNodeChain(); // 노드 체인 업데이트
+        }
+
+        // 2. 아래쪽 블록과 위쪽 블록을 직접 연결
+        if (blockBelow != null)
+        {
+            blockBelow.PreviousBlock = blockAbove;
+        }
+
+        // 3. 이 블록의 연결 해제
+        PreviousBlock = null;
+        NextBlock = null;
+
+        // 4. **[핵심]** 위쪽 블록이 있다면, 아래 체인의 위치를 끌어올립니다 (gap 닫기)
+        if (blockAbove != null)
+        {
+            // blockAbove에서 시작하여 아래 체인의 위치를 재조정합니다.
+            RectTransform blockAboveRect = blockAbove.GetComponent<RectTransform>();
+            blockAbove.UpdatePositionOfChain(blockAboveRect.anchoredPosition.x);
+        }
+        
+        Debug.Log($"[BlockView] 블록 '{gameObject.name}'이(가) 체인에서 분리되었습니다.");
     }
 }

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI; // LayoutRebuilder를 사용하기 위해 추가
 
 public class BlockConnector : MonoBehaviour, IDropHandler
 {
@@ -66,6 +67,10 @@ public class BlockConnector : MonoBehaviour, IDropHandler
         {
             clone.AddComponent<BlockDragHandler>();
         }
+        
+        // **[추가된 로직]** 새로 생성된 블록의 레이아웃을 강제 업데이트하여 rect.height를 확정합니다.
+        RectTransform newBlockRect = newBlockView.GetComponent<RectTransform>();
+        LayoutRebuilder.ForceRebuildLayoutImmediate(newBlockRect);
 
         // 3. 연결/삽입 로직
         BlockView blockAbove = ParentBlock;
@@ -86,16 +91,24 @@ public class BlockConnector : MonoBehaviour, IDropHandler
         blockAbove.UpdateNextNodeChain(); 
 
         // 5. 위치 조정
-        RectTransform newBlockRect = newBlockView.GetComponent<RectTransform>();
         RectTransform blockAboveRect = blockAbove.GetComponent<RectTransform>();
         
         // 삽입된 블록 초기 Y 위치 설정
-        float newY = blockAboveRect.anchoredPosition.y - blockAboveRect.sizeDelta.y - 10f; 
+        float newY = blockAboveRect.anchoredPosition.y - blockAboveRect.rect.height - 10f; // rect.height 사용
         newBlockRect.anchoredPosition = new Vector2(blockAboveRect.anchoredPosition.x, newY);
         
         // 전체 체인 위치 재조정
         newBlockView.UpdatePositionOfChain(blockAboveRect.anchoredPosition.x); 
         
-        Debug.Log($"[BlockConnector] '{newBlockView.name}' 삽입 완료.");
+        // **[수정된 로직]** 빨간색 디버그 로그 출력
+        if (blockBelow != null)
+        {
+            Debug.LogError($"[BlockConnector] {newBlockView.name}이 {blockAbove.name}와 {blockBelow.name} 사이에 **중간 삽입 완료** (아래 블록 밀어냄).");
+        }
+        else
+        {
+            // 끝에 연결하는 경우
+            Debug.Log($"[BlockConnector] '{newBlockView.name}' 끝에 연결 완료.");
+        }
     }
 }
