@@ -17,6 +17,10 @@ namespace UBlockly.UGUI
         [SerializeField] private Toggle m_ToggleCallstack;
         [SerializeField] private GameObject m_PanelCallstack;
         [SerializeField] private GameObject m_prefabCallstackText;
+        // 생성된 C# 스크립트 미리보기용 UI 패널
+        [SerializeField] private CodePreviewView m_CodePreviewView;
+        // 블록 -> C# 코드 변환기 (씬에 존재하면 할당, 없으면 런타임에 찾음)
+        [SerializeField] private UblockyCodeExporter m_CodeExporter;
 
         private WorkspaceView mWorkspaceView;
         
@@ -108,6 +112,9 @@ namespace UBlockly.UGUI
             m_BtnPause.gameObject.SetActive(true);
             EnableSettings(false);
 
+            // BtnRun 클릭 시, 현재 블록으로부터 생성된 C# 스크립트를 GUI로 미리보기
+            ShowGeneratedCodePreview();
+
             if (CSharp.Runner.CurStatus == Runner.Status.Stop)
             {
                 CSharp.Runner.Run(mWorkspaceView.Workspace);
@@ -116,6 +123,23 @@ namespace UBlockly.UGUI
             else
             {
                 CSharp.Runner.Resume();
+            }
+        }
+
+        /// <summary>
+        /// 현재 워크스페이스의 블록을 C# 스크립트로 변환하고 미리보기 패널에 표시
+        /// </summary>
+        private void ShowGeneratedCodePreview()
+        {
+            // Exporter 참조 확보 (직접 할당 또는 씬에서 검색)
+            var exporter = m_CodeExporter != null ? m_CodeExporter : FindObjectOfType<UblockyCodeExporter>();
+            if (exporter == null) return;
+
+            // 클래스 래핑된 스크립트를 생성하여 사람이 읽기 편하게 출력
+            string script = exporter.BuildCSharpScript("UBlocklyGenerated", "Run", null, true);
+            if (m_CodePreviewView != null)
+            {
+                m_CodePreviewView.Show(script, "Generated C# Preview");
             }
         }
 
