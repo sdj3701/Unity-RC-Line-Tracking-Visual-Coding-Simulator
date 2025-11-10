@@ -16,6 +16,9 @@ public class RCCar : MonoBehaviour
     public string lineTag = "Line";
     public bool stopOnBlack = true;
     private bool stopped = false;
+    public const byte MOTOR_SPEED = 150;
+    private byte m_a_spd = 0, m_b_spd = 0;
+    private bool m_a_dir = false, m_b_dir = false;
 
     void Start()
     {
@@ -27,18 +30,10 @@ public class RCCar : MonoBehaviour
     {
         // 내가 만든 블록으로 오브젝트 제어
         controller.Run();
-        if (!stopped)
-        {
-            for (int i = 0; i < wheel.Length; i++)
-            {
-                wheel[i].transform.Rotate(Vector3.up * speed * Time.deltaTime);
-            }
-            float dir = reverse ? -1f : 1f;
-            float distance = moveSpeed * Time.deltaTime * dir;
-            transform.Translate(Vector3.forward * distance, Space.Self);
-        }
 
+        // 라인 탐지
         int sLen = Sensor != null ? Sensor.Length : 0;
+        bool s0Black = false, s1Black = false;
         for (int i = 0; i < sLen; i++)
         {
             GameObject s = Sensor[i];
@@ -49,29 +44,96 @@ public class RCCar : MonoBehaviour
             if (Physics.Raycast(origin, d, out hit, rayDistance))
             {
                 bool black = IsBlack(hit);
+                if (i == 0) s0Black = black;
+                else if (i == 1) s1Black = black;
                 Vector3 end = hit.point;
                 Color lineColor = black ? Color.green : Color.yellow;
                 Debug.DrawLine(origin, end, lineColor);
-                float g;
-                Debug.Log(black);
-                Color c;
-                if (TrySampleColor(hit, out c))
-                    Debug.Log($"Sensor {i} hit color: #{ColorUtility.ToHtmlStringRGBA(c)} r={c.r:F2} g={c.g:F2} b={c.b:F2} a={c.a:F2}");
-
-                if (black)
-                {
-                    if (stopOnBlack) stopped = true;
-                    if (TrySampleGray(hit, out g))
-                        Debug.Log($"Black line detected (sensor {i}) gray={g:F2}");
-                    else
-                        Debug.Log($"Black line detected (sensor {i})");
-                }
             }
             else
             {
                 Debug.DrawLine(origin, origin + d * rayDistance, Color.red);
             }
         }
+
+        // 라인 탐지 센서 0 = a,1 = d
+        if (s0Black)
+            RcCtrlVal('a');
+        else if (s1Black)
+            RcCtrlVal('d');
+        else
+            RcCtrlVal('s');
+
+        // 바퀴 회전
+        if (!stopped)
+        {
+            for (int i = 0; i < wheel.Length; i++)
+            {
+                wheel[i].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
+            }
+            // 여기가 Controller.Run()으로 대처될 예정
+            // 움직는 코드
+            MotorDrive();
+        }
+    }
+
+    public void RcCtrlVal(char cmd)
+    {
+        if (cmd == 'w')
+        {
+            m_a_dir = false;
+            m_b_dir = false;
+            m_a_spd = MOTOR_SPEED;
+            m_b_spd = MOTOR_SPEED;
+        }
+        else if (cmd == 'a')
+        {
+            m_a_dir = true;
+            m_b_dir = false;
+            m_a_spd = MOTOR_SPEED;
+            m_b_spd = MOTOR_SPEED;
+        }
+        else if (cmd == 'd')
+        {
+            m_a_dir = false;
+            m_b_dir = true;
+            m_a_spd = MOTOR_SPEED;
+            m_b_spd = MOTOR_SPEED;
+        }
+        else if (cmd == 's')
+        {
+            m_a_dir = true;
+            m_b_dir = true;
+            m_a_spd = MOTOR_SPEED;
+            m_b_spd = MOTOR_SPEED;
+        }
+        else if (cmd == 'x')
+        {
+            m_a_dir = false;
+            m_b_dir = false;
+            m_a_spd = 0;
+            m_b_spd = 0;
+        }
+    }
+
+    public void MotorDrive()
+    {
+        float left = (m_a_dir ? -1f : 1f) * (m_a_spd / 255f);
+        float right = (m_b_dir ? -1f : 1f) * (m_b_spd / 255f);
+        float v = (left + right) * 0.5f;
+        float w = (right - left) * 0.5f;
+        float move = v * moveSpeed * Time.deltaTime;
+        float yawDeg = w * turnSpeed * Time.deltaTime;
+        transform.Translate(Vector3.forward * move, Space.Self);
+        transform.Rotate(Vector3.up, yawDeg, Space.Self);
+    }
+
+    public void SetMotors(byte aPwm, bool aReverse, byte bPwm, bool bReverse)
+    {
+        m_a_spd = aPwm;
+        m_a_dir = aReverse;
+        m_b_spd = bPwm;
+        m_b_dir = bReverse;
     }
 
 
