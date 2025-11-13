@@ -55,9 +55,9 @@ public class RCCar : MonoBehaviour
         }
     }
 
+    // 센서 라인 탐지
     private void SensorCheck()
     {
-        // 센서 라인 탐지
         int sLen = Sensor != null ? Sensor.Length : 0;
         for (int i = 0; i < sLen; i++)
         {
@@ -69,6 +69,7 @@ public class RCCar : MonoBehaviour
             if (Physics.Raycast(origin, d, out hit, rayDistance))
             {
                 bool black = IsBlack(hit);
+                Debug.Log(s0Black + " " + s1Black);
                 if (i == 0) s0Black = black;
                 else if (i == 1) s1Black = black;
                 Vector3 end = hit.point;
@@ -82,14 +83,21 @@ public class RCCar : MonoBehaviour
         }
     }
 
+    // 바퀴 회전 및 모터 제어
     private void WheelRotationAndMotorDrive()
     {
-        for (int i = 0; i < wheel.Length; i++)
-            {
-                wheel[i].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
-            }
-            // 모터 및 바퀴 좌우회전
-            MotorDrive();
+        if (s0Black)
+            wheel[0].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
+        else if (s1Black)
+            wheel[1].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
+        else
+        {
+            wheel[0].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
+            wheel[1].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
+        }
+            
+        // 모터 및 바퀴 좌우회전
+        MotorDrive();
     }
 
     public void RcCtrlVal(char cmd)
