@@ -1,12 +1,15 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using TMPro;
+using UnityEngine.UI;
 
 public class RCCar : MonoBehaviour
 {
     public GameObject[] wheel;
     public GameObject[] Sensor;
     private UBlocklyGenerated controller;
+    public Button But_Start, But_Stop;
 
     public float speed = 360f; // 초당 회전 속도 (도/초)
     public float moveSpeed = 3f;     // 이동 속도 (m/s)
@@ -14,22 +17,48 @@ public class RCCar : MonoBehaviour
     public float rayDistance = 2f;
     public float blackThreshold = 0.2f;
     public string lineTag = "Line";
-    private bool stopped = false;
+    private bool stopped = true;
     public const byte MOTOR_SPEED = 150;
     private byte m_a_spd = 0, m_b_spd = 0;
     private bool m_a_dir = false, m_b_dir = false;
+    private bool s0Black = false, s1Black = false;
+
 
     void Start()
     {
-        if(controller == null)
+        if (controller == null)
             controller = this.gameObject.AddComponent<UBlocklyGenerated>();
+            
+        But_Start.onClick.AddListener(() => stopped = false);
+        But_Stop.onClick.AddListener(() => stopped = true);
     }
 
     void Update()
     {
+        // 바퀴 회전 
+        if (!stopped)
+        {
+            SensorCheck();
+
+            // 내가 만든 블록으로 오브젝트 제어
+            controller.Run();
+
+            // 라인 탐지 센서 0 = a,1 = d
+            if (s0Black)
+                RcCtrlVal('a');
+            else if (s1Black)
+                RcCtrlVal('d');
+            else
+                RcCtrlVal('s');
+
+            WheelRotationAndMotorDrive();
+        }
+    }
+
+    private void SensorCheck()
+    {
         // 센서 라인 탐지
         int sLen = Sensor != null ? Sensor.Length : 0;
-        bool s0Black = false, s1Black = false;
         for (int i = 0; i < sLen; i++)
         {
             GameObject s = Sensor[i];
@@ -51,28 +80,16 @@ public class RCCar : MonoBehaviour
                 Debug.DrawLine(origin, origin + d * rayDistance, Color.red);
             }
         }
+    }
 
-        // 내가 만든 블록으로 오브젝트 제어
-        controller.Run();
-
-        // 라인 탐지 센서 0 = a,1 = d
-        if (s0Black)
-            RcCtrlVal('a');
-        else if (s1Black)
-            RcCtrlVal('d');
-        else
-            RcCtrlVal('s');
-
-        // 바퀴 회전 
-        if (!stopped)
-        {
-            for (int i = 0; i < wheel.Length; i++)
+    private void WheelRotationAndMotorDrive()
+    {
+        for (int i = 0; i < wheel.Length; i++)
             {
                 wheel[i].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
             }
             // 모터 및 바퀴 좌우회전
             MotorDrive();
-        }
     }
 
     public void RcCtrlVal(char cmd)
