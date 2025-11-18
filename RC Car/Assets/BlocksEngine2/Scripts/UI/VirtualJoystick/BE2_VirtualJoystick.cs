@@ -1,0 +1,28 @@
+﻿using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace MG_BlocksEngine2.UI
+{
+    public class BE2_VirtualJoystick : MonoBehaviour
+    {
+        public static BE2_VirtualJoystick instance;
+        public BE2_VirtualJoystickButton[] keys = new BE2_VirtualJoystickButton[6];
+
+        void Awake()
+        {
+            instance = this;
+
+            int i = 0;
+            foreach (Transform child in transform.GetChild(0))
+            {
+                BE2_VirtualJoystickButton key = child.GetComponent<BE2_VirtualJoystickButton>();
+                if (key != null)
+                {
+                    keys[i] = key;
+                    i++;
+                }
+            }
+        }
+    }
+}

@@ -99,4 +99,5 @@ InitTestScene*.unity*
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
 RC Car/Library
 RC Car/Temp
-RC Car/Assets
+RC Car/Assets/BlocksEngine2/Audios
+RC Car/Assets/BlocksEngine2/Documentation

@@ -1,0 +1,96 @@
+<Block>
+  <blockName>Block Ins WhenPlayClicked</blockName>
+  <position>(253.79, -222.76, 0.00)</position>
+  <varManagerName></varManagerName>
+  <varName />
+  <defineID />
+  <isLocalVar />
+  <defineItems />
+  <sections>
+    <Section>
+      <childBlocks>
+        <Block>
+          <blockName>Block Ins MoveForward</blockName>
+          <position>(0.00, 10.00, 0.00)</position>
+          <varManagerName></varManagerName>
+          <varName />
+          <defineID />
+          <isLocalVar />
+          <defineItems />
+          <sections>
+            <Section>
+              <childBlocks />
+              <inputs>
+                <Input>
+                  <isOperation>true</isOperation>
+                  <value>3</value>
+                  <operation>
+                    <Block>
+                      <blockName>Block Op Variable</blockName>
+                      <position>(-74.42, 30.00, 0.00)</position>
+                      <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
+                      <varName>Variable</varName>
+                      <defineID />
+                      <isLocalVar />
+                      <defineItems />
+                      <sections>
+                        <Section>
+                          <childBlocks />
+                          <inputs>
+                            <Input>
+                              <isOperation>false</isOperation>
+                              <value>Variable</value>
+                            </Input>
+                          </inputs>
+                        </Section>
+                      </sections>
+                      <OuterArea>
+                        <childBlocks />
+                      </OuterArea>
+                    </Block>
+                  </operation>
+                </Input>
+              </inputs>
+            </Section>
+          </sections>
+          <OuterArea>
+            <childBlocks />
+          </OuterArea>
+        </Block>
+        <Block>
+          <blockName>Block Ins RotateAxis</blockName>
+          <position>(0.00, -70.00, 0.00)</position>
+          <varManagerName></varManagerName>
+          <varName />
+          <defineID />
+          <isLocalVar />
+          <defineItems />
+          <sections>
+            <Section>
+              <childBlocks />
+              <inputs>
+                <Input>
+                  <isOperation>false</isOperation>
+                  <value>Y axis</value>
+                </Input>
+                <Input>
+                  <isOperation>false</isOperation>
+                  <value>30</value>
+                </Input>
+              </inputs>
+            </Section>
+          </sections>
+          <OuterArea>
+            <childBlocks />
+          </OuterArea>
+        </Block>
+      </childBlocks>
+      <inputs />
+    </Section>
+  </sections>
+  <OuterArea>
+    <childBlocks />
+  </OuterArea>
+</Block>
+#
+
