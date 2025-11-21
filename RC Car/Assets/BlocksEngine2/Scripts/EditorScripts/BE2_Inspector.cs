@@ -322,7 +322,7 @@ namespace MG_BlocksEngine2.EditorScript
             }
             else
             {
-                Debug.Log("- Instruction already exists");
+                Debug.Log("- Instruction already exists at path: " + fullPath);
             }
 
 #if UNITY_EDITOR

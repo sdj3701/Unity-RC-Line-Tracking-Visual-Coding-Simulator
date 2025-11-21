@@ -80,6 +80,10 @@ namespace MG_BlocksEngine2.EditorScript
 
                     // ### Add block to selection menu ###
                     inspector.AddBlockToSelectionMenu(newBlockTransform);
+
+                    // ### Create Prefab ###
+                    BE2_BlockUtils.CreatePrefab(newBlockTransform.GetComponent<I_BE2_Block>());
+                    Debug.Log("+ Prefab created successfully");
                 }
             }
 
