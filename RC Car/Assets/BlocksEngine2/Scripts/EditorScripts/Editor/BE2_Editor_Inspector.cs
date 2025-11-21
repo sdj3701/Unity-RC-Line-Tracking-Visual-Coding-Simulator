@@ -7,6 +7,7 @@ using UnityEngine;
 using MG_BlocksEngine2.Block;
 using MG_BlocksEngine2.DragDrop;
 using MG_BlocksEngine2.Utils;
+using MG_BlocksEngine2.Environment;
 
 namespace MG_BlocksEngine2.EditorScript
 {
@@ -135,6 +136,22 @@ namespace MG_BlocksEngine2.EditorScript
                     , MessageType.Info);
 
             DrawSeparator();
+
+            // v2.14 - Code Generator
+            EditorGUILayout.LabelField("Code Generator", EditorStyles.boldLabel);
+            if (GUILayout.Button("Generate C# Code"))
+            {
+                BE2_ProgrammingEnv env = FindObjectOfType<BE2_ProgrammingEnv>();
+                if (env != null)
+                {
+                    string code = BE2_CodeGenerator.GenerateCode(env);
+                    Debug.Log("### GENERATED CODE ###\n" + code);
+                }
+                else
+                {
+                    Debug.LogError("No Programming Environment found in the scene.");
+                }
+            }
 
             // v2.6.1 - Inspector made cleaner by moving template block parts to foldout
             _showTemplateBlockParts = EditorGUILayout.BeginFoldoutHeaderGroup(_showTemplateBlockParts, "Template Block Parts");
