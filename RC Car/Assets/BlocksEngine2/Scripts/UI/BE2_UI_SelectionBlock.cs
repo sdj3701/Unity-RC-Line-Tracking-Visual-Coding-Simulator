@@ -60,10 +60,17 @@ namespace MG_BlocksEngine2.UI
                 if (pref0.GetComponent<BE2_SpotOuterArea>())
                 {
                     DestroyImmediate(child0.gameObject);
+                    i--;
+                    continue;
                 }
                 else
                 {
-                    child0.GetComponent<RectTransform>().sizeDelta = pref0.GetComponent<RectTransform>().sizeDelta;
+                    var rtChild0 = child0.GetComponent<RectTransform>();
+                    var rtPref0 = pref0.GetComponent<RectTransform>();
+                    if (rtChild0 && rtPref0)
+                    {
+                        rtChild0.sizeDelta = rtPref0.sizeDelta;
+                    }
                 }
 
                 //header & body
@@ -75,7 +82,12 @@ namespace MG_BlocksEngine2.UI
                     LayoutGroup lg1 = child1.GetComponent<LayoutGroup>();
                     if (lg1) DestroyImmediate(lg1);
 
-                    child1.GetComponent<RectTransform>().sizeDelta = pref1.GetComponent<RectTransform>().sizeDelta;
+                    var rtChild1 = child1.GetComponent<RectTransform>();
+                    var rtPref1 = pref1.GetComponent<RectTransform>();
+                    if (rtChild1 && rtPref1)
+                    {
+                        rtChild1.sizeDelta = rtPref1.sizeDelta;
+                    }
 
                     //header components
                     for (int h = 0; h < child1.childCount; h++)
@@ -93,7 +105,12 @@ namespace MG_BlocksEngine2.UI
                         }
                         else
                         {
-                            child2.GetComponent<RectTransform>().sizeDelta = pref2.GetComponent<RectTransform>().sizeDelta;
+                            var rtChild2 = child2.GetComponent<RectTransform>();
+                            var rtPref2 = pref2.GetComponent<RectTransform>();
+                            if (rtChild2 && rtPref2)
+                            {
+                                rtChild2.sizeDelta = rtPref2.sizeDelta;
+                            }
                         }
 
                         Selectable selectable = child2.GetComponent<Selectable>();
