@@ -111,5 +111,10 @@ namespace MG_BlocksEngine2.Environment
 
             UpdateBlocksList();
         }
+
+        public void SaveButton()
+        {
+            BE2_UI_ContextMenuManager.instance.CodeGenerated();
+        }
     }
 }

@@ -8,7 +8,7 @@ public class RCCar : MonoBehaviour
 {
     public GameObject[] wheel;
     public GameObject[] Sensor;
-    private UBlocklyGenerated controller;
+    private BlocksGenerated controller;
     public Button But_Start, But_Stop;
 
     public float speed = 360f; // 초당 회전 속도 (도/초)
@@ -27,7 +27,7 @@ public class RCCar : MonoBehaviour
     void Start()
     {
         if (controller == null)
-            controller = this.gameObject.AddComponent<UBlocklyGenerated>();
+            controller = this.gameObject.AddComponent<BlocksGenerated>();
             
         But_Start.onClick.AddListener(() => stopped = false);
         But_Stop.onClick.AddListener(() => stopped = true);

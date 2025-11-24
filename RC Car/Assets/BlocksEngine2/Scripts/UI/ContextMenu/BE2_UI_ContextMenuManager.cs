@@ -66,5 +66,36 @@ namespace MG_BlocksEngine2.UI
                 panelCancel.transform.gameObject.SetActive(false);
             }
         }
+
+        public void CodeGenerated()
+        {
+            var exporter = GameObject.FindObjectOfType<BE2_CodeExporter>();
+            bool created = false;
+            if (exporter == null)
+            {
+                var go = new GameObject("BE2_CodeExporter_Auto");
+                exporter = go.AddComponent<BE2_CodeExporter>();
+                created = true;
+            }
+
+            string relativeAssetPath = "Assets/Generated/BlocksGenerated.cs";
+            bool success = exporter.SaveScriptToAssets(relativeAssetPath, "BlocksGenerated", "Run");
+
+            if (created && exporter != null)
+            {
+                DestroyImmediate(exporter.gameObject);
+            }
+
+            if (success)
+            {
+                Debug.Log($"Code generated and saved to {relativeAssetPath}");
+            }
+            else
+            {
+                Debug.LogWarning("Code generation failed or no blocks found.");
+            }
+
+            CloseContextMenu();
+        }
     }
 }
