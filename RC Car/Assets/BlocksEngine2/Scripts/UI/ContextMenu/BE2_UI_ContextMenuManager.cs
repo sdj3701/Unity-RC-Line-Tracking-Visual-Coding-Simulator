@@ -81,6 +81,8 @@ namespace MG_BlocksEngine2.UI
             string relativeAssetPath = "Assets/Generated/BlocksGenerated.cs";
             bool success = exporter.SaveScriptToAssets(relativeAssetPath, "BlocksGenerated", "Run");
 
+            string savedPath = exporter != null ? exporter.LastSavedPath : relativeAssetPath;
+
             if (created && exporter != null)
             {
                 DestroyImmediate(exporter.gameObject);
@@ -88,7 +90,7 @@ namespace MG_BlocksEngine2.UI
 
             if (success)
             {
-                Debug.Log($"Code generated and saved to {relativeAssetPath}");
+                Debug.Log($"Code generated and saved to: {savedPath}");
             }
             else
             {

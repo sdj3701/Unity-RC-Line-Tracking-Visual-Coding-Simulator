@@ -8,6 +8,9 @@ using MG_BlocksEngine2.Block.Instruction;
 
 public class BE2_CodeExporter : MonoBehaviour
 {
+    // 변수 선언 여부를 추적하기 위한 집합 (중복 선언 방지)
+    System.Collections.Generic.HashSet<string> _declaredVars = new System.Collections.Generic.HashSet<string>();
+    public string LastSavedPath;
     public string GenerateCSharpFromAllEnvs()
     {
         var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
@@ -46,40 +49,44 @@ public class BE2_CodeExporter : MonoBehaviour
         {
             case nameof(BE2_Ins_MoveForward):
             {
+                // 이동 블록: 입력값이 블록(변수/연산)일 수 있으므로 표현식으로 변환
                 var inputs = baseIns.Section0Inputs;
-                float value = inputs != null && inputs.Length > 0 ? inputs[0].FloatValue : 0f;
-                sb.AppendLine(Indent(indent) + "transform.position += transform.forward * " + value.ToString(System.Globalization.CultureInfo.InvariantCulture) + "f;");
+                string expr = inputs != null && inputs.Length > 0 ? BuildValueExpression(inputs[0]) : "0f";
+                sb.AppendLine(Indent(indent) + "transform.position += transform.forward * (" + expr + ");");
                 break;
             }
             case nameof(BE2_Ins_TurnDirection):
             {
+                // 회전 방향 블록: 조건식 안에 변수/연산 사용 가능하도록 표현식 생성 후 비교
                 var inputs = baseIns.Section0Inputs;
-                string v = inputs != null && inputs.Length > 0 ? inputs[0].StringValue : "";
-                if (string.Equals(v, "Left", StringComparison.OrdinalIgnoreCase))
-                    sb.AppendLine(Indent(indent) + "transform.Rotate(Vector3.up, -90);");
-                else if (string.Equals(v, "Right", StringComparison.OrdinalIgnoreCase))
-                    sb.AppendLine(Indent(indent) + "transform.Rotate(Vector3.up, 90);");
-                else
-                    sb.AppendLine(Indent(indent) + "transform.Rotate(Vector3.up, 0);");
+                string dirExpr = inputs != null && inputs.Length > 0 ? BuildValueExpression(inputs[0]) : QuoteString("");
+                string dirVar = "__dir" + indent;
+                sb.AppendLine(Indent(indent) + "var " + dirVar + " = " + dirExpr + ";");
+                sb.AppendLine(Indent(indent) + "if (" + dirVar + " == \"Left\")");
+                sb.AppendLine(Indent(indent) + "{");
+                sb.AppendLine(Indent(indent + 1) + "transform.Rotate(Vector3.up, -90);");
+                sb.AppendLine(Indent(indent) + "}");
+                sb.AppendLine(Indent(indent) + "else if (" + dirVar + " == \"Right\")");
+                sb.AppendLine(Indent(indent) + "{");
+                sb.AppendLine(Indent(indent + 1) + "transform.Rotate(Vector3.up, 90);");
+                sb.AppendLine(Indent(indent) + "}");
                 break;
             }
             case nameof(BE2_Ins_Wait):
             {
+                // 대기 블록: 현재 Run()이 void이므로 동기 대기 미지원. 주석으로 안내만 출력
                 var inputs = baseIns.Section0Inputs;
-                float value = inputs != null && inputs.Length > 0 ? inputs[0].FloatValue : 0f;
-                sb.AppendLine(Indent(indent) + "yield return new WaitForSeconds(" + value.ToString(System.Globalization.CultureInfo.InvariantCulture) + ");");
+                string expr = inputs != null && inputs.Length > 0 ? BuildValueExpression(inputs[0]) : "0f";
+                sb.AppendLine(Indent(indent) + "// TODO: " + "Wait " + "(" + expr + ") 초 대기는 void 메서드에서 직접 지원되지 않습니다.");
                 break;
             }
             case nameof(BE2_Ins_Repeat):
             {
+                // 반복 블록: 반복 횟수에 변수/연산 사용 가능
                 var inputs = baseIns.Section0Inputs;
-                int count = 0;
-                if (inputs != null && inputs.Length > 0)
-                {
-                    count = Mathf.FloorToInt(inputs[0].FloatValue);
-                }
+                string countExpr = inputs != null && inputs.Length > 0 ? BuildValueExpression(inputs[0]) : "0";
                 string loopVar = "i" + indent.ToString();
-                sb.AppendLine(Indent(indent) + "for (int " + loopVar + " = 0; " + loopVar + " < " + count + "; " + loopVar + "++)");
+                sb.AppendLine(Indent(indent) + "for (int " + loopVar + " = 0; " + loopVar + " < (int)(" + countExpr + "); " + loopVar + "++)");
                 sb.AppendLine(Indent(indent) + "{");
                 sb.Append(GenerateSectionBody(block, 0, indent + 1));
                 sb.AppendLine(Indent(indent) + "}");
@@ -90,28 +97,27 @@ public class BE2_CodeExporter : MonoBehaviour
                 sb.AppendLine(Indent(indent) + "while (true)");
                 sb.AppendLine(Indent(indent) + "{");
                 sb.Append(GenerateSectionBody(block, 0, indent + 1));
-                sb.AppendLine(Indent(indent + 1) + "yield return null;");
+                // 무한 루프는 주의해서 사용하세요.
                 sb.AppendLine(Indent(indent) + "}");
                 break;
             }
             case nameof(BE2_Ins_RepeatUntil):
             {
+                // 조건이 참이 될 때까지 반복: 조건식에 변수/연산 사용 가능
                 var inputs = baseIns.Section0Inputs;
-                string v = inputs != null && inputs.Length > 0 ? inputs[0].StringValue : "false";
-                bool cond = v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
-                sb.AppendLine(Indent(indent) + "while (!" + (cond ? "true" : "false") + ")");
+                string condExpr = inputs != null && inputs.Length > 0 ? BuildBooleanExpression(inputs[0]) : "false";
+                sb.AppendLine(Indent(indent) + "while (!(" + condExpr + "))");
                 sb.AppendLine(Indent(indent) + "{");
                 sb.Append(GenerateSectionBody(block, 0, indent + 1));
-                sb.AppendLine(Indent(indent + 1) + "yield return null;");
                 sb.AppendLine(Indent(indent) + "}");
                 break;
             }
             case nameof(BE2_Ins_If):
             {
+                // If 블록: 조건식에 변수/연산 사용 가능
                 var inputs = baseIns.Section0Inputs;
-                string v = inputs != null && inputs.Length > 0 ? inputs[0].StringValue : "false";
-                bool cond = v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
-                sb.AppendLine(Indent(indent) + "if (" + (cond ? "true" : "false") + ")");
+                string condExpr = inputs != null && inputs.Length > 0 ? BuildBooleanExpression(inputs[0]) : "false";
+                sb.AppendLine(Indent(indent) + "if (" + condExpr + ")");
                 sb.AppendLine(Indent(indent) + "{");
                 sb.Append(GenerateSectionBody(block, 0, indent + 1));
                 sb.AppendLine(Indent(indent) + "}");
@@ -119,10 +125,10 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             case nameof(BE2_Ins_IfElse):
             {
+                // If/Else 블록: 조건식에 변수/연산 사용 가능
                 var inputs = baseIns.Section0Inputs;
-                string v = inputs != null && inputs.Length > 0 ? inputs[0].StringValue : "false";
-                bool cond = v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
-                sb.AppendLine(Indent(indent) + "if (" + (cond ? "true" : "false") + ")");
+                string condExpr = inputs != null && inputs.Length > 0 ? BuildBooleanExpression(inputs[0]) : "false";
+                sb.AppendLine(Indent(indent) + "if (" + condExpr + ")");
                 sb.AppendLine(Indent(indent) + "{");
                 sb.Append(GenerateSectionBody(block, 0, indent + 1));
                 sb.AppendLine(Indent(indent) + "}");
@@ -130,6 +136,47 @@ public class BE2_CodeExporter : MonoBehaviour
                 sb.AppendLine(Indent(indent) + "{");
                 sb.Append(GenerateSectionBody(block, 1, indent + 1));
                 sb.AppendLine(Indent(indent) + "}");
+                break;
+            }
+            case nameof(BE2_Ins_SetVariable):
+            {
+                // 변수 설정 블록: var 선언 후 대입 (최초 1회 선언)
+                var inputs = baseIns.Section0Inputs;
+                if (inputs != null && inputs.Length >= 2)
+                {
+                    string varName = SanitizeVarName(inputs[0].StringValue);
+                    string valueExpr = BuildValueExpression(inputs[1]);
+                    if (!_declaredVars.Contains(varName))
+                    {
+                        sb.AppendLine(Indent(indent) + "var " + varName + " = " + valueExpr + ";");
+                        _declaredVars.Add(varName);
+                    }
+                    else
+                    {
+                        sb.AppendLine(Indent(indent) + varName + " = " + valueExpr + ";");
+                    }
+                }
+                break;
+            }
+            case nameof(BE2_Ins_AddVariable):
+            {
+                // 변수 더하기 블록: 문자열/숫자 형식은 런타임에 결정되므로 단순 +로 생성
+                var inputs = baseIns.Section0Inputs;
+                if (inputs != null && inputs.Length >= 2)
+                {
+                    string varName = SanitizeVarName(inputs[0].StringValue);
+                    string addExpr = BuildValueExpression(inputs[1]);
+                    if (!_declaredVars.Contains(varName))
+                    {
+                        // 선언이 안되어 있으면 기본값으로 초기화 후 연산
+                        sb.AppendLine(Indent(indent) + "var " + varName + " = " + addExpr + ";");
+                        _declaredVars.Add(varName);
+                    }
+                    else
+                    {
+                        sb.AppendLine(Indent(indent) + varName + " = " + varName + " + (" + addExpr + ");");
+                    }
+                }
                 break;
             }
             default:
@@ -155,10 +202,119 @@ public class BE2_CodeExporter : MonoBehaviour
             if (children == null) continue;
             for (int c = 0; c < children.Length; c++)
             {
-                sb.Append(GenerateForBlock(children[c], indent));
+                var child = children[c];
+                // 단독으로 놓인 연산/변수 블록은 결과를 콘솔에 출력하도록 처리
+                if (child != null && child.Type == MG_BlocksEngine2.Block.BlockTypeEnum.operation)
+                {
+                    string expr = GenerateOperationExpression(child);
+                    if (!string.IsNullOrEmpty(expr))
+                    {
+                        sb.AppendLine(Indent(indent) + "Debug.Log(" + expr + ");");
+                        continue;
+                    }
+                }
+                sb.Append(GenerateForBlock(child, indent));
             }
         }
         return sb.ToString();
+    }
+
+    // 입력으로부터 C# 값 표현식 생성 (숫자/문자열/연산/변수 블록 지원)
+    string BuildValueExpression(I_BE2_BlockSectionHeaderInput input)
+    {
+        if (input == null) return "";
+        var spot = input.Spot;
+        var block = spot != null ? spot.Block : null;
+        if (block != null)
+        {
+            // 입력에 블록이 놓인 경우 해당 블록의 연산 표현식 생성
+            string op = GenerateOperationExpression(block);
+            if (!string.IsNullOrEmpty(op)) return op;
+        }
+        // 블록이 없으면 현재 입력값을 그대로 사용
+        var vals = input.InputValues;
+        if (vals.isText)
+        {
+            return QuoteString(vals.stringValue);
+        }
+        else
+        {
+            return vals.floatValue.ToString(System.Globalization.CultureInfo.InvariantCulture) + "f";
+        }
+    }
+
+    // 불리언 표현식 생성 (Equal, BiggerThan 등)
+    string BuildBooleanExpression(I_BE2_BlockSectionHeaderInput input)
+    {
+        if (input == null) return "false";
+        var spot = input.Spot;
+        var block = spot != null ? spot.Block : null;
+        if (block != null)
+        {
+            string expr = GenerateOperationExpression(block);
+            if (!string.IsNullOrEmpty(expr)) return expr;
+        }
+        // 숫자/문자열 입력을 bool로 간주: "1"/true만 참
+        var vals = input.InputValues;
+        if (vals.isText)
+            return vals.stringValue == "1" || vals.stringValue.ToLower() == "true" ? "true" : "false";
+        return vals.floatValue != 0 ? "true" : "false";
+    }
+
+    // 연산/변수 블록을 C# 표현식으로 변환
+    string GenerateOperationExpression(I_BE2_Block opBlock)
+    {
+        if (opBlock == null || opBlock.Instruction == null) return string.Empty;
+        var baseIns = opBlock.Transform.GetComponent<I_BE2_InstructionBase>();
+        var typeName = opBlock.Instruction.GetType().Name;
+        switch (typeName)
+        {
+            case nameof(BE2_Op_Variable):
+            {
+                // 변수 참조 블록: 변수명을 C# 식별자로 변환하여 사용
+                var name = baseIns.Section0Inputs[0].StringValue;
+                return SanitizeVarName(name);
+            }
+            case nameof(BE2_Op_Equal):
+            {
+                var a = BuildValueExpression(baseIns.Section0Inputs[0]);
+                var b = BuildValueExpression(baseIns.Section0Inputs[1]);
+                return "(" + a + " == " + b + ")";
+            }
+            case nameof(BE2_Op_BiggerThan):
+            {
+                var a = BuildValueExpression(baseIns.Section0Inputs[0]);
+                var b = BuildValueExpression(baseIns.Section0Inputs[1]);
+                return "(" + a + " > " + b + ")";
+            }
+            default:
+                return string.Empty;
+        }
+    }
+
+    // 문자열을 C# 문자열 리터럴로 변환
+    string QuoteString(string s)
+    {
+        if (s == null) s = string.Empty;
+        return "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+    }
+
+    // BE2 변수명을 C# 식별자로 정규화
+    string SanitizeVarName(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return "var_";
+        var sb = new StringBuilder();
+        // 첫 글자는 문자 또는 '_'
+        if (!(char.IsLetter(raw[0]) || raw[0] == '_')) sb.Append('_');
+        for (int i = 0; i < raw.Length; i++)
+        {
+            char ch = raw[i];
+            if (char.IsLetterOrDigit(ch) || ch == '_') sb.Append(ch);
+            else sb.Append('_');
+        }
+        var name = sb.ToString();
+        if (string.IsNullOrEmpty(name)) name = "var_";
+        return name;
     }
 
     string GenerateSectionBody(I_BE2_Block block, int sectionIndex, int indent)
@@ -201,24 +357,49 @@ public class BE2_CodeExporter : MonoBehaviour
         }
         sb.AppendLine("    }");
         sb.AppendLine("}");
-        string fullPath = relativeAssetPath;
-        if (!Path.IsPathRooted(fullPath))
+        string fullPath;
+        bool isPlayMode = Application.isPlaying;
+        if (isPlayMode)
         {
-            if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
-            {
-                string sub = relativeAssetPath.Substring(7);
-                fullPath = Path.Combine(Application.dataPath, sub);
-            }
-            else
-            {
-                fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
-            }
+            string fileName = Path.GetFileName(relativeAssetPath);
+            if (string.IsNullOrEmpty(fileName)) fileName = "BlocksGenerated.cs";
+            var nonAssetsDir = Path.Combine(Application.persistentDataPath, "Generated");
+            if (!Directory.Exists(nonAssetsDir)) Directory.CreateDirectory(nonAssetsDir);
+            fullPath = Path.Combine(nonAssetsDir, fileName);
         }
-        var dir = Path.GetDirectoryName(fullPath);
-        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        else
+        {
+            fullPath = relativeAssetPath;
+            if (!Path.IsPathRooted(fullPath))
+            {
+                if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
+                {
+                    string sub = relativeAssetPath.Substring(7);
+                    fullPath = Path.Combine(Application.dataPath, sub);
+                }
+                else
+                {
+                    fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
+                }
+            }
+            var dir = Path.GetDirectoryName(fullPath);
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        }
         File.WriteAllText(fullPath, sb.ToString());
+        LastSavedPath = fullPath;
+        Debug.Log($"[BE2_CodeExporter] Saved generated script to: {fullPath} (PlayMode={isPlayMode})");
 #if UNITY_EDITOR
-        UnityEditor.AssetDatabase.Refresh();
+        if (isPlayMode)
+        {
+            UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastTempPath", fullPath);
+            UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastRelAssetPath", relativeAssetPath);
+        }
+#endif
+#if UNITY_EDITOR
+        if (!isPlayMode)
+        {
+            UnityEditor.AssetDatabase.Refresh();
+        }
 #endif
         return true;
     }
