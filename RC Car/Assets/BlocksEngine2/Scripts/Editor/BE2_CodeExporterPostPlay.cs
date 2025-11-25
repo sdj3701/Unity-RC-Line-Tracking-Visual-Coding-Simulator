@@ -26,12 +26,19 @@ public static class BE2_CodeExporterPostPlay
     {
         string tempPath = EditorPrefs.GetString("BE2_CodeExporter_LastTempPath", string.Empty);
         string relAssetPath = EditorPrefs.GetString("BE2_CodeExporter_LastRelAssetPath", string.Empty);
+        string tempXmlPath = EditorPrefs.GetString("BE2_CodeExporter_LastTempXmlPath", string.Empty);
+        string relXmlAssetPath = EditorPrefs.GetString("BE2_CodeExporter_LastRelXmlAssetPath", string.Empty);
         if (string.IsNullOrEmpty(tempPath) || string.IsNullOrEmpty(relAssetPath))
-            return;
+        {
+            // Even if code path is missing, we may still have XML to copy
+            if (string.IsNullOrEmpty(tempXmlPath) || string.IsNullOrEmpty(relXmlAssetPath))
+                return;
+        }
 
         try
         {
-            if (File.Exists(tempPath))
+            // Copy C# script if present
+            if (!string.IsNullOrEmpty(tempPath) && File.Exists(tempPath))
             {
                 string fullPath = relAssetPath;
                 if (!Path.IsPathRooted(fullPath))
@@ -52,8 +59,33 @@ public static class BE2_CodeExporterPostPlay
 
                 File.Copy(tempPath, fullPath, true);
                 Debug.Log($"[BE2_CodeExporter] Copied generated script from PlayMode to: {fullPath}");
-                AssetDatabase.Refresh();
             }
+
+            // Copy XML if present
+            if (!string.IsNullOrEmpty(tempXmlPath) && File.Exists(tempXmlPath))
+            {
+                string fullXmlPath = relXmlAssetPath;
+                if (!Path.IsPathRooted(fullXmlPath))
+                {
+                    if (relXmlAssetPath.StartsWith("Assets/") || relXmlAssetPath.StartsWith("Assets\\"))
+                    {
+                        string sub = relXmlAssetPath.Substring(7);
+                        fullXmlPath = Path.Combine(Application.dataPath, sub);
+                    }
+                    else
+                    {
+                        fullXmlPath = Path.Combine(Application.dataPath, relXmlAssetPath);
+                    }
+                }
+
+                var xmlDir = Path.GetDirectoryName(fullXmlPath);
+                if (!Directory.Exists(xmlDir)) Directory.CreateDirectory(xmlDir);
+
+                File.Copy(tempXmlPath, fullXmlPath, true);
+                Debug.Log($"[BE2_CodeExporter] Copied generated XML from PlayMode to: {fullXmlPath}");
+            }
+
+            AssetDatabase.Refresh();
         }
         catch (System.Exception ex)
         {
@@ -63,6 +95,8 @@ public static class BE2_CodeExporterPostPlay
         {
             EditorPrefs.DeleteKey("BE2_CodeExporter_LastTempPath");
             EditorPrefs.DeleteKey("BE2_CodeExporter_LastRelAssetPath");
+            EditorPrefs.DeleteKey("BE2_CodeExporter_LastTempXmlPath");
+            EditorPrefs.DeleteKey("BE2_CodeExporter_LastRelXmlAssetPath");
         }
     }
 }

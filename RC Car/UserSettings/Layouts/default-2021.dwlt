@@ -19,7 +19,7 @@ MonoBehaviour:
     width: 2560
     height: 1349
   m_ShowMode: 4
-  m_Title: Inspector
+  m_Title: Console
   m_RootView: {fileID: 9}
   m_MinSize: {x: 875, y: 450}
   m_MaxSize: {x: 10000, y: 10000}
@@ -69,8 +69,8 @@ MonoBehaviour:
     y: 0
     width: 576
     height: 1299
-  m_MinSize: {x: 275, y: 100}
-  m_MaxSize: {x: 4000, y: 4000}
+  m_MinSize: {x: 276, y: 121}
+  m_MaxSize: {x: 4001, y: 4021}
   m_ActualView: {fileID: 14}
   m_Panes:
   - {fileID: 14}
@@ -127,7 +127,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 200}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 96
+  controlID: 48
 --- !u!114 &6
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -210,7 +210,7 @@ MonoBehaviour:
   m_MinSize: {x: 400, y: 200}
   m_MaxSize: {x: 32384, y: 16192}
   vertical: 0
-  controlID: 139
+  controlID: 21
 --- !u!114 &9
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -1581,24 +1581,24 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 1
     m_Folders:
-    - Assets/Generated
+    - Assets/BlocksEngine2/Scripts/EnvironmentElements
     m_Globs: []
     m_OriginalText: 
     m_FilterByTypeIntersection: 0
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Generated
+  - Assets/BlocksEngine2/Scripts/EnvironmentElements
   m_LastFoldersGridSize: -1
   m_LastProjectPath: D:\Unity\Unity RC Line\Unity-RC-Line-Tracking-Visual-Coding-Simulator\RC
     Car
   m_LockTracker:
     m_IsLocked: 0
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 0}
-    m_SelectedIDs: 62b00000
-    m_LastClickedID: 45154
-    m_ExpandedIDs: 000000003ab000003cb000003eb0000040b0000042b0000044b0000046b0000048b000004ab000004cb000004eb0000050b0000052b0000054b0000068b0000070b00000
+    scrollPos: {x: 0, y: 383}
+    m_SelectedIDs: eae60000
+    m_LastClickedID: 59114
+    m_ExpandedIDs: 0000000068b100006ab100006cb100006eb1000070b1000072b1000074b1000076b1000078b100007ab100007cb100007eb1000080b1000082b1000088b1000048dd000054e1000048e70000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1626,7 +1626,7 @@ MonoBehaviour:
     scrollPos: {x: 0, y: 0}
     m_SelectedIDs: 
     m_LastClickedID: 0
-    m_ExpandedIDs: 000000003ab000003cb000003eb0000040b0000042b0000044b0000046b0000048b000004ab000004cb000004eb0000050b0000052b0000054b00000
+    m_ExpandedIDs: 0000000068b100006ab100006cb100006eb1000070b1000072b1000074b1000076b1000078b100007ab100007cb100007eb1000080b1000082b10000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1657,15 +1657,15 @@ MonoBehaviour:
     m_ExpandedInstanceIDs: 62c20000ac70000072670000ec6b000000000000be6d0000f2570100f0630000c06d0000ac8c000044e10800e28d00009e720900de990b00
     m_RenameOverlay:
       m_UserAcceptedRename: 0
-      m_Name: UBlocklyGenerated
-      m_OriginalName: UBlocklyGenerated
+      m_Name: BlocksGenerated
+      m_OriginalName: BlocksGenerated
       m_EditFieldRect:
         serializedVersion: 2
         x: 0
         y: 0
         width: 0
         height: 0
-      m_UserData: 11018
+      m_UserData: 4992
       m_IsWaitingForDelay: 0
       m_IsRenaming: 0
       m_OriginalEventType: 0
@@ -2172,10 +2172,10 @@ MonoBehaviour:
     m_OverlaysVisible: 1
   m_SceneHierarchy:
     m_TreeViewState:
-      scrollPos: {x: 0, y: 272}
-      m_SelectedIDs: d6900200
+      scrollPos: {x: 0, y: 0}
+      m_SelectedIDs: 
       m_LastClickedID: 0
-      m_ExpandedIDs: 9a99ffff5edfffff66dfffffc4e9fffffafaffff666a0000746b0000086d0000866d0000566f0000c4710000e87300007075000014770000767a0000f27b0000227c0000127d00005c7e000002810000568100004482000072850000ca850000f6850000808600004c890000b2890000568a0000608a0000128b0000148b00004c8b0000928b0000a28b0000ac8b0000b28b0000
+      m_ExpandedIDs: 36fbffffe4690000fc6a0000906c00000e6d0000f8740000a07700007a7b000010860000dc880000e48a0000ec8a0000ee8a0000268b00007c8b0000
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 

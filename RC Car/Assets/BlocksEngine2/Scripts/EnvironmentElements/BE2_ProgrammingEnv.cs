@@ -89,6 +89,36 @@ namespace MG_BlocksEngine2.Environment
                         BlocksList.Add(childBlock);
                 }
             }
+
+            // Fallback: if no direct children blocks were found, scan descendants and pick top-level blocks
+            if (BlocksList.Count == 0)
+            {
+                I_BE2_Block[] allBlocks = Transform.GetComponentsInChildren<I_BE2_Block>(true);
+                foreach (var block in allBlocks)
+                {
+                    if (!block.Transform.gameObject.activeInHierarchy)
+                        continue;
+
+                    // Top-level heuristic: no ancestor with a BlockSectionBody (i.e., not nested inside another block's body)
+                    bool insideBody = block.Transform.GetComponentInParent<I_BE2_BlockSectionBody>() != null && block.Transform.parent != Transform;
+                    if (!insideBody)
+                    {
+                        BlocksList.Add(block);
+                    }
+                }
+                // Optional: keep only unique entries
+                // (List is typically small; distinct by Transform instance)
+                if (BlocksList.Count > 1)
+                {
+                    var unique = new List<I_BE2_Block>();
+                    var seen = new System.Collections.Generic.HashSet<Transform>();
+                    foreach (var b in BlocksList)
+                    {
+                        if (b != null && seen.Add(b.Transform)) unique.Add(b);
+                    }
+                    BlocksList = unique;
+                }
+            }
         }
 
         public void OpenContextMenu()
@@ -115,6 +145,35 @@ namespace MG_BlocksEngine2.Environment
         public void SaveButton()
         {
             BE2_UI_ContextMenuManager.instance.CodeGenerated();
+        }
+
+        public void SaveXMLButton()
+        {
+            var exporter = GameObject.FindObjectOfType<BE2_CodeExporter>();
+            bool created = false;
+            if (exporter == null)
+            {
+                var go = new GameObject("BE2_CodeExporter_Auto");
+                exporter = go.AddComponent<BE2_CodeExporter>();
+                created = true;
+            }
+
+            string relativeAssetPath = "Assets/Generated/BlocksGenerated.be2";
+            bool success = exporter.SaveXmlToAssets(this, relativeAssetPath);
+
+            if (created && exporter != null)
+            {
+                DestroyImmediate(exporter.gameObject);
+            }
+
+            if (success)
+            {
+                Debug.Log("Blocks XML generated for this env.");
+            }
+            else
+            {
+                Debug.LogWarning("Blocks XML generation failed or no blocks found in this env.");
+            }
         }
     }
 }

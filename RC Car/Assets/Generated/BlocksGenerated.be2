@@ -1,0 +1,70 @@
+<Block>
+  <blockName>Block Ins WhenPlayClicked</blockName>
+  <position>(253.79, -222.76, 0.00)</position>
+  <varManagerName></varManagerName>
+  <varName />
+  <defineID />
+  <isLocalVar />
+  <defineItems />
+  <sections>
+    <Section>
+      <childBlocks>
+        <Block>
+          <blockName>Block Ins MoveForward</blockName>
+          <position>(0.00, 10.00, 0.00)</position>
+          <varManagerName></varManagerName>
+          <varName />
+          <defineID />
+          <isLocalVar />
+          <defineItems />
+          <sections>
+            <Section>
+              <childBlocks />
+              <inputs>
+                <Input>
+                  <isOperation>false</isOperation>
+                  <value>1</value>
+                </Input>
+              </inputs>
+            </Section>
+          </sections>
+          <OuterArea>
+            <childBlocks />
+          </OuterArea>
+        </Block>
+        <Block>
+          <blockName>Block Ins RotateAxis</blockName>
+          <position>(0.00, -60.00, 0.00)</position>
+          <varManagerName></varManagerName>
+          <varName />
+          <defineID />
+          <isLocalVar />
+          <defineItems />
+          <sections>
+            <Section>
+              <childBlocks />
+              <inputs>
+                <Input>
+                  <isOperation>false</isOperation>
+                  <value>Y axis</value>
+                </Input>
+                <Input>
+                  <isOperation>false</isOperation>
+                  <value>30</value>
+                </Input>
+              </inputs>
+            </Section>
+          </sections>
+          <OuterArea>
+            <childBlocks />
+          </OuterArea>
+        </Block>
+      </childBlocks>
+      <inputs />
+    </Section>
+  </sections>
+  <OuterArea>
+    <childBlocks />
+  </OuterArea>
+</Block>
+#

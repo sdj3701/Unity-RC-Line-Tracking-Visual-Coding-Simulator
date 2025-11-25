@@ -5,6 +5,7 @@ using UnityEngine;
 using MG_BlocksEngine2.Environment;
 using MG_BlocksEngine2.Block;
 using MG_BlocksEngine2.Block.Instruction;
+using MG_BlocksEngine2.Serializer;
 
 public class BE2_CodeExporter : MonoBehaviour
 {
@@ -28,6 +29,78 @@ public class BE2_CodeExporter : MonoBehaviour
                 if (block == null) continue;
                 sb.Append(GenerateForBlock(block, 0));
             }
+        }
+        return sb.ToString();
+    }
+
+    public bool SaveXmlToAssets(MG_BlocksEngine2.Environment.I_BE2_ProgrammingEnv targetEnv, string relativeAssetPath = "Assets/Generated/BlocksGenerated.be2")
+    {
+        if (targetEnv == null) return false;
+        string xml = BE2_BlocksSerializer.BlocksCodeToXML(targetEnv);
+        if (string.IsNullOrEmpty(xml)) return false;
+
+        string fullPath;
+        bool isPlayMode = Application.isPlaying;
+        if (isPlayMode)
+        {
+            string fileName = Path.GetFileName(relativeAssetPath);
+            if (string.IsNullOrEmpty(fileName)) fileName = "BlocksGenerated.be2";
+            var nonAssetsDir = Path.Combine(Application.persistentDataPath, "Generated");
+            if (!Directory.Exists(nonAssetsDir)) Directory.CreateDirectory(nonAssetsDir);
+            fullPath = Path.Combine(nonAssetsDir, fileName);
+        }
+        else
+        {
+            fullPath = relativeAssetPath;
+            if (!Path.IsPathRooted(fullPath))
+            {
+                if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
+                {
+                    string sub = relativeAssetPath.Substring(7);
+                    fullPath = Path.Combine(Application.dataPath, sub);
+                }
+                else
+                {
+                    fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
+                }
+            }
+            var dir = Path.GetDirectoryName(fullPath);
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        }
+
+        File.WriteAllText(fullPath, xml);
+        LastSavedPath = fullPath;
+        Debug.Log($"[BE2_CodeExporter] Saved generated blocks XML (single env) to: {fullPath} (PlayMode={isPlayMode})");
+
+#if UNITY_EDITOR
+        if (isPlayMode)
+        {
+            UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastTempXmlPath", fullPath);
+            string relXml = relativeAssetPath;
+            UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastRelXmlAssetPath", relXml);
+        }
+        else
+        {
+            UnityEditor.AssetDatabase.Refresh();
+        }
+#endif
+        return true;
+    }
+
+    string GenerateXmlFromAllEnvs()
+    {
+        var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
+        var sb = new StringBuilder();
+        Debug.Log($"[BE2_CodeExporter] XML export scanning envs: {envs.Length}");
+        for (int i = 0; i < envs.Length; i++)
+        {
+            var env = envs[i];
+            if (env == null) continue;
+            env.UpdateBlocksList();
+            int count = env.BlocksList != null ? env.BlocksList.Count : 0;
+            Debug.Log($"[BE2_CodeExporter] Env '{env.name}' has top-level blocks: {count}");
+            sb.Append(BE2_BlocksSerializer.BlocksCodeToXML(env));
+            if (i < envs.Length - 1) sb.Append('\n');
         }
         return sb.ToString();
     }
@@ -243,6 +316,59 @@ public class BE2_CodeExporter : MonoBehaviour
         }
     }
 
+    public bool SaveXmlToAssets(string relativeAssetPath = "Assets/Generated/BlocksGenerated.be2")
+    {
+        string xml = GenerateXmlFromAllEnvs();
+        if (string.IsNullOrEmpty(xml)) return false;
+
+        string fullPath;
+        bool isPlayMode = Application.isPlaying;
+        if (isPlayMode)
+        {
+            string fileName = Path.GetFileName(relativeAssetPath);
+            if (string.IsNullOrEmpty(fileName)) fileName = "BlocksGenerated.be2";
+            var nonAssetsDir = Path.Combine(Application.persistentDataPath, "Generated");
+            if (!Directory.Exists(nonAssetsDir)) Directory.CreateDirectory(nonAssetsDir);
+            fullPath = Path.Combine(nonAssetsDir, fileName);
+        }
+        else
+        {
+            fullPath = relativeAssetPath;
+            if (!Path.IsPathRooted(fullPath))
+            {
+                if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
+                {
+                    string sub = relativeAssetPath.Substring(7);
+                    fullPath = Path.Combine(Application.dataPath, sub);
+                }
+                else
+                {
+                    fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
+                }
+            }
+            var dir = Path.GetDirectoryName(fullPath);
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        }
+
+        File.WriteAllText(fullPath, xml);
+        LastSavedPath = fullPath;
+        Debug.Log($"[BE2_CodeExporter] Saved generated blocks XML to: {fullPath} (PlayMode={isPlayMode})");
+
+#if UNITY_EDITOR
+        if (isPlayMode)
+        {
+            UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastTempXmlPath", fullPath);
+            string relXml = relativeAssetPath;
+            UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastRelXmlAssetPath", relXml);
+        }
+        else
+        {
+            UnityEditor.AssetDatabase.Refresh();
+        }
+#endif
+        return true;
+    }
+
     // 불리언 표현식 생성 (Equal, BiggerThan 등)
     string BuildBooleanExpression(I_BE2_BlockSectionHeaderInput input)
     {
@@ -341,6 +467,7 @@ public class BE2_CodeExporter : MonoBehaviour
     {
         string code = GenerateCSharpFromAllEnvs();
         if (string.IsNullOrEmpty(code)) return false;
+        string xml = GenerateXmlFromAllEnvs();
         var sb = new StringBuilder();
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections;");
@@ -388,11 +515,21 @@ public class BE2_CodeExporter : MonoBehaviour
         File.WriteAllText(fullPath, sb.ToString());
         LastSavedPath = fullPath;
         Debug.Log($"[BE2_CodeExporter] Saved generated script to: {fullPath} (PlayMode={isPlayMode})");
+        // Save XML next to the C# file
+        string xmlPath = Path.ChangeExtension(fullPath, ".be2");
+        if (!string.IsNullOrEmpty(xml))
+        {
+            File.WriteAllText(xmlPath, xml);
+            Debug.Log($"[BE2_CodeExporter] Saved generated blocks XML to: {xmlPath}");
+        }
 #if UNITY_EDITOR
         if (isPlayMode)
         {
             UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastTempPath", fullPath);
             UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastRelAssetPath", relativeAssetPath);
+            UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastTempXmlPath", xmlPath);
+            string relXml = Path.ChangeExtension(relativeAssetPath, ".be2");
+            UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastRelXmlAssetPath", relXml);
         }
 #endif
 #if UNITY_EDITOR
@@ -402,5 +539,57 @@ public class BE2_CodeExporter : MonoBehaviour
         }
 #endif
         return true;
+    }
+
+    public bool ImportLastGeneratedToEnv(MG_BlocksEngine2.Environment.BE2_ProgrammingEnv targetEnv = null)
+    {
+        try
+        {
+            if (targetEnv == null)
+            {
+                var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
+                if (envs != null && envs.Length > 0) targetEnv = envs[0];
+            }
+            if (targetEnv == null) { Debug.LogWarning("[BE2_CodeExporter] No ProgrammingEnv found for import."); return false; }
+
+            string xmlPath = null;
+#if UNITY_EDITOR
+            // Prefer temp path saved during Play
+            string tempXml = UnityEditor.EditorPrefs.GetString("BE2_CodeExporter_LastTempXmlPath", string.Empty);
+            if (!string.IsNullOrEmpty(tempXml) && File.Exists(tempXml))
+                xmlPath = tempXml;
+#endif
+            if (xmlPath == null)
+            {
+                if (!string.IsNullOrEmpty(LastSavedPath))
+                {
+                    string candidate = Path.ChangeExtension(LastSavedPath, ".be2");
+                    if (File.Exists(candidate)) xmlPath = candidate;
+                }
+            }
+            if (xmlPath == null)
+            {
+                // Fallback next to Assets path
+                string rel = "Assets/Generated/BlocksGenerated.be2";
+                if (rel.StartsWith("Assets/"))
+                {
+                    string sub = rel.Substring(7);
+                    string candidate = Path.Combine(Application.dataPath, sub);
+                    if (File.Exists(candidate)) xmlPath = candidate;
+                }
+            }
+            if (string.IsNullOrEmpty(xmlPath)) { Debug.LogWarning("[BE2_CodeExporter] No generated XML found to import."); return false; }
+
+            string xmlString = File.ReadAllText(xmlPath);
+            if (string.IsNullOrWhiteSpace(xmlString)) { Debug.LogWarning("[BE2_CodeExporter] XML file is empty."); return false; }
+            BE2_BlocksSerializer.XMLToBlocksCode(xmlString, targetEnv);
+            Debug.Log($"[BE2_CodeExporter] Imported blocks from: {xmlPath}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[BE2_CodeExporter] Import failed: {ex.Message}");
+            return false;
+        }
     }
 }

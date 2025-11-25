@@ -99,5 +99,39 @@ namespace MG_BlocksEngine2.UI
 
             CloseContextMenu();
         }
+
+        // XML Code Generated 코드 임포트
+        public void XMLCodeGenerated()
+        {
+            var exporter = GameObject.FindObjectOfType<BE2_CodeExporter>();
+            bool created = false;
+            if (exporter == null)
+            {
+                var go = new GameObject("BE2_CodeExporter_Auto");
+                exporter = go.AddComponent<BE2_CodeExporter>();
+                created = true;
+            }
+
+            string relativeAssetPath = "Assets/Generated/BlocksGenerated.be2";
+            bool success = exporter.SaveXmlToAssets(relativeAssetPath);
+
+            string savedPath = exporter != null ? exporter.LastSavedPath : relativeAssetPath;
+
+            if (created && exporter != null)
+            {
+                DestroyImmediate(exporter.gameObject);
+            }
+
+            if (success)
+            {
+                Debug.Log($"Blocks XML generated and saved to: {savedPath}");
+            }
+            else
+            {
+                Debug.LogWarning("Blocks XML generation failed or no blocks found.");
+            }
+
+            CloseContextMenu();
+        }
     }
 }
