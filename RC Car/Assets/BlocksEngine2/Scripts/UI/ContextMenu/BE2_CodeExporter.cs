@@ -401,6 +401,24 @@ public class BE2_CodeExporter : MonoBehaviour
                 var name = baseIns.Section0Inputs[0].StringValue;
                 return SanitizeVarName(name);
             }
+            case nameof(BE2_Op_Sum):
+            {
+                var a = BuildValueExpression(baseIns.Section0Inputs[0]);
+                var b = BuildValueExpression(baseIns.Section0Inputs[1]);
+                return "(" + a + " + " + b + ")";
+            }
+            case nameof(BE2_Op_Multiply):
+            {
+                var a = BuildValueExpression(baseIns.Section0Inputs[0]);
+                var b = BuildValueExpression(baseIns.Section0Inputs[1]);
+                return "(" + a + " * " + b + ")";
+            }
+            case nameof(BE2_Op_Divide):
+            {
+                var a = BuildValueExpression(baseIns.Section0Inputs[0]);
+                var b = BuildValueExpression(baseIns.Section0Inputs[1]);
+                return "(" + a + " / " + b + ")";
+            }
             case nameof(BE2_Op_Equal):
             {
                 var a = BuildValueExpression(baseIns.Section0Inputs[0]);
@@ -413,18 +431,69 @@ public class BE2_CodeExporter : MonoBehaviour
                 var b = BuildValueExpression(baseIns.Section0Inputs[1]);
                 return "(" + a + " > " + b + ")";
             }
+            case nameof(BE2_Op_Not):
+            {
+                var a = BuildBooleanExpression(baseIns.Section0Inputs[0]);
+                return "(!" + a + ")";
+            }
+            case nameof(BE2_Op_And):
+            {
+                var a = BuildBooleanExpression(baseIns.Section0Inputs[0]);
+                var b = BuildBooleanExpression(baseIns.Section0Inputs[1]);
+                return "(" + a + " && " + b + ")";
+            }
+            case nameof(BE2_Op_Or):
+            {
+                var a = BuildBooleanExpression(baseIns.Section0Inputs[0]);
+                var b = BuildBooleanExpression(baseIns.Section0Inputs[1]);
+                return "(" + a + " || " + b + ")";
+            }
+            case nameof(BE2_Op_Xor):
+            {
+                var a = BuildBooleanExpression(baseIns.Section0Inputs[0]);
+                var b = BuildBooleanExpression(baseIns.Section0Inputs[1]);
+                return "(" + a + " ^ " + b + ")";
+            }
+            case nameof(BE2_Op_Nand):
+            {
+                var a = BuildBooleanExpression(baseIns.Section0Inputs[0]);
+                var b = BuildBooleanExpression(baseIns.Section0Inputs[1]);
+                return "(!(" + a + " && " + b + "))";
+            }
+            case nameof(BE2_Op_Nor):
+            {
+                var a = BuildBooleanExpression(baseIns.Section0Inputs[0]);
+                var b = BuildBooleanExpression(baseIns.Section0Inputs[1]);
+                return "(!(" + a + " || " + b + "))";
+            }
+            case nameof(BE2_Op_Xnor):
+            {
+                var a = BuildBooleanExpression(baseIns.Section0Inputs[0]);
+                var b = BuildBooleanExpression(baseIns.Section0Inputs[1]);
+                return "(" + a + " == " + b + ")";
+            }
+            case nameof(BE2_Op_Random):
+            {
+                var a = BuildValueExpression(baseIns.Section0Inputs[0]);
+                var b = BuildValueExpression(baseIns.Section0Inputs[1]);
+                return "UnityEngine.Random.Range(" + a + ", " + b + ")";
+            }
+            case nameof(BE2_Op_KeyPressed):
+            {
+                var idx = BuildValueExpression(baseIns.Section0Inputs[0]);
+                return "UnityEngine.Input.GetKey(MG_BlocksEngine2.Core.BE2_InputManager.keyCodeList[(int)(" + idx + ")])";
+            }
+            case nameof(BE2_Op_JoystickKeyPressed):
+            {
+                var idx = BuildValueExpression(baseIns.Section0Inputs[0]);
+                return "MG_BlocksEngine2.UI.BE2_VirtualJoystick.instance.keys[(int)(" + idx + ")].isPressed";
+            }
             default:
+            {
                 return string.Empty;
+            }
         }
     }
-
-    // 문자열을 C# 문자열 리터럴로 변환
-    string QuoteString(string s)
-    {
-        if (s == null) s = string.Empty;
-        return "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
-    }
-
     // BE2 변수명을 C# 식별자로 정규화
     string SanitizeVarName(string raw)
     {
