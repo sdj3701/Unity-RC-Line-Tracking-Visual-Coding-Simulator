@@ -111,6 +111,38 @@ public class BE2_CodeExporter : MonoBehaviour
         return new string(' ', level * 4);
     }
 
+    string QuoteString(string s)
+    {
+        if (s == null) return "\"\"";
+        var sb = new StringBuilder();
+        sb.Append('"');
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            switch (c)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '"': sb.Append("\\\""); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                default:
+                    if (char.IsControl(c))
+                    {
+                        sb.Append("\\u");
+                        sb.Append(((int)c).ToString("x4"));
+                    }
+                    else
+                    {
+                        sb.Append(c);
+                    }
+                    break;
+            }
+        }
+        sb.Append('"');
+        return sb.ToString();
+    }
+
     string GenerateForBlock(I_BE2_Block block, int indent)
     {
         var ins = block.Instruction;
