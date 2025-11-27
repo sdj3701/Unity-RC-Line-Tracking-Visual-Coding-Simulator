@@ -20,8 +20,7 @@ public class BE2_CodeExporter : MonoBehaviour
         {
             var env = envs[i];
             if (env == null) continue;
-            env.UpdateBlocksList();
-            var blocks = env.BlocksList;
+            var blocks = GetTopLevelBlocks(env);
             if (blocks == null) continue;
             for (int b = 0; b < blocks.Count; b++)
             {
@@ -109,6 +108,27 @@ public class BE2_CodeExporter : MonoBehaviour
     {
         if (level <= 0) return string.Empty;
         return new string(' ', level * 4);
+    }
+
+    System.Collections.Generic.List<I_BE2_Block> GetTopLevelBlocks(MG_BlocksEngine2.Environment.BE2_ProgrammingEnv env)
+    {
+        var result = new System.Collections.Generic.List<I_BE2_Block>();
+        if (env == null) return result;
+        var all = env.Transform.GetComponentsInChildren<I_BE2_Block>(true);
+        var seen = new System.Collections.Generic.HashSet<Transform>();
+        for (int i = 0; i < all.Length; i++)
+        {
+            var b = all[i];
+            if (b == null) continue;
+            var t = b.Transform;
+            if (t == null) continue;
+            var go = t.gameObject;
+            if (go == null || !go.activeInHierarchy) continue;
+            bool inBody = t.GetComponentInParent<MG_BlocksEngine2.Block.I_BE2_BlockSectionBody>() != null && t.parent != env.Transform;
+            if (inBody) continue;
+            if (seen.Add(t)) result.Add(b);
+        }
+        return result;
     }
 
     string QuoteString(string s)
@@ -286,6 +306,29 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             default:
             {
+                // 조건 블록에 대한 일반 처리: 섹션 수로 if/else 판단 (타입명이 다를 때 대비)
+                if (block.Type == MG_BlocksEngine2.Block.BlockTypeEnum.condition && baseIns != null)
+                {
+                    var inputs = baseIns.Section0Inputs;
+                    string condExpr = inputs != null && inputs.Length > 0 ? BuildBooleanExpression(inputs[0]) : "false";
+                    int sectionCount = (block.Layout != null && block.Layout.SectionsArray != null) ? block.Layout.SectionsArray.Length : 0;
+                    if (sectionCount >= 1)
+                    {
+                        sb.AppendLine(Indent(indent) + "if (" + condExpr + ")");
+                        sb.AppendLine(Indent(indent) + "{");
+                        sb.Append(GenerateSectionBody(block, 0, indent + 1));
+                        sb.AppendLine(Indent(indent) + "}");
+                        if (sectionCount >= 2)
+                        {
+                            sb.AppendLine(Indent(indent) + "else");
+                            sb.AppendLine(Indent(indent) + "{");
+                            sb.Append(GenerateSectionBody(block, 1, indent + 1));
+                            sb.AppendLine(Indent(indent) + "}");
+                        }
+                        break;
+                    }
+                }
+                // 기본: 자식 순차 블록 생성
                 sb.Append(GenerateSequentialChildren(block, indent));
                 break;
             }
