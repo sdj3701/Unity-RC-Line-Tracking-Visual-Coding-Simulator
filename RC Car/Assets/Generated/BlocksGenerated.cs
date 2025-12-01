@@ -5,14 +5,8 @@ public class BlocksGenerated : MonoBehaviour
 {
     public void Run()
     {
-        var Variable = 1f;
-        if (true)
+        void a(object input1, object input2)
         {
-            Variable = 2f;
-        }
-        else
-        {
-            Variable = 3f;
         }
 
     }
