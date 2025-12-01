@@ -205,16 +205,15 @@ public class BE2_CodeExporter : MonoBehaviour
                     EnsureFunctionGenerated(def);
                     string methodName = BuildFunctionName(def);
                     var inputs = baseIns.Section0Inputs;
-                    System.Collections.Generic.List<string> args = new System.Collections.Generic.List<string>();
-                    if (inputs != null)
+                    if (inputs != null && inputs.Length > 0)
                     {
-                        for (int i = 0; i < inputs.Length; i++)
-                        {
-                            string expr = BuildValueExpression(inputs[i]);
-                            args.Add(expr);
-                        }
+                        string arg = BuildValueExpression(inputs[0]);
+                        sb.AppendLine(Indent(indent) + methodName + "(" + arg + ");");
                     }
-                    sb.AppendLine(Indent(indent) + methodName + "(" + string.Join(", ", args.ToArray()) + ");");
+                    else
+                    {
+                        sb.AppendLine(Indent(indent) + methodName + "();");
+                    }
                 }
                 break;
             }
@@ -228,16 +227,15 @@ public class BE2_CodeExporter : MonoBehaviour
                     EnsureFunctionGenerated(def);
                     string methodName = BuildFunctionName(def);
                     var inputs = baseIns.Section0Inputs;
-                    System.Collections.Generic.List<string> args = new System.Collections.Generic.List<string>();
-                    if (inputs != null)
+                    if (inputs != null && inputs.Length > 0)
                     {
-                        for (int i = 0; i < inputs.Length; i++)
-                        {
-                            string expr = BuildValueExpression(inputs[i]);
-                            args.Add(expr);
-                        }
+                        string arg = BuildValueExpression(inputs[0]);
+                        sb.AppendLine(Indent(indent) + methodName + "(" + arg + ");");
                     }
-                    sb.AppendLine(Indent(indent) + methodName + "(" + string.Join(", ", args.ToArray()) + ");");
+                    else
+                    {
+                        sb.AppendLine(Indent(indent) + methodName + "();");
+                    }
                 }
                 break;
             }
@@ -700,13 +698,13 @@ public class BE2_CodeExporter : MonoBehaviour
         sb.AppendLine("using UnityEngine;");
         sb.AppendLine("public class " + className + " : MonoBehaviour");
         sb.AppendLine("{");
-        sb.AppendLine("    public void " + methodName + "()");
-        sb.AppendLine("    {");
-        // 먼저 로컬 함수들(사용자 정의 함수)을 선언
+        // 사용자 정의 함수들을 클래스 스코프에 먼저 선언
         if (_functionsSb != null && _functionsSb.Length > 0)
         {
             sb.Append(_functionsSb.ToString());
         }
+        sb.AppendLine("    public void " + methodName + "()");
+        sb.AppendLine("    {");
         var lines = code.Replace("\r\n", "\n").Split('\n');
         for (int i = 0; i < lines.Length; i++)
         {
@@ -818,15 +816,31 @@ public class BE2_CodeExporter : MonoBehaviour
         var layout = def.Block != null ? def.Block.Layout : null;
         var header = (layout != null && layout.SectionsArray != null && layout.SectionsArray.Length > 0) ? layout.SectionsArray[0].Header : null;
 
-        System.Collections.Generic.List<string> paramNames = new System.Collections.Generic.List<string>();
         _currentLocalVarMap = new System.Collections.Generic.Dictionary<string, string>();
+        bool hasParam = false;
+        bool preferTextName = false;
         if (header != null)
         {
+            // 규칙: 헤더 자식 중 이름이 "Template Define Op Local Variable(Clone)" 인 오브젝트 존재 여부로 파라미터 유무 판단
+            var paramTransform = FindChildDeep(header.RectTransform, "Template Define Op Local Variable(Clone)");
+            if (paramTransform != null)
+            {
+                hasParam = true;
+                var t = paramTransform.GetComponentInChildren<TMPro.TMP_Text>();
+                if (t != null && !string.IsNullOrEmpty(t.text))
+                {
+                    // 해당 텍스트에 'text'가 포함되면 파라미터명을 text 로 설정
+                    if (t.text.IndexOf("text", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                        preferTextName = true;
+                }
+            }
+
+            // 모든 로컬 변수명을 단일 파라미터명으로 매핑
             header.UpdateItemsArray();
             var items = header.ItemsArray;
-            if (items != null)
+            if (items != null && hasParam)
             {
-                int idx = 1;
+                string singleParam = preferTextName ? "text" : "input";
                 for (int i = 0; i < items.Length; i++)
                 {
                     var item = items[i];
@@ -834,14 +848,11 @@ public class BE2_CodeExporter : MonoBehaviour
                     var isLabel = item.Transform.GetComponentInChildren<MG_BlocksEngine2.UI.FunctionBlock.Label>() != null;
                     if (!isLabel)
                     {
-                        string param = SanitizeVarName("input" + idx.ToString());
-                        paramNames.Add(param);
-                        idx++;
                         var t = item.Transform.GetComponentInChildren<TMPro.TMP_Text>();
                         if (t != null && !string.IsNullOrEmpty(t.text))
                         {
                             if (!_currentLocalVarMap.ContainsKey(t.text))
-                                _currentLocalVarMap.Add(t.text, param);
+                                _currentLocalVarMap.Add(t.text, singleParam);
                         }
                     }
                 }
@@ -850,18 +861,33 @@ public class BE2_CodeExporter : MonoBehaviour
 
         string methodName = BuildFunctionName(def);
         _inFunctionBody = true;
-        _functionsSb.AppendLine("        void " + methodName + "(" + string.Join(", ", paramNames.ConvertAll(n => "object " + n).ToArray()) + ")");
-        _functionsSb.AppendLine("        {");
+        string paramDecl = hasParam ? ("object " + (preferTextName ? "text" : "input")) : string.Empty;
+        _functionsSb.AppendLine("    public void " + methodName + "(" + paramDecl + ")");
+        _functionsSb.AppendLine("    {");
         string body = GenerateSectionBody(def.Block, 0, 3);
         if (!string.IsNullOrEmpty(body))
         {
             _functionsSb.Append(body);
         }
-        _functionsSb.AppendLine("        }");
+        _functionsSb.AppendLine("    }");
         _inFunctionBody = false;
         _currentLocalVarMap = null;
 
         _generatedFunctionIds.Add(def.defineID);
+    }
+
+    // 깊이 우선으로 자식 Transform를 이름으로 탐색
+    Transform FindChildDeep(Transform root, string targetName)
+    {
+        if (root == null || string.IsNullOrEmpty(targetName)) return null;
+        if (root.name == targetName) return root;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            var child = root.GetChild(i);
+            var found = FindChildDeep(child, targetName);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     public bool ImportLastGeneratedToEnv(MG_BlocksEngine2.Environment.BE2_ProgrammingEnv targetEnv = null)

@@ -22,3 +22,27 @@
   </OuterArea>
 </Block>
 #
+<Block>
+  <blockName>Block Ins DefineFunction</blockName>
+  <position>(252.71, -364.83, 0.00)</position>
+  <varManagerName></varManagerName>
+  <varName />
+  <defineID>b</defineID>
+  <isLocalVar />
+  <defineItems>
+    <Item>
+      <type>label</type>
+      <value>b</value>
+    </Item>
+  </defineItems>
+  <sections>
+    <Section>
+      <childBlocks />
+      <inputs />
+    </Section>
+  </sections>
+  <OuterArea>
+    <childBlocks />
+  </OuterArea>
+</Block>
+#
