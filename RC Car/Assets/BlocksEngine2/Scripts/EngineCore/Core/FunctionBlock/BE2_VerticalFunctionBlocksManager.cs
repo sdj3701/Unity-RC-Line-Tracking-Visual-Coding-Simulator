@@ -59,6 +59,14 @@ namespace MG_BlocksEngine2.Environment
 
             BE2_BlockUtils.UnloadPrefab();
 
+            // Set defineID using label items (user-entered text), joined by '_'
+            string builtId = BuildDefineIdFromItems(items);
+            if (!string.IsNullOrEmpty(builtId))
+            {
+                defineBlockIns.defineID = builtId;
+                defineBlockIns.onDefineChange?.Invoke();
+            }
+
             CreateSelectionFunction(items, defineBlockIns);
 
         }
@@ -96,6 +104,35 @@ namespace MG_BlocksEngine2.Environment
             selectionFunctionBlock.GetComponent<BE2_DragSelectionFunction>().defineFunctionInstruction = defineBlockIns;
 
             functionBlocksPanel.gameObject.SetActive(panelIsActive);
+        }
+
+        string BuildDefineIdFromItems(List<Serializer.DefineItem> items)
+        {
+            if (items == null) return string.Empty;
+            var labelParts = new List<string>();
+            foreach (var it in items)
+            {
+                if (it != null && it.type == "label" && !string.IsNullOrEmpty(it.value))
+                {
+                    labelParts.Add(SanitizeName(it.value));
+                }
+            }
+            if (labelParts.Count == 0) return string.Empty;
+            return string.Join("_", labelParts.ToArray());
+        }
+
+        string SanitizeName(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return string.Empty;
+            var sb = new System.Text.StringBuilder();
+            if (!(char.IsLetter(raw[0]) || raw[0] == '_')) sb.Append('_');
+            for (int i = 0; i < raw.Length; i++)
+            {
+                char ch = raw[i];
+                if (char.IsLetterOrDigit(ch) || ch == '_') sb.Append(ch);
+                else sb.Append('_');
+            }
+            return sb.ToString();
         }
     }
 }

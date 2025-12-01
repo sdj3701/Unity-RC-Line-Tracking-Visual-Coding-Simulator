@@ -6,16 +6,27 @@ using MG_BlocksEngine2.Environment;
 using MG_BlocksEngine2.Block;
 using MG_BlocksEngine2.Block.Instruction;
 using MG_BlocksEngine2.Serializer;
+using TMPro;
 
 public class BE2_CodeExporter : MonoBehaviour
 {
     // 변수 선언 여부를 추적하기 위한 집합 (중복 선언 방지)
     System.Collections.Generic.HashSet<string> _declaredVars = new System.Collections.Generic.HashSet<string>();
+    // 함수 정의 중복 생성을 방지하고, Run() 상단에 삽입할 로컬 함수 버퍼를 관리
+    System.Collections.Generic.HashSet<string> _generatedFunctionIds = new System.Collections.Generic.HashSet<string>();
+    StringBuilder _functionsSb = new StringBuilder();
+    // 함수 본문 내 로컬 변수명 -> 파라미터명 매핑 컨텍스트
+    System.Collections.Generic.Dictionary<string, string> _currentLocalVarMap;
+    bool _inFunctionBody = false;
     public string LastSavedPath;
     public string GenerateCSharpFromAllEnvs()
     {
         var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
         var sb = new StringBuilder();
+        // Export 상태 초기화
+        _declaredVars.Clear();
+        _generatedFunctionIds.Clear();
+        _functionsSb = new StringBuilder();
         for (int i = 0; i < envs.Length; i++)
         {
             var env = envs[i];
@@ -26,6 +37,12 @@ public class BE2_CodeExporter : MonoBehaviour
             {
                 var block = blocks[b];
                 if (block == null) continue;
+                // 함수 정의 블록은 로컬 함수로 미리 생성하고, 본문에는 출력하지 않음
+                if (block.Instruction is BE2_Ins_DefineFunction defIns)
+                {
+                    EnsureFunctionGenerated(defIns);
+                    continue;
+                }
                 sb.Append(GenerateForBlock(block, 0));
             }
         }
@@ -172,6 +189,58 @@ public class BE2_CodeExporter : MonoBehaviour
         var sb = new StringBuilder();
         switch (type)
         {
+            case nameof(BE2_Ins_DefineFunction):
+            {
+                // 함수 정의는 Run() 내부 로컬 함수로 생성되고, 호출 위치에는 아무 것도 출력하지 않음
+                EnsureFunctionGenerated((BE2_Ins_DefineFunction)ins);
+                break;
+            }
+            case nameof(BE2_Ins_FunctionBlock):
+            {
+                // 함수 호출 블록: 대응되는 로컬 함수를 호출
+                var callIns = (BE2_Ins_FunctionBlock)ins;
+                var def = callIns != null ? callIns.defineInstruction : null;
+                if (def != null)
+                {
+                    EnsureFunctionGenerated(def);
+                    string methodName = BuildFunctionName(def);
+                    var inputs = baseIns.Section0Inputs;
+                    System.Collections.Generic.List<string> args = new System.Collections.Generic.List<string>();
+                    if (inputs != null)
+                    {
+                        for (int i = 0; i < inputs.Length; i++)
+                        {
+                            string expr = BuildValueExpression(inputs[i]);
+                            args.Add(expr);
+                        }
+                    }
+                    sb.AppendLine(Indent(indent) + methodName + "(" + string.Join(", ", args.ToArray()) + ");");
+                }
+                break;
+            }
+            case nameof(BE2_Ins_ReferenceFunctionBlock):
+            {
+                var refIns = (BE2_Ins_ReferenceFunctionBlock)ins;
+                var func = refIns != null ? refIns.functionInstruction : null;
+                var def = func != null ? func.defineInstruction : null;
+                if (def != null)
+                {
+                    EnsureFunctionGenerated(def);
+                    string methodName = BuildFunctionName(def);
+                    var inputs = baseIns.Section0Inputs;
+                    System.Collections.Generic.List<string> args = new System.Collections.Generic.List<string>();
+                    if (inputs != null)
+                    {
+                        for (int i = 0; i < inputs.Length; i++)
+                        {
+                            string expr = BuildValueExpression(inputs[i]);
+                            args.Add(expr);
+                        }
+                    }
+                    sb.AppendLine(Indent(indent) + methodName + "(" + string.Join(", ", args.ToArray()) + ");");
+                }
+                break;
+            }
             case nameof(BE2_Ins_MoveForward):
             {
                 // 이동 블록: 입력값이 블록(변수/연산)일 수 있으므로 표현식으로 변환
@@ -470,6 +539,19 @@ public class BE2_CodeExporter : MonoBehaviour
         var typeName = opBlock.Instruction.GetType().Name;
         switch (typeName)
         {
+            case nameof(BE2_Op_FunctionLocalVariable):
+            {
+                // 함수 로컬 변수 참조를 파라미터명으로 매핑
+                string v = "";
+                var text = opBlock.Transform.GetComponentInChildren<TMP_Text>();
+                if (text != null) v = text.text;
+                if (_inFunctionBody && _currentLocalVarMap != null && !string.IsNullOrEmpty(v) && _currentLocalVarMap.TryGetValue(v, out var paramName))
+                {
+                    return "System.Convert.ToSingle(" + paramName + ")";
+                }
+                // 매핑이 없으면 빈 문자열
+                return string.Empty;
+            }
             case nameof(BE2_Op_Variable):
             {
                 // 변수 참조 블록: 변수명을 C# 식별자로 변환하여 사용
@@ -610,7 +692,7 @@ public class BE2_CodeExporter : MonoBehaviour
     public bool SaveScriptToAssets(string relativeAssetPath = "Assets/Generated/BlocksGenerated.cs", string className = "BlocksGenerated", string methodName = "Run")
     {
         string code = GenerateCSharpFromAllEnvs();
-        if (string.IsNullOrEmpty(code)) return false;
+        if (string.IsNullOrEmpty(code) && (_functionsSb == null || _functionsSb.Length == 0)) return false;
         string xml = GenerateXmlFromAllEnvs();
         var sb = new StringBuilder();
         sb.AppendLine("using System;");
@@ -620,6 +702,11 @@ public class BE2_CodeExporter : MonoBehaviour
         sb.AppendLine("{");
         sb.AppendLine("    public void " + methodName + "()");
         sb.AppendLine("    {");
+        // 먼저 로컬 함수들(사용자 정의 함수)을 선언
+        if (_functionsSb != null && _functionsSb.Length > 0)
+        {
+            sb.Append(_functionsSb.ToString());
+        }
         var lines = code.Replace("\r\n", "\n").Split('\n');
         for (int i = 0; i < lines.Length; i++)
         {
@@ -683,6 +770,98 @@ public class BE2_CodeExporter : MonoBehaviour
         }
 #endif
         return true;
+    }
+
+    // Helper methods for user-defined Function Blocks
+    string BuildFunctionName(BE2_Ins_DefineFunction def)
+    {
+        if (def == null) return "Func_";
+        var layout = def.Block != null ? def.Block.Layout : null;
+        var header = (layout != null && layout.SectionsArray != null && layout.SectionsArray.Length > 0) ? layout.SectionsArray[0].Header : null;
+        System.Collections.Generic.List<string> labelParts = new System.Collections.Generic.List<string>();
+        if (header != null)
+        {
+            header.UpdateItemsArray();
+            var items = header.ItemsArray;
+            if (items != null)
+            {
+                for (int i = 0; i < items.Length; i++)
+                {
+                    var item = items[i];
+                    if (item == null) continue;
+                    // 라벨 여부 판단: Label 컴포넌트 존재 시 라벨로 간주
+                    var isLabel = item.Transform.GetComponentInChildren<MG_BlocksEngine2.UI.FunctionBlock.Label>() != null;
+                    if (isLabel)
+                    {
+                        var t = item.Transform.GetComponentInChildren<TMPro.TMP_Text>();
+                        if (t != null && !string.IsNullOrEmpty(t.text))
+                        {
+                            labelParts.Add(SanitizeVarName(t.text));
+                        }
+                    }
+                }
+            }
+        }
+        if (labelParts.Count > 0)
+        {
+            return string.Join("_", labelParts.ToArray());
+        }
+        string id = string.IsNullOrEmpty(def.defineID) ? Guid.NewGuid().ToString("N") : def.defineID.Replace("-", "");
+        return id;
+    }
+
+    void EnsureFunctionGenerated(BE2_Ins_DefineFunction def)
+    {
+        if (def == null) return;
+        if (_generatedFunctionIds.Contains(def.defineID)) return;
+
+        var layout = def.Block != null ? def.Block.Layout : null;
+        var header = (layout != null && layout.SectionsArray != null && layout.SectionsArray.Length > 0) ? layout.SectionsArray[0].Header : null;
+
+        System.Collections.Generic.List<string> paramNames = new System.Collections.Generic.List<string>();
+        _currentLocalVarMap = new System.Collections.Generic.Dictionary<string, string>();
+        if (header != null)
+        {
+            header.UpdateItemsArray();
+            var items = header.ItemsArray;
+            if (items != null)
+            {
+                int idx = 1;
+                for (int i = 0; i < items.Length; i++)
+                {
+                    var item = items[i];
+                    if (item == null) continue;
+                    var isLabel = item.Transform.GetComponentInChildren<MG_BlocksEngine2.UI.FunctionBlock.Label>() != null;
+                    if (!isLabel)
+                    {
+                        string param = SanitizeVarName("input" + idx.ToString());
+                        paramNames.Add(param);
+                        idx++;
+                        var t = item.Transform.GetComponentInChildren<TMPro.TMP_Text>();
+                        if (t != null && !string.IsNullOrEmpty(t.text))
+                        {
+                            if (!_currentLocalVarMap.ContainsKey(t.text))
+                                _currentLocalVarMap.Add(t.text, param);
+                        }
+                    }
+                }
+            }
+        }
+
+        string methodName = BuildFunctionName(def);
+        _inFunctionBody = true;
+        _functionsSb.AppendLine("        void " + methodName + "(" + string.Join(", ", paramNames.ConvertAll(n => "object " + n).ToArray()) + ")");
+        _functionsSb.AppendLine("        {");
+        string body = GenerateSectionBody(def.Block, 0, 3);
+        if (!string.IsNullOrEmpty(body))
+        {
+            _functionsSb.Append(body);
+        }
+        _functionsSb.AppendLine("        }");
+        _inFunctionBody = false;
+        _currentLocalVarMap = null;
+
+        _generatedFunctionIds.Add(def.defineID);
     }
 
     public bool ImportLastGeneratedToEnv(MG_BlocksEngine2.Environment.BE2_ProgrammingEnv targetEnv = null)
