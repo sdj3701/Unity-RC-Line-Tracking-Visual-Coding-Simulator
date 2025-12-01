@@ -818,29 +818,78 @@ public class BE2_CodeExporter : MonoBehaviour
 
         _currentLocalVarMap = new System.Collections.Generic.Dictionary<string, string>();
         bool hasParam = false;
-        bool preferTextName = false;
+        string enteredParamNameRaw = null;
         if (header != null)
         {
-            // 규칙: 헤더 자식 중 이름이 "Template Define Op Local Variable(Clone)" 인 오브젝트 존재 여부로 파라미터 유무 판단
-            var paramTransform = FindChildDeep(header.RectTransform, "Template Define Op Local Variable(Clone)");
-            if (paramTransform != null)
+            // 1) 특정 템플릿 이름으로 파라미터 오브젝트 탐색
+            Transform paramTransform = FindChildDeep(header.RectTransform, "Template Define Op Local Variable(Clone)");
+            if (paramTransform == null)
             {
-                hasParam = true;
-                var t = paramTransform.GetComponentInChildren<TMPro.TMP_Text>();
-                if (t != null && !string.IsNullOrEmpty(t.text))
+                paramTransform = FindChildDeep(header.RectTransform, "Template Define Local Variable(Clone)");
+                if (paramTransform != null)
                 {
-                    // 해당 텍스트에 'text'가 포함되면 파라미터명을 text 로 설정
-                    if (t.text.IndexOf("text", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                        preferTextName = true;
+                    Debug.Log("[BE2_CodeExporter] Param object found (alt name): 'Template Define Local Variable(Clone)'");
+                }
+            }
+            // 2) fallback: 이름에 'Local Variable' 문자열이 포함된 하위 오브젝트 검색
+            if (paramTransform == null)
+            {
+                Transform ScanForLocalVar(Transform r)
+                {
+                    if (r == null) return null;
+                    if (!string.IsNullOrEmpty(r.name) && r.name.IndexOf("Local Variable", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                        return r;
+                    for (int i = 0; i < r.childCount; i++)
+                    {
+                        var got = ScanForLocalVar(r.GetChild(i));
+                        if (got != null) return got;
+                    }
+                    return null;
+                }
+                paramTransform = ScanForLocalVar(header.RectTransform);
+                if (paramTransform != null)
+                {
+                    Debug.Log("[BE2_CodeExporter] Fallback param object found: " + paramTransform.name);
+                }
+                else
+                {
+                    Debug.Log("[BE2_CodeExporter] Param object NOT found under header. Listing direct children:");
+                    for (int i = 0; i < header.RectTransform.childCount; i++)
+                    {
+                        var ch = header.RectTransform.GetChild(i);
+                        Debug.Log("[BE2_CodeExporter]  - child: " + ch.name);
+                    }
                 }
             }
 
-            // 모든 로컬 변수명을 단일 파라미터명으로 매핑
+            // 3) 파라미터명 후보 결정
+            if (paramTransform != null)
+            {
+                hasParam = true;
+                string detected = null;
+                var t = paramTransform.GetComponentInChildren<TMPro.TMP_Text>();
+                if (t != null && !string.IsNullOrEmpty(t.text))
+                {
+                    detected = t.text;
+                }
+                else
+                {
+                    var inputField = paramTransform.GetComponentInChildren<TMPro.TMP_InputField>();
+                    if (inputField != null && !string.IsNullOrEmpty(inputField.text))
+                        detected = inputField.text;
+                }
+                if (!string.IsNullOrEmpty(detected))
+                {
+                    enteredParamNameRaw = detected;
+                }
+            }
+
+            // 4) 아이템 텍스트 기반 보정 및 맵핑
             header.UpdateItemsArray();
             var items = header.ItemsArray;
-            if (items != null && hasParam)
+            if (items != null)
             {
-                string singleParam = preferTextName ? "text" : "input";
+                // 보정: 비-라벨 아이템들 텍스트에도 'text'가 있으면 preferTextName true
                 for (int i = 0; i < items.Length; i++)
                 {
                     var item = items[i];
@@ -848,20 +897,63 @@ public class BE2_CodeExporter : MonoBehaviour
                     var isLabel = item.Transform.GetComponentInChildren<MG_BlocksEngine2.UI.FunctionBlock.Label>() != null;
                     if (!isLabel)
                     {
-                        var t = item.Transform.GetComponentInChildren<TMPro.TMP_Text>();
-                        if (t != null && !string.IsNullOrEmpty(t.text))
+                        string localText = null;
+                        var tx = item.Transform.GetComponentInChildren<TMPro.TMP_Text>();
+                        if (tx != null && !string.IsNullOrEmpty(tx.text)) localText = tx.text;
+                        else
                         {
-                            if (!_currentLocalVarMap.ContainsKey(t.text))
-                                _currentLocalVarMap.Add(t.text, singleParam);
+                            var inputField = item.Transform.GetComponentInChildren<TMPro.TMP_InputField>();
+                            if (inputField != null && !string.IsNullOrEmpty(inputField.text)) localText = inputField.text;
+                        }
+                        if (!string.IsNullOrEmpty(localText) && localText.IndexOf("text", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                        }
+                    }
+                }
+
+                // 맵핑: 모든 로컬 변수명을 단일 파라미터(text|input)로 매핑
+                if (hasParam)
+                {
+                    string singleParam = !string.IsNullOrEmpty(enteredParamNameRaw) ? SanitizeIdentifier(enteredParamNameRaw) : "input";
+                    for (int i = 0; i < items.Length; i++)
+                    {
+                        var item = items[i];
+                        if (item == null) continue;
+                        var isLabel = item.Transform.GetComponentInChildren<MG_BlocksEngine2.UI.FunctionBlock.Label>() != null;
+                        if (!isLabel)
+                        {
+                            string localName = null;
+                            var tx = item.Transform.GetComponentInChildren<TMPro.TMP_Text>();
+                            if (tx != null && !string.IsNullOrEmpty(tx.text))
+                            {
+                                localName = tx.text;
+                            }
+                            else
+                            {
+                                var inputField = item.Transform.GetComponentInChildren<TMPro.TMP_InputField>();
+                                if (inputField != null && !string.IsNullOrEmpty(inputField.text))
+                                    localName = inputField.text;
+                            }
+                            if (!string.IsNullOrEmpty(localName))
+                            {
+                                if (!_currentLocalVarMap.ContainsKey(localName))
+                                    _currentLocalVarMap.Add(localName, singleParam);
+                            }
                         }
                     }
                 }
             }
         }
+        else
+        {
+            Debug.Log("[BE2_CodeExporter] Header is null. Cannot detect params.");
+        }
 
         string methodName = BuildFunctionName(def);
         _inFunctionBody = true;
-        string paramDecl = hasParam ? ("object " + (preferTextName ? "text" : "input")) : string.Empty;
+        string finalParamName = !string.IsNullOrEmpty(enteredParamNameRaw) ? SanitizeIdentifier(enteredParamNameRaw) : "input";
+        string paramDecl = hasParam ? ("object " + finalParamName) : string.Empty;
+        Debug.Log($"[BE2_CodeExporter] Final function '{methodName}' paramDecl: '{paramDecl}' (hasParam={hasParam})");
         _functionsSb.AppendLine("    public void " + methodName + "(" + paramDecl + ")");
         _functionsSb.AppendLine("    {");
         string body = GenerateSectionBody(def.Block, 0, 3);
@@ -888,6 +980,20 @@ public class BE2_CodeExporter : MonoBehaviour
             if (found != null) return found;
         }
         return null;
+    }
+
+    string SanitizeIdentifier(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return "input";
+        var sbId = new System.Text.StringBuilder(s.Length);
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            if (char.IsLetterOrDigit(c) || c == '_') sbId.Append(c);
+        }
+        if (sbId.Length == 0) return "input";
+        if (char.IsDigit(sbId[0])) sbId.Insert(0, '_');
+        return sbId.ToString();
     }
 
     public bool ImportLastGeneratedToEnv(MG_BlocksEngine2.Environment.BE2_ProgrammingEnv targetEnv = null)

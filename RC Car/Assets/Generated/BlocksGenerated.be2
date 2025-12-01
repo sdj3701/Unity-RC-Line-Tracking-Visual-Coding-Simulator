@@ -10,35 +10,45 @@
       <type>label</type>
       <value>a</value>
     </Item>
-  </defineItems>
-  <sections>
-    <Section>
-      <childBlocks />
-      <inputs />
-    </Section>
-  </sections>
-  <OuterArea>
-    <childBlocks />
-  </OuterArea>
-</Block>
-#
-<Block>
-  <blockName>Block Ins DefineFunction</blockName>
-  <position>(252.71, -364.83, 0.00)</position>
-  <varManagerName></varManagerName>
-  <varName />
-  <defineID>b</defineID>
-  <isLocalVar />
-  <defineItems>
     <Item>
-      <type>label</type>
-      <value>b</value>
+      <type>variable</type>
+      <value>a</value>
     </Item>
   </defineItems>
   <sections>
     <Section>
       <childBlocks />
-      <inputs />
+      <inputs>
+        <Input>
+          <isOperation>true</isOperation>
+          <value></value>
+          <operation>
+            <Block>
+              <blockName>Template Define Op Local Variable(Clone)</blockName>
+              <position>(-15.08, 30.00, 0.00)</position>
+              <varManagerName></varManagerName>
+              <varName>a</varName>
+              <defineID />
+              <isLocalVar>true</isLocalVar>
+              <defineItems />
+              <sections>
+                <Section>
+                  <childBlocks />
+                  <inputs>
+                    <Input>
+                      <isOperation>false</isOperation>
+                      <value>LocalVar0</value>
+                    </Input>
+                  </inputs>
+                </Section>
+              </sections>
+              <OuterArea>
+                <childBlocks />
+              </OuterArea>
+            </Block>
+          </operation>
+        </Input>
+      </inputs>
     </Section>
   </sections>
   <OuterArea>
