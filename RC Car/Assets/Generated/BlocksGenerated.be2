@@ -3,52 +3,138 @@
   <position>(300.00, -100.00, 0.00)</position>
   <varManagerName></varManagerName>
   <varName />
-  <defineID>a</defineID>
+  <defineID>Speed</defineID>
   <isLocalVar />
   <defineItems>
     <Item>
       <type>label</type>
-      <value>a</value>
-    </Item>
-    <Item>
-      <type>variable</type>
-      <value>a</value>
+      <value>Speed</value>
     </Item>
   </defineItems>
   <sections>
     <Section>
-      <childBlocks />
-      <inputs>
-        <Input>
-          <isOperation>true</isOperation>
-          <value></value>
-          <operation>
-            <Block>
-              <blockName>Template Define Op Local Variable(Clone)</blockName>
-              <position>(-15.08, 30.00, 0.00)</position>
-              <varManagerName></varManagerName>
-              <varName>a</varName>
-              <defineID />
-              <isLocalVar>true</isLocalVar>
-              <defineItems />
-              <sections>
-                <Section>
-                  <childBlocks />
-                  <inputs>
-                    <Input>
-                      <isOperation>false</isOperation>
-                      <value>LocalVar0</value>
-                    </Input>
-                  </inputs>
-                </Section>
-              </sections>
-              <OuterArea>
-                <childBlocks />
-              </OuterArea>
-            </Block>
-          </operation>
-        </Input>
-      </inputs>
+      <childBlocks>
+        <Block>
+          <blockName>Block Ins SetVariable</blockName>
+          <position>(0.00, 10.00, 0.00)</position>
+          <varManagerName></varManagerName>
+          <varName />
+          <defineID />
+          <isLocalVar />
+          <defineItems />
+          <sections>
+            <Section>
+              <childBlocks />
+              <inputs>
+                <Input>
+                  <isOperation>false</isOperation>
+                  <value>stop</value>
+                </Input>
+                <Input>
+                  <isOperation>false</isOperation>
+                  <value>0</value>
+                </Input>
+              </inputs>
+            </Section>
+          </sections>
+          <OuterArea>
+            <childBlocks />
+          </OuterArea>
+        </Block>
+        <Block>
+          <blockName>Block Ins SetVariable</blockName>
+          <position>(0.00, -60.00, 0.00)</position>
+          <varManagerName></varManagerName>
+          <varName />
+          <defineID />
+          <isLocalVar />
+          <defineItems />
+          <sections>
+            <Section>
+              <childBlocks />
+              <inputs>
+                <Input>
+                  <isOperation>false</isOperation>
+                  <value>go</value>
+                </Input>
+                <Input>
+                  <isOperation>false</isOperation>
+                  <value>200</value>
+                </Input>
+              </inputs>
+            </Section>
+          </sections>
+          <OuterArea>
+            <childBlocks />
+          </OuterArea>
+        </Block>
+        <Block>
+          <blockName>Block Ins SetVariable</blockName>
+          <position>(0.00, -130.00, 0.00)</position>
+          <varManagerName></varManagerName>
+          <varName />
+          <defineID />
+          <isLocalVar />
+          <defineItems />
+          <sections>
+            <Section>
+              <childBlocks />
+              <inputs>
+                <Input>
+                  <isOperation>false</isOperation>
+                  <value>turn</value>
+                </Input>
+                <Input>
+                  <isOperation>false</isOperation>
+                  <value>150</value>
+                </Input>
+              </inputs>
+            </Section>
+          </sections>
+          <OuterArea>
+            <childBlocks />
+          </OuterArea>
+        </Block>
+      </childBlocks>
+      <inputs />
+    </Section>
+  </sections>
+  <OuterArea>
+    <childBlocks />
+  </OuterArea>
+</Block>
+#
+<Block>
+  <blockName>Block Ins WhenPlayClicked</blockName>
+  <position>(323.54, -547.22, 0.00)</position>
+  <varManagerName></varManagerName>
+  <varName />
+  <defineID />
+  <isLocalVar />
+  <defineItems />
+  <sections>
+    <Section>
+      <childBlocks>
+        <Block>
+          <blockName>Block Ins FunctionBlock</blockName>
+          <position>(0.00, 10.00, 0.00)</position>
+          <varManagerName></varManagerName>
+          <varName />
+          <defineID>Speed</defineID>
+          <isLocalVar />
+          <defineItems />
+          <sections>
+            <Section>
+              <childBlocks />
+              <inputs />
+            </Section>
+          </sections>
+          <OuterArea>
+            <childBlocks />
+          </OuterArea>
+        </Block>
+      </childBlocks>
+      <inputs />
     </Section>
   </sections>
   <OuterArea>
