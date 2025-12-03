@@ -1,25 +1,25 @@
 <Block>
   <blockName>Block Ins DefineFunction</blockName>
-  <position>(300.00, -100.00, 0.00)</position>
+  <position>(146.30, -511.43, 0.00)</position>
   <varManagerName></varManagerName>
   <varName />
-  <defineID>c</defineID>
+  <defineID>rc</defineID>
   <isLocalVar />
   <defineItems>
     <Item>
       <type>label</type>
-      <value>c</value>
+      <value>rc</value>
     </Item>
     <Item>
       <type>variable</type>
-      <value>c</value>
+      <value>speed</value>
     </Item>
   </defineItems>
   <sections>
     <Section>
       <childBlocks>
         <Block>
-          <blockName>Block Ins SetVariable</blockName>
+          <blockName>Block Cst Block_pWM</blockName>
           <position>(0.00, 10.00, 0.00)</position>
           <varManagerName></varManagerName>
           <varName />
@@ -31,20 +31,16 @@
               <childBlocks />
               <inputs>
                 <Input>
-                  <isOperation>false</isOperation>
-                  <value>Variable</value>
-                </Input>
-                <Input>
                   <isOperation>true</isOperation>
-                  <value></value>
+                  <value>6</value>
                   <operation>
                     <Block>
-                      <blockName>Block Op FunctionLocalVariable</blockName>
-                      <position>(44.23, 30.00, 0.00)</position>
-                      <varManagerName></varManagerName>
-                      <varName>c</varName>
+                      <blockName>Block Op Variable</blockName>
+                      <position>(-190.44, 30.00, 0.00)</position>
+                      <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
+                      <varName>right_back</varName>
                       <defineID />
-                      <isLocalVar>true</isLocalVar>
+                      <isLocalVar />
                       <defineItems />
                       <sections>
                         <Section>
@@ -52,7 +48,36 @@
                           <inputs>
                             <Input>
                               <isOperation>false</isOperation>
-                              <value>c</value>
+                              <value>right_back</value>
+                            </Input>
+                          </inputs>
+                        </Section>
+                      </sections>
+                      <OuterArea>
+                        <childBlocks />
+                      </OuterArea>
+                    </Block>
+                  </operation>
+                </Input>
+                <Input>
+                  <isOperation>true</isOperation>
+                  <value>0</value>
+                  <operation>
+                    <Block>
+                      <blockName>Block Op Variable</blockName>
+                      <position>(64.86, 30.00, 0.00)</position>
+                      <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
+                      <varName>stop</varName>
+                      <defineID />
+                      <isLocalVar />
+                      <defineItems />
+                      <sections>
+                        <Section>
+                          <childBlocks />
+                          <inputs>
+                            <Input>
+                              <isOperation>false</isOperation>
+                              <value>stop</value>
                             </Input>
                           </inputs>
                         </Section>
@@ -78,9 +103,9 @@
           <operation>
             <Block>
               <blockName>Template Define Op Local Variable(Clone)</blockName>
-              <position>(-15.81, 30.00, 0.00)</position>
+              <position>(-11.59, 30.00, 0.00)</position>
               <varManagerName></varManagerName>
-              <varName>c</varName>
+              <varName>speed</varName>
               <defineID />
               <isLocalVar>true</isLocalVar>
               <defineItems />
@@ -106,6 +131,62 @@
   </sections>
   <OuterArea>
     <childBlocks />
+  </OuterArea>
+</Block>
+#
+<Block>
+  <blockName>Block Ins SetVariable</blockName>
+  <position>(169.84, -268.23, 0.00)</position>
+  <varManagerName></varManagerName>
+  <varName />
+  <defineID />
+  <isLocalVar />
+  <defineItems />
+  <sections>
+    <Section>
+      <childBlocks />
+      <inputs>
+        <Input>
+          <isOperation>false</isOperation>
+          <value>stop</value>
+        </Input>
+        <Input>
+          <isOperation>false</isOperation>
+          <value>0</value>
+        </Input>
+      </inputs>
+    </Section>
+  </sections>
+  <OuterArea>
+    <childBlocks>
+      <Block>
+        <blockName>Block Ins SetVariable</blockName>
+        <position>(0.00, 10.00, 0.00)</position>
+        <varManagerName></varManagerName>
+        <varName />
+        <defineID />
+        <isLocalVar />
+        <defineItems />
+        <sections>
+          <Section>
+            <childBlocks />
+            <inputs>
+              <Input>
+                <isOperation>false</isOperation>
+                <value>right_back</value>
+              </Input>
+              <Input>
+                <isOperation>false</isOperation>
+                <value>6</value>
+              </Input>
+            </inputs>
+          </Section>
+        </sections>
+        <OuterArea>
+          <childBlocks />
+        </OuterArea>
+      </Block>
+    </childBlocks>
   </OuterArea>
 </Block>
 #

@@ -24,6 +24,20 @@ public class BE2_Cst_Block_pWM : BE2_InstructionBase, I_BE2_Instruction
         // --- the input values can be retrieved as .StringValue, .FloatValue or .InputValues 
         // Section0Inputs[inputIndex];
 
+        int pin = 0;
+        int value = 0;
+        if (Section0Inputs != null && Section0Inputs.Length > 0)
+        {
+            pin = Mathf.RoundToInt(Section0Inputs[0].FloatValue);
+        }
+        if (Section0Inputs != null && Section0Inputs.Length > 1)
+        {
+            value = Mathf.RoundToInt(Section0Inputs[1].FloatValue);
+        }
+        value = Mathf.Clamp(value, 0, 255);
+
+        Debug.Log($"analogWrite({pin}, {value})");
+
         // ### Stack Pointer Calls ###
         
         // --- execute first block inside the indicated section, used to execute blocks inside this block (ex. if, if/else, repeat)

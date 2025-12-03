@@ -19,6 +19,7 @@ public class BE2_CodeExporter : MonoBehaviour
     System.Collections.Generic.Dictionary<string, string> _currentLocalVarMap;
     bool _inFunctionBody = false;
     string _currentFunctionParamName = null;
+    bool _needsAnalogWrite = false;
     public string LastSavedPath;
     public string GenerateCSharpFromAllEnvs()
     {
@@ -28,6 +29,7 @@ public class BE2_CodeExporter : MonoBehaviour
         _declaredVars.Clear();
         _generatedFunctionIds.Clear();
         _functionsSb = new StringBuilder();
+        _needsAnalogWrite = false;
         for (int i = 0; i < envs.Length; i++)
         {
             var env = envs[i];
@@ -254,7 +256,7 @@ public class BE2_CodeExporter : MonoBehaviour
                 var inputs = baseIns.Section0Inputs;
                 string dirExpr = inputs != null && inputs.Length > 0 ? BuildValueExpression(inputs[0]) : QuoteString("");
                 string dirVar = "__dir" + indent;
-                sb.AppendLine(Indent(indent) + "var " + dirVar + " = " + dirExpr + ";");
+                sb.AppendLine(Indent(indent) + "object " + dirVar + " = " + dirExpr + ";");
                 sb.AppendLine(Indent(indent) + "if (" + dirVar + " == \"Left\")");
                 sb.AppendLine(Indent(indent) + "{");
                 sb.AppendLine(Indent(indent + 1) + "transform.Rotate(Vector3.up, -90);");
@@ -263,6 +265,15 @@ public class BE2_CodeExporter : MonoBehaviour
                 sb.AppendLine(Indent(indent) + "{");
                 sb.AppendLine(Indent(indent + 1) + "transform.Rotate(Vector3.up, 90);");
                 sb.AppendLine(Indent(indent) + "}");
+                break;
+            }
+            case nameof(BE2_Cst_Block_pWM):
+            {
+                var inputs = baseIns.Section0Inputs;
+                string pinExpr = inputs != null && inputs.Length > 0 ? BuildValueExpression(inputs[0]) : "0";
+                string valExpr = inputs != null && inputs.Length > 1 ? BuildValueExpression(inputs[1]) : "0";
+                sb.AppendLine(Indent(indent) + "analogWrite(" + pinExpr + ", " + valExpr + ");");
+                _needsAnalogWrite = true;
                 break;
             }
             case nameof(BE2_Ins_Wait):
@@ -333,7 +344,7 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             case nameof(BE2_Ins_SetVariable):
             {
-                // 변수 설정 블록: var 선언 후 대입 (최초 1회 선언)
+                // 변수 설정 블록: object 선언 후 대입 (최초 1회 선언)
                 var inputs = baseIns.Section0Inputs;
                 if (inputs != null && inputs.Length >= 2)
                 {
@@ -341,7 +352,7 @@ public class BE2_CodeExporter : MonoBehaviour
                     string valueExpr = BuildValueExpression(inputs[1]);
                     if (!_declaredVars.Contains(varName))
                     {
-                        sb.AppendLine(Indent(indent) + "var " + varName + " = " + valueExpr + ";");
+                        sb.AppendLine(Indent(indent) + "object " + varName + " = " + valueExpr + ";");
                         _declaredVars.Add(varName);
                     }
                     else
@@ -742,6 +753,15 @@ public class BE2_CodeExporter : MonoBehaviour
         if (_functionsSb != null && _functionsSb.Length > 0)
         {
             sb.Append(_functionsSb.ToString());
+        }
+        if (_needsAnalogWrite)
+        {
+            sb.AppendLine("    public void analogWrite(object pin, object value)");
+            sb.AppendLine("    {");
+            sb.AppendLine("        int p = pin;");
+            sb.AppendLine("        int v = value;");
+            sb.AppendLine("        v = Mathf.Clamp(v, 0, 255);");
+            sb.AppendLine("    }");
         }
         sb.AppendLine("    public void " + methodName + "()");
         sb.AppendLine("    {");
