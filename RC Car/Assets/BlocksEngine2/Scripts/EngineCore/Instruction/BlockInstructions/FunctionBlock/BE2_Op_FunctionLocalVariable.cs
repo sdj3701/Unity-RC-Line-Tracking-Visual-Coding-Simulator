@@ -7,7 +7,7 @@ namespace MG_BlocksEngine2.Block.Instruction
     {
         public BE2_Ins_DefineFunction defineInstruction;
         public BE2_Block blockToObserve;
-        TMP_Text _text;
+        public TMP_Text _text;
 
         protected override void OnAwake()
         {

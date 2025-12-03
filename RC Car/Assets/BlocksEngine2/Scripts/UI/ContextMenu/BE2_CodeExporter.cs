@@ -18,6 +18,7 @@ public class BE2_CodeExporter : MonoBehaviour
     // 함수 본문 내 로컬 변수명 -> 파라미터명 매핑 컨텍스트
     System.Collections.Generic.Dictionary<string, string> _currentLocalVarMap;
     bool _inFunctionBody = false;
+    string _currentFunctionParamName = null;
     public string LastSavedPath;
     public string GenerateCSharpFromAllEnvs()
     {
@@ -446,6 +447,19 @@ public class BE2_CodeExporter : MonoBehaviour
             string op = GenerateOperationExpression(block);
             if (!string.IsNullOrEmpty(op)) return op;
         }
+        else
+        {
+            var comp = input as Component;
+            if (comp != null)
+            {
+                var attachedBlock = comp.transform.GetComponent<I_BE2_Block>();
+                if (attachedBlock != null)
+                {
+                    string op2 = GenerateOperationExpression(attachedBlock);
+                    if (!string.IsNullOrEmpty(op2)) return op2;
+                }
+            }
+        }
         // 블록이 없으면 현재 입력값을 그대로 사용
         var vals = input.InputValues;
         if (vals.isText)
@@ -522,6 +536,19 @@ public class BE2_CodeExporter : MonoBehaviour
             string expr = GenerateOperationExpression(block);
             if (!string.IsNullOrEmpty(expr)) return expr;
         }
+        else
+        {
+            var comp = input as Component;
+            if (comp != null)
+            {
+                var attachedBlock = comp.transform.GetComponent<I_BE2_Block>();
+                if (attachedBlock != null)
+                {
+                    string expr2 = GenerateOperationExpression(attachedBlock);
+                    if (!string.IsNullOrEmpty(expr2)) return expr2;
+                }
+            }
+        }
         // 숫자/문자열 입력을 bool로 간주: "1"/true만 참
         var vals = input.InputValues;
         if (vals.isText)
@@ -541,11 +568,24 @@ public class BE2_CodeExporter : MonoBehaviour
             {
                 // 함수 로컬 변수 참조를 파라미터명으로 매핑
                 string v = "";
-                var text = opBlock.Transform.GetComponentInChildren<TMP_Text>();
+                TMP_Text text = null;
+                var flv = opBlock.Instruction as BE2_Op_FunctionLocalVariable;
+                if (flv != null && flv._text != null)
+                {
+                    text = flv._text;
+                }
+                else
+                {
+                    text = opBlock.Transform.GetComponentInChildren<TMP_Text>();
+                }
                 if (text != null) v = text.text;
                 if (_inFunctionBody && _currentLocalVarMap != null && !string.IsNullOrEmpty(v) && _currentLocalVarMap.TryGetValue(v, out var paramName))
                 {
-                    return "System.Convert.ToSingle(" + paramName + ")";
+                    return paramName;
+                }
+                if (_inFunctionBody && !string.IsNullOrEmpty(_currentFunctionParamName))
+                {
+                    return _currentFunctionParamName;
                 }
                 // 매핑이 없으면 빈 문자열
                 return string.Empty;
@@ -953,6 +993,7 @@ public class BE2_CodeExporter : MonoBehaviour
         _inFunctionBody = true;
         string finalParamName = !string.IsNullOrEmpty(enteredParamNameRaw) ? SanitizeIdentifier(enteredParamNameRaw) : "input";
         string paramDecl = hasParam ? ("object " + finalParamName) : string.Empty;
+        _currentFunctionParamName = hasParam ? finalParamName : null;
         Debug.Log($"[BE2_CodeExporter] Final function '{methodName}' paramDecl: '{paramDecl}' (hasParam={hasParam})");
         _functionsSb.AppendLine("    public void " + methodName + "(" + paramDecl + ")");
         _functionsSb.AppendLine("    {");
@@ -964,6 +1005,7 @@ public class BE2_CodeExporter : MonoBehaviour
         _functionsSb.AppendLine("    }");
         _inFunctionBody = false;
         _currentLocalVarMap = null;
+        _currentFunctionParamName = null;
 
         _generatedFunctionIds.Add(def.defineID);
     }

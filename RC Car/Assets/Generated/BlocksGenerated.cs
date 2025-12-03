@@ -3,15 +3,12 @@ using System.Collections;
 using UnityEngine;
 public class BlocksGenerated : MonoBehaviour
 {
-    public void Speed()
+    public void c(object c)
     {
-            var stop = 0f;
-            var go = 200f;
-            var turn = 150f;
+            var Variable = c;
     }
     public void Run()
     {
-        Speed();
 
     }
 }
