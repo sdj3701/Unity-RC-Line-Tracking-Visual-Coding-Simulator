@@ -20,6 +20,9 @@ public class BE2_CodeExporter : MonoBehaviour
     bool _inFunctionBody = false;
     string _currentFunctionParamName = null;
     bool _needsAnalogWrite = false;
+    System.Collections.Generic.HashSet<string> _classFieldVars = new System.Collections.Generic.HashSet<string>();
+    StringBuilder _classFieldsSb = new StringBuilder();
+    System.Collections.Generic.HashSet<string> _functionDeclaredVars;
     public string LastSavedPath;
     public string GenerateCSharpFromAllEnvs()
     {
@@ -30,6 +33,9 @@ public class BE2_CodeExporter : MonoBehaviour
         _generatedFunctionIds.Clear();
         _functionsSb = new StringBuilder();
         _needsAnalogWrite = false;
+        _classFieldVars.Clear();
+        _classFieldsSb = new StringBuilder();
+        _functionDeclaredVars = null;
         for (int i = 0; i < envs.Length; i++)
         {
             var env = envs[i];
@@ -46,7 +52,8 @@ public class BE2_CodeExporter : MonoBehaviour
                     EnsureFunctionGenerated(defIns);
                     continue;
                 }
-                sb.Append(GenerateForBlock(block, 0));
+                bool isPlayRoot = block.Instruction is BE2_Ins_WhenPlayClicked;
+                sb.Append(GenerateForBlock(block, 0, isPlayRoot));
             }
         }
         return sb.ToString();
@@ -183,7 +190,7 @@ public class BE2_CodeExporter : MonoBehaviour
         return sb.ToString();
     }
 
-    string GenerateForBlock(I_BE2_Block block, int indent)
+    string GenerateForBlock(I_BE2_Block block, int indent, bool isInWhenPlay)
     {
         var ins = block.Instruction;
         if (ins == null) return string.Empty;
@@ -290,9 +297,10 @@ public class BE2_CodeExporter : MonoBehaviour
                 var inputs = baseIns.Section0Inputs;
                 string countExpr = inputs != null && inputs.Length > 0 ? BuildValueExpression(inputs[0]) : "0";
                 string loopVar = "i" + indent.ToString();
-                sb.AppendLine(Indent(indent) + "for (int " + loopVar + " = 0; " + loopVar + " < (int)(" + countExpr + "); " + loopVar + "++)");
+                sb.AppendLine(Indent(indent) + "for (int " + loopVar + " = 0; " + loopVar + " < (int)(" + countExpr + "); " + loopVar + ")");
                 sb.AppendLine(Indent(indent) + "{");
-                sb.Append(GenerateSectionBody(block, 0, indent + 1));
+                sb.Append(GenerateSectionBody(block, 0, indent + 1, isInWhenPlay));
+                // 무한 루프는 주의해서 사용하세요.
                 sb.AppendLine(Indent(indent) + "}");
                 break;
             }
@@ -300,7 +308,7 @@ public class BE2_CodeExporter : MonoBehaviour
             {
                 sb.AppendLine(Indent(indent) + "while (true)");
                 sb.AppendLine(Indent(indent) + "{");
-                sb.Append(GenerateSectionBody(block, 0, indent + 1));
+                sb.Append(GenerateSectionBody(block, 0, indent + 1, isInWhenPlay));
                 // 무한 루프는 주의해서 사용하세요.
                 sb.AppendLine(Indent(indent) + "}");
                 break;
@@ -312,7 +320,7 @@ public class BE2_CodeExporter : MonoBehaviour
                 string condExpr = inputs != null && inputs.Length > 0 ? BuildBooleanExpression(inputs[0]) : "false";
                 sb.AppendLine(Indent(indent) + "while (!(" + condExpr + "))");
                 sb.AppendLine(Indent(indent) + "{");
-                sb.Append(GenerateSectionBody(block, 0, indent + 1));
+                sb.Append(GenerateSectionBody(block, 0, indent + 1, isInWhenPlay));
                 sb.AppendLine(Indent(indent) + "}");
                 break;
             }
@@ -323,7 +331,7 @@ public class BE2_CodeExporter : MonoBehaviour
                 string condExpr = inputs != null && inputs.Length > 0 ? BuildBooleanExpression(inputs[0]) : "false";
                 sb.AppendLine(Indent(indent) + "if (" + condExpr + ")");
                 sb.AppendLine(Indent(indent) + "{");
-                sb.Append(GenerateSectionBody(block, 0, indent + 1));
+                sb.Append(GenerateSectionBody(block, 0, indent + 1, isInWhenPlay));
                 sb.AppendLine(Indent(indent) + "}");
                 break;
             }
@@ -334,11 +342,11 @@ public class BE2_CodeExporter : MonoBehaviour
                 string condExpr = inputs != null && inputs.Length > 0 ? BuildBooleanExpression(inputs[0]) : "false";
                 sb.AppendLine(Indent(indent) + "if (" + condExpr + ")");
                 sb.AppendLine(Indent(indent) + "{");
-                sb.Append(GenerateSectionBody(block, 0, indent + 1));
+                sb.Append(GenerateSectionBody(block, 0, indent + 1, isInWhenPlay));
                 sb.AppendLine(Indent(indent) + "}");
                 sb.AppendLine(Indent(indent) + "else");
                 sb.AppendLine(Indent(indent) + "{");
-                sb.Append(GenerateSectionBody(block, 1, indent + 1));
+                sb.Append(GenerateSectionBody(block, 1, indent + 1, isInWhenPlay));
                 sb.AppendLine(Indent(indent) + "}");
                 break;
             }
@@ -350,14 +358,47 @@ public class BE2_CodeExporter : MonoBehaviour
                 {
                     string varName = SanitizeVarName(inputs[0].StringValue);
                     string valueExpr = BuildValueExpression(inputs[1]);
-                    if (!_declaredVars.Contains(varName))
+                    if (_inFunctionBody)
                     {
-                        sb.AppendLine(Indent(indent) + "object " + varName + " = " + valueExpr + ";");
-                        _declaredVars.Add(varName);
+                        if (_functionDeclaredVars == null) _functionDeclaredVars = new System.Collections.Generic.HashSet<string>();
+                        if (!_functionDeclaredVars.Contains(varName))
+                        {
+                            sb.AppendLine(Indent(indent) + "object " + varName + " = " + valueExpr + ";");
+                            _functionDeclaredVars.Add(varName);
+                        }
+                        else
+                        {
+                            sb.AppendLine(Indent(indent) + varName + " = " + valueExpr + ";");
+                        }
                     }
                     else
                     {
-                        sb.AppendLine(Indent(indent) + varName + " = " + valueExpr + ";");
+                        if (!isInWhenPlay)
+                        {
+                            if (!_classFieldVars.Contains(varName))
+                            {
+                                _classFieldsSb.AppendLine("    object " + varName + ";");
+                                _classFieldVars.Add(varName);
+                            }
+                            sb.AppendLine(Indent(indent) + varName + " = " + valueExpr + ";");
+                            _declaredVars.Add(varName);
+                        }
+                        else
+                        {
+                            if (_classFieldVars.Contains(varName))
+                            {
+                                sb.AppendLine(Indent(indent) + varName + " = " + valueExpr + ";");
+                            }
+                            else if (!_declaredVars.Contains(varName))
+                            {
+                                sb.AppendLine(Indent(indent) + "object " + varName + " = " + valueExpr + ";");
+                                _declaredVars.Add(varName);
+                            }
+                            else
+                            {
+                                sb.AppendLine(Indent(indent) + varName + " = " + valueExpr + ";");
+                            }
+                        }
                     }
                 }
                 break;
@@ -370,15 +411,47 @@ public class BE2_CodeExporter : MonoBehaviour
                 {
                     string varName = SanitizeVarName(inputs[0].StringValue);
                     string addExpr = BuildValueExpression(inputs[1]);
-                    if (!_declaredVars.Contains(varName))
+                    if (_inFunctionBody)
                     {
-                        // 선언이 안되어 있으면 기본값으로 초기화 후 연산
-                        sb.AppendLine(Indent(indent) + "var " + varName + " = " + addExpr + ";");
-                        _declaredVars.Add(varName);
+                        if (_functionDeclaredVars == null) _functionDeclaredVars = new System.Collections.Generic.HashSet<string>();
+                        if (!_functionDeclaredVars.Contains(varName))
+                        {
+                            sb.AppendLine(Indent(indent) + "var " + varName + " = " + addExpr + ";");
+                            _functionDeclaredVars.Add(varName);
+                        }
+                        else
+                        {
+                            sb.AppendLine(Indent(indent) + varName + " = " + varName + " + (" + addExpr + ");");
+                        }
                     }
                     else
                     {
-                        sb.AppendLine(Indent(indent) + varName + " = " + varName + " + (" + addExpr + ");");
+                        if (!isInWhenPlay)
+                        {
+                            if (!_classFieldVars.Contains(varName))
+                            {
+                                _classFieldsSb.AppendLine("    object " + varName + ";");
+                                _classFieldVars.Add(varName);
+                                sb.AppendLine(Indent(indent) + varName + " = " + addExpr + ";");
+                            }
+                            else
+                            {
+                                sb.AppendLine(Indent(indent) + varName + " = " + varName + " + (" + addExpr + ");");
+                            }
+                        }
+                        else if (_classFieldVars.Contains(varName))
+                        {
+                            sb.AppendLine(Indent(indent) + varName + " = " + varName + " + (" + addExpr + ");");
+                        }
+                        else if (!_declaredVars.Contains(varName))
+                        {
+                            sb.AppendLine(Indent(indent) + "var " + varName + " = " + addExpr + ";");
+                            _declaredVars.Add(varName);
+                        }
+                        else
+                        {
+                            sb.AppendLine(Indent(indent) + varName + " = " + varName + " + (" + addExpr + ");");
+                        }
                     }
                 }
                 break;
@@ -395,27 +468,27 @@ public class BE2_CodeExporter : MonoBehaviour
                     {
                         sb.AppendLine(Indent(indent) + "if (" + condExpr + ")");
                         sb.AppendLine(Indent(indent) + "{");
-                        sb.Append(GenerateSectionBody(block, 0, indent + 1));
+                        sb.Append(GenerateSectionBody(block, 0, indent + 1, isInWhenPlay));
                         sb.AppendLine(Indent(indent) + "}");
                         if (sectionCount >= 2)
                         {
                             sb.AppendLine(Indent(indent) + "else");
                             sb.AppendLine(Indent(indent) + "{");
-                            sb.Append(GenerateSectionBody(block, 1, indent + 1));
+                            sb.Append(GenerateSectionBody(block, 1, indent + 1, isInWhenPlay));
                             sb.AppendLine(Indent(indent) + "}");
                         }
                         break;
                     }
                 }
                 // 기본: 자식 순차 블록 생성
-                sb.Append(GenerateSequentialChildren(block, indent));
+                sb.Append(GenerateSequentialChildren(block, indent, isInWhenPlay));
                 break;
             }
         }
         return sb.ToString();
     }
 
-    string GenerateSequentialChildren(I_BE2_Block block, int indent)
+    string GenerateSequentialChildren(I_BE2_Block block, int indent, bool isInWhenPlay)
     {
         var layout = block.Layout;
         if (layout == null || layout.SectionsArray == null) return string.Empty;
@@ -440,7 +513,7 @@ public class BE2_CodeExporter : MonoBehaviour
                         continue;
                     }
                 }
-                sb.Append(GenerateForBlock(child, indent));
+                sb.Append(GenerateForBlock(child, indent, isInWhenPlay));
             }
         }
         return sb.ToString();
@@ -718,7 +791,7 @@ public class BE2_CodeExporter : MonoBehaviour
         return name;
     }
 
-    string GenerateSectionBody(I_BE2_Block block, int sectionIndex, int indent)
+    string GenerateSectionBody(I_BE2_Block block, int sectionIndex, int indent, bool isInWhenPlay)
     {
         var layout = block.Layout;
         if (layout == null || layout.SectionsArray == null) return string.Empty;
@@ -732,7 +805,7 @@ public class BE2_CodeExporter : MonoBehaviour
         {
             for (int i = 0; i < children.Length; i++)
             {
-                sb.Append(GenerateForBlock(children[i], indent));
+                sb.Append(GenerateForBlock(children[i], indent, isInWhenPlay));
             }
         }
         return sb.ToString();
@@ -749,6 +822,10 @@ public class BE2_CodeExporter : MonoBehaviour
         sb.AppendLine("using UnityEngine;");
         sb.AppendLine("public class " + className + " : MonoBehaviour");
         sb.AppendLine("{");
+        if (_classFieldsSb != null && _classFieldsSb.Length > 0)
+        {
+            sb.Append(_classFieldsSb.ToString());
+        }
         // 사용자 정의 함수들을 클래스 스코프에 먼저 선언
         if (_functionsSb != null && _functionsSb.Length > 0)
         {
@@ -1017,7 +1094,8 @@ public class BE2_CodeExporter : MonoBehaviour
         Debug.Log($"[BE2_CodeExporter] Final function '{methodName}' paramDecl: '{paramDecl}' (hasParam={hasParam})");
         _functionsSb.AppendLine("    public void " + methodName + "(" + paramDecl + ")");
         _functionsSb.AppendLine("    {");
-        string body = GenerateSectionBody(def.Block, 0, 3);
+        _functionDeclaredVars = new System.Collections.Generic.HashSet<string>();
+        string body = GenerateSectionBody(def.Block, 0, 3, false);
         if (!string.IsNullOrEmpty(body))
         {
             _functionsSb.Append(body);
@@ -1026,6 +1104,7 @@ public class BE2_CodeExporter : MonoBehaviour
         _inFunctionBody = false;
         _currentLocalVarMap = null;
         _currentFunctionParamName = null;
+        _functionDeclaredVars = null;
 
         _generatedFunctionIds.Add(def.defineID);
     }
