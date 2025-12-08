@@ -31,6 +31,9 @@ public class RCCar : MonoBehaviour
             
         But_Start.onClick.AddListener(() => stopped = false);
         But_Stop.onClick.AddListener(() => stopped = true);
+        
+        // 내가 만든 블록으로 오브젝트 제어
+        controller.Start();
     }
 
     void Update()
@@ -40,8 +43,7 @@ public class RCCar : MonoBehaviour
         {
             SensorCheck();
 
-            // 내가 만든 블록으로 오브젝트 제어
-            controller.Run();
+            
 
             // 라인 탐지 센서 0 = a,1 = d
             if (s0Black)

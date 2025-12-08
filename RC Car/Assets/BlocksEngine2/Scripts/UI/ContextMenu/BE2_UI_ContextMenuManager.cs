@@ -79,13 +79,13 @@ namespace MG_BlocksEngine2.UI
             }
 
             string relativeAssetPath = "Assets/Generated/BlocksGenerated.cs";
-            bool success = exporter.SaveScriptToAssets(relativeAssetPath, "BlocksGenerated", "Run");
+            bool success = exporter.SaveScriptToAssets(relativeAssetPath, "BlocksGenerated", "Start");
 
             string savedPath = exporter != null ? exporter.LastSavedPath : relativeAssetPath;
 
             if (created && exporter != null)
             {
-                DestroyImmediate(exporter.gameObject);
+                DestroyImmediate(exporter.gameObject);  
             }
 
             if (success)

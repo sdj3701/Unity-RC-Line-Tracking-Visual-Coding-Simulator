@@ -20,6 +20,7 @@ public class BE2_CodeExporter : MonoBehaviour
     bool _inFunctionBody = false;
     string _currentFunctionParamName = null;
     bool _needsAnalogWrite = false;
+    bool _needsDigitalRead = false;
     System.Collections.Generic.HashSet<string> _classFieldVars = new System.Collections.Generic.HashSet<string>();
     StringBuilder _classFieldsSb = new StringBuilder();
     System.Collections.Generic.HashSet<string> _functionDeclaredVars;
@@ -33,6 +34,7 @@ public class BE2_CodeExporter : MonoBehaviour
         _generatedFunctionIds.Clear();
         _functionsSb = new StringBuilder();
         _needsAnalogWrite = false;
+        _needsDigitalRead = false;
         _classFieldVars.Clear();
         _classFieldsSb = new StringBuilder();
         _functionDeclaredVars = null;
@@ -767,6 +769,14 @@ public class BE2_CodeExporter : MonoBehaviour
                 var idx = BuildValueExpression(baseIns.Section0Inputs[0]);
                 return "MG_BlocksEngine2.UI.BE2_VirtualJoystick.instance.keys[(int)(" + idx + ")].isPressed";
             }
+            case nameof(BE2_Cst_Block_Read):
+            {
+                var pinExpr = (baseIns != null && baseIns.Section0Inputs != null && baseIns.Section0Inputs.Length > 0)
+                    ? BuildValueExpression(baseIns.Section0Inputs[0])
+                    : "0";
+                _needsDigitalRead = true;
+                return "digitalRead(" + pinExpr + ")";
+            }
             default:
             {
                 return string.Empty;
@@ -811,7 +821,7 @@ public class BE2_CodeExporter : MonoBehaviour
         return sb.ToString();
     }
 
-    public bool SaveScriptToAssets(string relativeAssetPath = "Assets/Generated/BlocksGenerated.cs", string className = "BlocksGenerated", string methodName = "Run")
+    public bool SaveScriptToAssets(string relativeAssetPath = "Assets/Generated/BlocksGenerated.cs", string className = "BlocksGenerated", string methodName = "Start")
     {
         string code = GenerateCSharpFromAllEnvs();
         if (string.IsNullOrEmpty(code) && (_functionsSb == null || _functionsSb.Length == 0)) return false;
@@ -838,6 +848,14 @@ public class BE2_CodeExporter : MonoBehaviour
             sb.AppendLine("        int p = pin;");
             sb.AppendLine("        int v = value;");
             sb.AppendLine("        v = Mathf.Clamp(v, 0, 255);");
+            sb.AppendLine("    }");
+        }
+        if (_needsDigitalRead)
+        {
+            sb.AppendLine("    public bool digitalRead(object pin)");
+            sb.AppendLine("    {");
+            sb.AppendLine("        int p = pin;");
+            sb.AppendLine("        return false;");
             sb.AppendLine("    }");
         }
         sb.AppendLine("    public void " + methodName + "()");
