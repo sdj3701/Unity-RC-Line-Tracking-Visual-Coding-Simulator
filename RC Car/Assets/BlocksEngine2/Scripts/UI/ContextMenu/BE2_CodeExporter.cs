@@ -379,11 +379,14 @@ public class BE2_CodeExporter : MonoBehaviour
                         {
                             if (!_classFieldVars.Contains(varName))
                             {
-                                _classFieldsSb.AppendLine("    object " + varName + ";");
+                                _classFieldsSb.AppendLine("    object " + varName + " = " + valueExpr + ";");
                                 _classFieldVars.Add(varName);
+                                _declaredVars.Add(varName);
                             }
-                            sb.AppendLine(Indent(indent) + varName + " = " + valueExpr + ";");
-                            _declaredVars.Add(varName);
+                            else
+                            {
+                                // 이미 클래스 필드로 선언된 경우, Start 내 재할당은 하지 않음 (필드 초기값 유지)
+                            }
                         }
                         else
                         {
@@ -432,13 +435,12 @@ public class BE2_CodeExporter : MonoBehaviour
                         {
                             if (!_classFieldVars.Contains(varName))
                             {
-                                _classFieldsSb.AppendLine("    object " + varName + ";");
+                                _classFieldsSb.AppendLine("    object " + varName + " = " + addExpr + ";");
                                 _classFieldVars.Add(varName);
-                                sb.AppendLine(Indent(indent) + varName + " = " + addExpr + ";");
                             }
                             else
                             {
-                                sb.AppendLine(Indent(indent) + varName + " = " + varName + " + (" + addExpr + ");");
+                                // 이미 클래스 필드로 선언된 경우, Start 내 재할당은 하지 않음 (필드 초기값 유지)
                             }
                         }
                         else if (_classFieldVars.Contains(varName))
@@ -845,8 +847,8 @@ public class BE2_CodeExporter : MonoBehaviour
         {
             sb.AppendLine("    public void analogWrite(object pin, object value)");
             sb.AppendLine("    {");
-            sb.AppendLine("        int p = pin;");
-            sb.AppendLine("        int v = value;");
+            sb.AppendLine("        object p = pin;");
+            sb.AppendLine("        object v = value;");
             sb.AppendLine("        v = Mathf.Clamp(v, 0, 255);");
             sb.AppendLine("    }");
         }
@@ -854,7 +856,7 @@ public class BE2_CodeExporter : MonoBehaviour
         {
             sb.AppendLine("    public bool digitalRead(object pin)");
             sb.AppendLine("    {");
-            sb.AppendLine("        int p = pin;");
+            sb.AppendLine("        object p = pin;");
             sb.AppendLine("        return false;");
             sb.AppendLine("    }");
         }
