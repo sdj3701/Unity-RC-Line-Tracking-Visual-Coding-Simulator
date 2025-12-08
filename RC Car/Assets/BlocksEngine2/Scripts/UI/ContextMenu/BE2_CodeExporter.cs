@@ -21,6 +21,7 @@ public class BE2_CodeExporter : MonoBehaviour
     string _currentFunctionParamName = null;
     bool _needsAnalogWrite = false;
     bool _needsDigitalRead = false;
+    System.Collections.Generic.HashSet<string> _digitalReadPinExprs = new System.Collections.Generic.HashSet<string>();
     System.Collections.Generic.HashSet<string> _classFieldVars = new System.Collections.Generic.HashSet<string>();
     StringBuilder _classFieldsSb = new StringBuilder();
     System.Collections.Generic.HashSet<string> _functionDeclaredVars;
@@ -35,6 +36,7 @@ public class BE2_CodeExporter : MonoBehaviour
         _functionsSb = new StringBuilder();
         _needsAnalogWrite = false;
         _needsDigitalRead = false;
+        _digitalReadPinExprs.Clear();
         _classFieldVars.Clear();
         _classFieldsSb = new StringBuilder();
         _functionDeclaredVars = null;
@@ -777,6 +779,7 @@ public class BE2_CodeExporter : MonoBehaviour
                     ? BuildValueExpression(baseIns.Section0Inputs[0])
                     : "0";
                 _needsDigitalRead = true;
+                if (_digitalReadPinExprs != null) _digitalReadPinExprs.Add(pinExpr);
                 return "digitalRead(" + pinExpr + ")";
             }
             default:
@@ -843,6 +846,10 @@ public class BE2_CodeExporter : MonoBehaviour
         {
             sb.Append(_functionsSb.ToString());
         }
+        if (_needsDigitalRead)
+        {
+            sb.AppendLine("    System.Collections.Generic.Dictionary<int, bool> __digitalInputs = new System.Collections.Generic.Dictionary<int, bool>();");
+        }
         if (_needsAnalogWrite)
         {
             sb.AppendLine("    public void analogWrite(object pin, object value)");
@@ -856,12 +863,21 @@ public class BE2_CodeExporter : MonoBehaviour
         {
             sb.AppendLine("    public bool digitalRead(object pin)");
             sb.AppendLine("    {");
-            sb.AppendLine("        object p = pin;");
+            sb.AppendLine("        int p = (pin is int ip) ? ip : Convert.ToInt32(pin);");
+            sb.AppendLine("        bool v;");
+            sb.AppendLine("        if (__digitalInputs != null && __digitalInputs.TryGetValue(p, out v)) return v;");
             sb.AppendLine("        return false;");
             sb.AppendLine("    }");
         }
         sb.AppendLine("    public void " + methodName + "()");
         sb.AppendLine("    {");
+        if (_needsDigitalRead && _digitalReadPinExprs != null && _digitalReadPinExprs.Count > 0)
+        {
+            foreach (var __expr in _digitalReadPinExprs)
+            {
+                sb.AppendLine("        __digitalInputs[Convert.ToInt32(" + __expr + ")] = true;");
+            }
+        }
         var lines = code.Replace("\r\n", "\n").Split('\n');
         for (int i = 0; i < lines.Length; i++)
         {
