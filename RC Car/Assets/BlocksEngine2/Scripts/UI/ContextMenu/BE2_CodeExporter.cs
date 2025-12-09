@@ -508,7 +508,7 @@ public class BE2_CodeExporter : MonoBehaviour
         }
     }
 
-    public bool SaveXmlToAssets(string relativeAssetPath = "Assets/Generated/BlocksGenerated.be2")
+    public bool LoadXmlToAssets(string relativeAssetPath = "Assets/Generated/BlocksGenerated.be2")
     {
         // Repurposed: load existing XML and instantiate blocks into an available Env
         bool isPlayMode = Application.isPlaying;
