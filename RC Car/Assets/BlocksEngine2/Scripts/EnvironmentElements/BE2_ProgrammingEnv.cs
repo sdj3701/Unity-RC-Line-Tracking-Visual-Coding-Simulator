@@ -147,33 +147,9 @@ namespace MG_BlocksEngine2.Environment
             BE2_UI_ContextMenuManager.instance.CodeGenerated();
         }
 
-        public void SaveXMLButton()
+        public void LoadXMLButton()
         {
-            var exporter = GameObject.FindObjectOfType<BE2_CodeExporter>();
-            bool created = false;
-            if (exporter == null)
-            {
-                var go = new GameObject("BE2_CodeExporter_Auto");
-                exporter = go.AddComponent<BE2_CodeExporter>();
-                created = true;
-            }
-
-            string relativeAssetPath = "Assets/Generated/BlocksGenerated.be2";
-            bool success = exporter.SaveXmlToAssets(this, relativeAssetPath);
-
-            if (created && exporter != null)
-            {
-                DestroyImmediate(exporter.gameObject);
-            }
-
-            if (success)
-            {
-                Debug.Log("Blocks XML generated for this env.");
-            }
-            else
-            {
-                Debug.LogWarning("Blocks XML generation failed or no blocks found in this env.");
-            }
+            BE2_UI_ContextMenuManager.instance.XMLCodeGenerated();
         }
     }
 }

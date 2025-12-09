@@ -114,6 +114,7 @@ namespace MG_BlocksEngine2.UI
 
             string relativeAssetPath = "Assets/Generated/BlocksGenerated.be2";
             bool success = exporter.SaveXmlToAssets(relativeAssetPath);
+            Debug.Log($"XML export result: {success}");
 
             string savedPath = exporter != null ? exporter.LastSavedPath : relativeAssetPath;
 
