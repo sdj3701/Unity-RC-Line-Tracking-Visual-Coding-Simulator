@@ -837,7 +837,7 @@ public class BE2_CodeExporter : MonoBehaviour
             sb.AppendLine("    {");
             sb.AppendLine("        object p = pin;");
             sb.AppendLine("        object v = value;");
-            sb.AppendLine("        v = Mathf.Clamp(v, 0, 255);");
+            sb.AppendLine("        v = Mathf.Clamp(Convert.ToInt32(v), 0, 255);");
             sb.AppendLine("    }");
         }
         if (_needsDigitalRead)
