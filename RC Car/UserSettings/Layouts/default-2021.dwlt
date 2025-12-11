@@ -14,12 +14,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_PixelRect:
     serializedVersion: 2
-    x: -2560
-    y: 45
+    x: 0
+    y: 43
     width: 2560
     height: 1349
   m_ShowMode: 4
-  m_Title: Project
+  m_Title: Hierarchy
   m_RootView: {fileID: 9}
   m_MinSize: {x: 875, y: 450}
   m_MaxSize: {x: 10000, y: 10000}
@@ -39,12 +39,12 @@ MonoBehaviour:
   m_Children: []
   m_Position:
     serializedVersion: 2
-    x: 1495
+    x: 1492
     y: 0
     width: 488
     height: 1299
-  m_MinSize: {x: 202, y: 221}
-  m_MaxSize: {x: 4002, y: 4021}
+  m_MinSize: {x: 200, y: 200}
+  m_MaxSize: {x: 4000, y: 4000}
   m_ActualView: {fileID: 20}
   m_Panes:
   - {fileID: 20}
@@ -65,9 +65,9 @@ MonoBehaviour:
   m_Children: []
   m_Position:
     serializedVersion: 2
-    x: 1983
+    x: 1980
     y: 0
-    width: 577
+    width: 580
     height: 1299
   m_MinSize: {x: 275, y: 100}
   m_MaxSize: {x: 4000, y: 4000}
@@ -120,14 +120,14 @@ MonoBehaviour:
   - {fileID: 4}
   m_Position:
     serializedVersion: 2
-    x: 466
+    x: 463
     y: 0
     width: 1029
     height: 1299
   m_MinSize: {x: 100, y: 200}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 85
+  controlID: 28
 --- !u!114 &6
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -175,7 +175,7 @@ MonoBehaviour:
     serializedVersion: 2
     x: 0
     y: 0
-    width: 466
+    width: 463
     height: 1299
   m_MinSize: {x: 101, y: 121}
   m_MaxSize: {x: 4001, y: 4021}
@@ -210,7 +210,7 @@ MonoBehaviour:
   m_MinSize: {x: 400, y: 200}
   m_MaxSize: {x: 32384, y: 16192}
   vertical: 0
-  controlID: 145
+  controlID: 79
 --- !u!114 &9
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -1356,9 +1356,9 @@ MonoBehaviour:
     m_Tooltip: 
   m_Pos:
     serializedVersion: 2
-    x: -577
-    y: 75
-    width: 576
+    x: 1980
+    y: 73
+    width: 579
     height: 1278
   m_ViewDataDictionary: {fileID: 0}
   m_OverlayCanvas:
@@ -1467,10 +1467,10 @@ MonoBehaviour:
     m_Tooltip: 
   m_Pos:
     serializedVersion: 2
-    x: -2093
-    y: 75
+    x: 463
+    y: 73
     width: 1027
-    height: 845
+    height: 844
   m_ViewDataDictionary: {fileID: 0}
   m_OverlayCanvas:
     m_LastAppliedPresetName: Default
@@ -1519,9 +1519,9 @@ MonoBehaviour:
       x: 0
       y: 21
       width: 1027
-      height: 824
+      height: 823
     m_Scale: {x: 1, y: 1}
-    m_Translation: {x: 513.5, y: 412}
+    m_Translation: {x: 513.5, y: 411.5}
     m_MarginLeft: 0
     m_MarginRight: 0
     m_MarginTop: 0
@@ -1529,12 +1529,12 @@ MonoBehaviour:
     m_LastShownAreaInsideMargins:
       serializedVersion: 2
       x: -513.5
-      y: -412
+      y: -411.5
       width: 1027
-      height: 824
+      height: 823
     m_MinimalGUI: 1
   m_defaultScale: 1
-  m_LastWindowPixelSize: {x: 1027, y: 845}
+  m_LastWindowPixelSize: {x: 1027, y: 844}
   m_ClearInEditMode: 1
   m_NoCameraWarning: 1
   m_LowResolutionForAspectRatios: 01000000000000000000
@@ -1561,8 +1561,8 @@ MonoBehaviour:
     m_Tooltip: 
   m_Pos:
     serializedVersion: 2
-    x: -2094
-    y: 940
+    x: 463
+    y: 938
     width: 1027
     height: 413
   m_ViewDataDictionary: {fileID: 0}
@@ -1581,24 +1581,24 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 1
     m_Folders:
-    - Assets/Generated
+    - Assets/Scripts/Car
     m_Globs: []
     m_OriginalText: 
     m_FilterByTypeIntersection: 0
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Generated
+  - Assets/Scripts/Car
   m_LastFoldersGridSize: -1
   m_LastProjectPath: D:\Unity\Unity RC Line\Unity-RC-Line-Tracking-Visual-Coding-Simulator\RC
     Car
   m_LockTracker:
     m_IsLocked: 0
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 376}
-    m_SelectedIDs: fcaf0000
-    m_LastClickedID: 45052
-    m_ExpandedIDs: 00000000d4af0000d6af0000d8af0000daaf0000dcaf0000deaf0000e0af0000e2af0000e4af0000e6af0000e8af0000eaaf0000ecaf0000eeaf0000f4af000002b00000b0d50000f2d500005ee30000
+    scrollPos: {x: 0, y: 0}
+    m_SelectedIDs: 20b00000
+    m_LastClickedID: 45088
+    m_ExpandedIDs: 00000000c8af0000caaf0000ccaf0000ceaf0000d0af0000d2af0000d4af0000d6af0000d8af0000daaf0000dcaf0000deaf0000e0af0000e2af0000feaf0000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1626,7 +1626,7 @@ MonoBehaviour:
     scrollPos: {x: 0, y: 0}
     m_SelectedIDs: 
     m_LastClickedID: 0
-    m_ExpandedIDs: 00000000d4af0000d6af0000d8af0000daaf0000dcaf0000deaf0000e0af0000e2af0000e4af0000e6af0000e8af0000eaaf0000ecaf0000eeaf0000
+    m_ExpandedIDs: 00000000c8af0000caaf0000ccaf0000ceaf0000d0af0000d2af0000d4af0000d6af0000d8af0000daaf0000dcaf0000deaf0000e0af0000e2af0000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1657,15 +1657,15 @@ MonoBehaviour:
     m_ExpandedInstanceIDs: 62c20000ac70000072670000ec6b000000000000be6d0000f2570100f0630000c06d0000ac8c000044e10800e28d00009e720900de990b00
     m_RenameOverlay:
       m_UserAcceptedRename: 0
-      m_Name: RCCarSensor
-      m_OriginalName: RCCarSensor
+      m_Name: Car
+      m_OriginalName: Car
       m_EditFieldRect:
         serializedVersion: 2
         x: 0
         y: 0
         width: 0
         height: 0
-      m_UserData: 75874
+      m_UserData: 45088
       m_IsWaitingForDelay: 0
       m_IsRenaming: 0
       m_OriginalEventType: 0
@@ -1703,8 +1703,8 @@ MonoBehaviour:
     m_Tooltip: 
   m_Pos:
     serializedVersion: 2
-    x: -2094
-    y: 75
+    x: 463
+    y: 73
     width: 1027
     height: 844
   m_ViewDataDictionary: {fileID: 0}
@@ -2030,9 +2030,9 @@ MonoBehaviour:
   m_PlayAudio: 0
   m_AudioPlay: 0
   m_Position:
-    m_Target: {x: 174.18884, y: 227.3273, z: -31.434353}
+    m_Target: {x: 222.86179, y: 347.01813, z: -20.262308}
     speed: 2
-    m_Value: {x: 174.18884, y: 227.3273, z: -31.434353}
+    m_Value: {x: 222.86179, y: 347.01813, z: -20.262308}
   m_RenderMode: 0
   m_CameraMode:
     drawMode: 0
@@ -2161,8 +2161,8 @@ MonoBehaviour:
     m_Tooltip: 
   m_Pos:
     serializedVersion: 2
-    x: -1065
-    y: 75
+    x: 1492
+    y: 73
     width: 486
     height: 1278
   m_ViewDataDictionary: {fileID: 0}
@@ -2173,9 +2173,9 @@ MonoBehaviour:
   m_SceneHierarchy:
     m_TreeViewState:
       scrollPos: {x: 0, y: 0}
-      m_SelectedIDs: 84130000
+      m_SelectedIDs: 
       m_LastClickedID: 0
-      m_ExpandedIDs: 00e1ffff08e1ffff16e1ffff36fbffffee6a0000286b0000b86c0000d06c0000dc6c00001a6d000016720000667300006a74000096740000747a0000a47a0000f07b0000867d00009e8400004e870000888700005c8800006e8800008088000034890000588900005a89000092890000d8890000e8890000f2890000368a0000
+      m_ExpandedIDs: 36fbffff
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 
@@ -2220,9 +2220,9 @@ MonoBehaviour:
     m_Tooltip: 
   m_Pos:
     serializedVersion: 2
-    x: -2560
-    y: 75
-    width: 465
+    x: 0
+    y: 73
+    width: 462
     height: 1278
   m_ViewDataDictionary: {fileID: 0}
   m_OverlayCanvas:

@@ -12,6 +12,10 @@ public class BlocksGenerated : MonoBehaviour
     object pin_wheel_right_back = 11f;
     object pin_wheel_left_back = 6f;
     object pin_wheel_left_forward = 9f;
+
+    public float LeftMotor  { get; private set; }
+    public float RightMotor { get; private set; }
+
     public void Right_turn(object Speed)
     {
             analogWrite(pin_wheel_right_back, stop);
