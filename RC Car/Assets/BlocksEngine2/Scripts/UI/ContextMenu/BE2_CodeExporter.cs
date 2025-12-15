@@ -15,6 +15,7 @@ public class BE2_CodeExporter : MonoBehaviour
     // 함수 정의 중복 생성을 방지하고, Run() 상단에 삽입할 로컬 함수 버퍼를 관리
     System.Collections.Generic.HashSet<string> _generatedFunctionIds = new System.Collections.Generic.HashSet<string>();
     StringBuilder _functionsSb = new StringBuilder();
+    StringBuilder _loopSb = new StringBuilder();
     // 함수 본문 내 로컬 변수명 -> 파라미터명 매핑 컨텍스트
     System.Collections.Generic.Dictionary<string, string> _currentLocalVarMap;
     bool _inFunctionBody = false;
@@ -34,6 +35,7 @@ public class BE2_CodeExporter : MonoBehaviour
         _declaredVars.Clear();
         _generatedFunctionIds.Clear();
         _functionsSb = new StringBuilder();
+        _loopSb = new StringBuilder();
         _needsAnalogWrite = false;
         _needsDigitalRead = false;
         _digitalReadPinExprs.Clear();
@@ -231,6 +233,12 @@ public class BE2_CodeExporter : MonoBehaviour
                 string valExpr = inputs != null && inputs.Length > 1 ? BuildValueExpression(inputs[1]) : "0";
                 sb.AppendLine(Indent(indent) + "analogWrite(" + pinExpr + ", " + valExpr + ");");
                 _needsAnalogWrite = true;
+                break;
+            }
+            case nameof(BE2_Cst_Loop):
+            {
+                var body = GenerateSectionBody(block, 0, 0, true);
+                if (!string.IsNullOrEmpty(body)) _loopSb.Append(body);
                 break;
             }
             case nameof(BE2_Ins_Wait):
@@ -810,7 +818,7 @@ public class BE2_CodeExporter : MonoBehaviour
     public bool SaveScriptToAssets(string relativeAssetPath = "Assets/Generated/BlocksGenerated.cs", string className = "BlocksGenerated", string methodName = "Start")
     {
         string code = GenerateCSharpFromAllEnvs();
-        if (string.IsNullOrEmpty(code) && (_functionsSb == null || _functionsSb.Length == 0)) return false;
+        if (string.IsNullOrEmpty(code) && (_functionsSb == null || _functionsSb.Length == 0) && (_loopSb == null || _loopSb.Length == 0)) return false;
         string xml = GenerateXmlFromAllEnvs();
         var sb = new StringBuilder();
         sb.AppendLine("using System;");
@@ -818,6 +826,12 @@ public class BE2_CodeExporter : MonoBehaviour
         sb.AppendLine("using UnityEngine;");
         sb.AppendLine("public class " + className + " : MonoBehaviour");
         sb.AppendLine("{");
+        sb.AppendLine("    RCCarSensor _car;");
+        sb.AppendLine("    int _lfPwm, _lbPwm, _rfPwm, _rbPwm;");
+        sb.AppendLine("    void Awake() => _car = GetComponent<RCCarSensor>();");
+        sb.AppendLine("    public float LeftMotor  { get; private set; }");
+        sb.AppendLine("    public float RightMotor { get; private set; }");
+
         if (_classFieldsSb != null && _classFieldsSb.Length > 0)
         {
             sb.Append(_classFieldsSb.ToString());
@@ -835,9 +849,19 @@ public class BE2_CodeExporter : MonoBehaviour
         {
             sb.AppendLine("    public void analogWrite(object pin, object value)");
             sb.AppendLine("    {");
-            sb.AppendLine("        object p = pin;");
-            sb.AppendLine("        object v = value;");
-            sb.AppendLine("        v = Mathf.Clamp(Convert.ToInt32(v), 0, 255);");
+            sb.AppendLine("        int  p = Convert.ToInt32(pin);");
+            sb.AppendLine("        int  PIN_LB = Convert.ToInt32(pin_wheel_left_back);");
+            sb.AppendLine("        int  PIN_LF = Convert.ToInt32(pin_wheel_left_forward);");
+            sb.AppendLine("        int  PIN_RF = Convert.ToInt32(pin_wheel_right_forward);");
+            sb.AppendLine("        int  PIN_RB = Convert.ToInt32(pin_wheel_right_back);");
+            sb.AppendLine("        int pwm = Mathf.Clamp(Convert.ToInt32(value), 0, 255);");
+            sb.AppendLine("        if (p == PIN_LB) { _lbPwm = pwm; if (pwm > 0) _lfPwm = 0; }");
+            sb.AppendLine("        else if (p == PIN_LF) { _lfPwm = pwm; if (pwm > 0) _lbPwm = 0; }");
+            sb.AppendLine("        else if (p == PIN_RF) { _rfPwm = pwm; if (pwm > 0) _rbPwm = 0; }");
+            sb.AppendLine("        else if (p == PIN_RB) { _rbPwm = pwm; if (pwm > 0) _rfPwm = 0; }");
+            sb.AppendLine("        else { return; }");
+            sb.AppendLine("        LeftMotor  = Mathf.Clamp((_lfPwm - _lbPwm) / 255f, -1f, 1f);");
+            sb.AppendLine("        RightMotor = Mathf.Clamp((_rfPwm - _rbPwm) / 255f, -1f, 1f);");
             sb.AppendLine("    }");
         }
         if (_needsDigitalRead)
@@ -850,6 +874,7 @@ public class BE2_CodeExporter : MonoBehaviour
             sb.AppendLine("        return false;");
             sb.AppendLine("    }");
         }
+
         sb.AppendLine("    public void " + methodName + "()");
         sb.AppendLine("    {");
         if (_needsDigitalRead && _digitalReadPinExprs != null && _digitalReadPinExprs.Count > 0)
@@ -866,6 +891,20 @@ public class BE2_CodeExporter : MonoBehaviour
             sb.AppendLine("        " + lines[i]);
         }
         sb.AppendLine("    }");
+        // Generate Loop() method if BE2_Cst_Loop was present
+        if (_loopSb != null && _loopSb.Length > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("    public void Loop()");
+            sb.AppendLine("    {");
+            var loopLines = _loopSb.ToString().Replace("\r\n", "\n").Split('\n');
+            for (int i = 0; i < loopLines.Length; i++)
+            {
+                if (loopLines[i].Length == 0) { sb.AppendLine(); continue; }
+                sb.AppendLine("        " + loopLines[i]);
+            }
+            sb.AppendLine("    }");
+        }
         sb.AppendLine("}");
         string fullPath;
         bool isPlayMode = Application.isPlaying;

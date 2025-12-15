@@ -744,252 +744,8 @@
     <Section>
       <childBlocks>
         <Block>
-          <blockName>Block Ins If</blockName>
+          <blockName>Block Cst Loop</blockName>
           <position>(0.00, 10.00, 0.00)</position>
-          <varManagerName></varManagerName>
-          <varName />
-          <defineID />
-          <isLocalVar />
-          <defineItems />
-          <sections>
-            <Section>
-              <childBlocks>
-                <Block>
-                  <blockName>Block Ins FunctionBlock</blockName>
-                  <position>(20.00, 10.00, 0.00)</position>
-                  <varManagerName></varManagerName>
-                  <varName />
-                  <defineID>Right_turn</defineID>
-                  <isLocalVar />
-                  <defineItems />
-                  <sections>
-                    <Section>
-                      <childBlocks />
-                      <inputs>
-                        <Input>
-                          <isOperation>true</isOperation>
-                          <value>0</value>
-                          <operation>
-                            <Block>
-                              <blockName>Block Op Variable</blockName>
-                              <position>(-9.65, 30.00, 0.00)</position>
-                              <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
-                              <varName>trun</varName>
-                              <defineID />
-                              <isLocalVar />
-                              <defineItems />
-                              <sections>
-                                <Section>
-                                  <childBlocks />
-                                  <inputs>
-                                    <Input>
-                                      <isOperation>false</isOperation>
-                                      <value>trun</value>
-                                    </Input>
-                                  </inputs>
-                                </Section>
-                              </sections>
-                              <OuterArea>
-                                <childBlocks />
-                              </OuterArea>
-                            </Block>
-                          </operation>
-                        </Input>
-                      </inputs>
-                    </Section>
-                  </sections>
-                  <OuterArea>
-                    <childBlocks />
-                  </OuterArea>
-                </Block>
-              </childBlocks>
-              <inputs>
-                <Input>
-                  <isOperation>true</isOperation>
-                  <value></value>
-                  <operation>
-                    <Block>
-                      <blockName>Block Cst Block_Read</blockName>
-                      <position>(-180.14, 35.00, 0.00)</position>
-                      <varManagerName></varManagerName>
-                      <varName />
-                      <defineID />
-                      <isLocalVar />
-                      <defineItems />
-                      <sections>
-                        <Section>
-                          <childBlocks />
-                          <inputs>
-                            <Input>
-                              <isOperation>true</isOperation>
-                              <value>0</value>
-                              <operation>
-                                <Block>
-                                  <blockName>Block Op Variable</blockName>
-                                  <position>(3.60, 25.00, 0.00)</position>
-                                  <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
-                                  <varName>Sensor_right</varName>
-                                  <defineID />
-                                  <isLocalVar />
-                                  <defineItems />
-                                  <sections>
-                                    <Section>
-                                      <childBlocks />
-                                      <inputs>
-                                        <Input>
-                                          <isOperation>false</isOperation>
-                                          <value>Sensor_right</value>
-                                        </Input>
-                                      </inputs>
-                                    </Section>
-                                  </sections>
-                                  <OuterArea>
-                                    <childBlocks />
-                                  </OuterArea>
-                                </Block>
-                              </operation>
-                            </Input>
-                          </inputs>
-                        </Section>
-                      </sections>
-                      <OuterArea>
-                        <childBlocks />
-                      </OuterArea>
-                    </Block>
-                  </operation>
-                </Input>
-              </inputs>
-            </Section>
-          </sections>
-          <OuterArea>
-            <childBlocks />
-          </OuterArea>
-        </Block>
-        <Block>
-          <blockName>Block Ins If</blockName>
-          <position>(0.00, -200.00, 0.00)</position>
-          <varManagerName></varManagerName>
-          <varName />
-          <defineID />
-          <isLocalVar />
-          <defineItems />
-          <sections>
-            <Section>
-              <childBlocks>
-                <Block>
-                  <blockName>Block Ins FunctionBlock</blockName>
-                  <position>(20.00, 10.00, 0.00)</position>
-                  <varManagerName></varManagerName>
-                  <varName />
-                  <defineID>left_turn</defineID>
-                  <isLocalVar />
-                  <defineItems />
-                  <sections>
-                    <Section>
-                      <childBlocks />
-                      <inputs>
-                        <Input>
-                          <isOperation>true</isOperation>
-                          <value>0</value>
-                          <operation>
-                            <Block>
-                              <blockName>Block Op Variable</blockName>
-                              <position>(-22.01, 30.00, 0.00)</position>
-                              <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
-                              <varName>trun</varName>
-                              <defineID />
-                              <isLocalVar />
-                              <defineItems />
-                              <sections>
-                                <Section>
-                                  <childBlocks />
-                                  <inputs>
-                                    <Input>
-                                      <isOperation>false</isOperation>
-                                      <value>trun</value>
-                                    </Input>
-                                  </inputs>
-                                </Section>
-                              </sections>
-                              <OuterArea>
-                                <childBlocks />
-                              </OuterArea>
-                            </Block>
-                          </operation>
-                        </Input>
-                      </inputs>
-                    </Section>
-                  </sections>
-                  <OuterArea>
-                    <childBlocks />
-                  </OuterArea>
-                </Block>
-              </childBlocks>
-              <inputs>
-                <Input>
-                  <isOperation>true</isOperation>
-                  <value></value>
-                  <operation>
-                    <Block>
-                      <blockName>Block Cst Block_Read</blockName>
-                      <position>(-172.58, 35.00, 0.00)</position>
-                      <varManagerName></varManagerName>
-                      <varName />
-                      <defineID />
-                      <isLocalVar />
-                      <defineItems />
-                      <sections>
-                        <Section>
-                          <childBlocks />
-                          <inputs>
-                            <Input>
-                              <isOperation>true</isOperation>
-                              <value>0</value>
-                              <operation>
-                                <Block>
-                                  <blockName>Block Op Variable</blockName>
-                                  <position>(11.16, 25.00, 0.00)</position>
-                                  <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
-                                  <varName>Sensor_left</varName>
-                                  <defineID />
-                                  <isLocalVar />
-                                  <defineItems />
-                                  <sections>
-                                    <Section>
-                                      <childBlocks />
-                                      <inputs>
-                                        <Input>
-                                          <isOperation>false</isOperation>
-                                          <value>Sensor_left</value>
-                                        </Input>
-                                      </inputs>
-                                    </Section>
-                                  </sections>
-                                  <OuterArea>
-                                    <childBlocks />
-                                  </OuterArea>
-                                </Block>
-                              </operation>
-                            </Input>
-                          </inputs>
-                        </Section>
-                      </sections>
-                      <OuterArea>
-                        <childBlocks />
-                      </OuterArea>
-                    </Block>
-                  </operation>
-                </Input>
-              </inputs>
-            </Section>
-          </sections>
-          <OuterArea>
-            <childBlocks />
-          </OuterArea>
-        </Block>
-        <Block>
-          <blockName>Block Ins If</blockName>
-          <position>(0.00, -410.00, 0.00)</position>
           <varManagerName></varManagerName>
           <varName />
           <defineID />
@@ -1001,6 +757,128 @@
                 <Block>
                   <blockName>Block Ins If</blockName>
                   <position>(20.00, 10.00, 0.00)</position>
+                  <varManagerName></varManagerName>
+                  <varName />
+                  <defineID />
+                  <isLocalVar />
+                  <defineItems />
+                  <sections>
+                    <Section>
+                      <childBlocks>
+                        <Block>
+                          <blockName>Block Ins FunctionBlock</blockName>
+                          <position>(20.00, 10.00, 0.00)</position>
+                          <varManagerName></varManagerName>
+                          <varName />
+                          <defineID>Right_turn</defineID>
+                          <isLocalVar />
+                          <defineItems />
+                          <sections>
+                            <Section>
+                              <childBlocks />
+                              <inputs>
+                                <Input>
+                                  <isOperation>true</isOperation>
+                                  <value>0</value>
+                                  <operation>
+                                    <Block>
+                                      <blockName>Block Op Variable</blockName>
+                                      <position>(-9.65, 30.00, 0.00)</position>
+                                      <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
+                                      <varName>trun</varName>
+                                      <defineID />
+                                      <isLocalVar />
+                                      <defineItems />
+                                      <sections>
+                                        <Section>
+                                          <childBlocks />
+                                          <inputs>
+                                            <Input>
+                                              <isOperation>false</isOperation>
+                                              <value>trun</value>
+                                            </Input>
+                                          </inputs>
+                                        </Section>
+                                      </sections>
+                                      <OuterArea>
+                                        <childBlocks />
+                                      </OuterArea>
+                                    </Block>
+                                  </operation>
+                                </Input>
+                              </inputs>
+                            </Section>
+                          </sections>
+                          <OuterArea>
+                            <childBlocks />
+                          </OuterArea>
+                        </Block>
+                      </childBlocks>
+                      <inputs>
+                        <Input>
+                          <isOperation>true</isOperation>
+                          <value></value>
+                          <operation>
+                            <Block>
+                              <blockName>Block Cst Block_Read</blockName>
+                              <position>(-180.14, 35.00, 0.00)</position>
+                              <varManagerName></varManagerName>
+                              <varName />
+                              <defineID />
+                              <isLocalVar />
+                              <defineItems />
+                              <sections>
+                                <Section>
+                                  <childBlocks />
+                                  <inputs>
+                                    <Input>
+                                      <isOperation>true</isOperation>
+                                      <value>0</value>
+                                      <operation>
+                                        <Block>
+                                          <blockName>Block Op Variable</blockName>
+                                          <position>(3.60, 25.00, 0.00)</position>
+                                          <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
+                                          <varName>Sensor_right</varName>
+                                          <defineID />
+                                          <isLocalVar />
+                                          <defineItems />
+                                          <sections>
+                                            <Section>
+                                              <childBlocks />
+                                              <inputs>
+                                                <Input>
+                                                  <isOperation>false</isOperation>
+                                                  <value>Sensor_right</value>
+                                                </Input>
+                                              </inputs>
+                                            </Section>
+                                          </sections>
+                                          <OuterArea>
+                                            <childBlocks />
+                                          </OuterArea>
+                                        </Block>
+                                      </operation>
+                                    </Input>
+                                  </inputs>
+                                </Section>
+                              </sections>
+                              <OuterArea>
+                                <childBlocks />
+                              </OuterArea>
+                            </Block>
+                          </operation>
+                        </Input>
+                      </inputs>
+                    </Section>
+                  </sections>
+                  <OuterArea>
+                    <childBlocks />
+                  </OuterArea>
+                </Block>
+                <Block>
+                  <blockName>Block Ins If</blockName>
+                  <position>(20.00, -200.00, 0.00)</position>
                   <varManagerName></varManagerName>
                   <varName />
                   <defineID />
@@ -1120,34 +998,34 @@
                     <childBlocks />
                   </OuterArea>
                 </Block>
-              </childBlocks>
-              <inputs>
-                <Input>
-                  <isOperation>true</isOperation>
-                  <value></value>
-                  <operation>
-                    <Block>
-                      <blockName>Block Cst Block_Read</blockName>
-                      <position>(-180.14, 35.00, 0.00)</position>
-                      <varManagerName></varManagerName>
-                      <varName />
-                      <defineID />
-                      <isLocalVar />
-                      <defineItems />
-                      <sections>
-                        <Section>
-                          <childBlocks />
-                          <inputs>
-                            <Input>
-                              <isOperation>true</isOperation>
-                              <value>0</value>
-                              <operation>
+                <Block>
+                  <blockName>Block Ins If</blockName>
+                  <position>(20.00, -410.00, 0.00)</position>
+                  <varManagerName></varManagerName>
+                  <varName />
+                  <defineID />
+                  <isLocalVar />
+                  <defineItems />
+                  <sections>
+                    <Section>
+                      <childBlocks>
+                        <Block>
+                          <blockName>Block Ins If</blockName>
+                          <position>(20.00, 10.00, 0.00)</position>
+                          <varManagerName></varManagerName>
+                          <varName />
+                          <defineID />
+                          <isLocalVar />
+                          <defineItems />
+                          <sections>
+                            <Section>
+                              <childBlocks>
                                 <Block>
-                                  <blockName>Block Op Variable</blockName>
-                                  <position>(3.60, 25.00, 0.00)</position>
-                                  <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
-                                  <varName>Sensor_right</varName>
-                                  <defineID />
+                                  <blockName>Block Ins FunctionBlock</blockName>
+                                  <position>(20.00, 10.00, 0.00)</position>
+                                  <varManagerName></varManagerName>
+                                  <varName />
+                                  <defineID>left_turn</defineID>
                                   <isLocalVar />
                                   <defineItems />
                                   <sections>
@@ -1155,8 +1033,33 @@
                                       <childBlocks />
                                       <inputs>
                                         <Input>
-                                          <isOperation>false</isOperation>
-                                          <value>Sensor_right</value>
+                                          <isOperation>true</isOperation>
+                                          <value>0</value>
+                                          <operation>
+                                            <Block>
+                                              <blockName>Block Op Variable</blockName>
+                                              <position>(-22.01, 30.00, 0.00)</position>
+                                              <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
+                                              <varName>trun</varName>
+                                              <defineID />
+                                              <isLocalVar />
+                                              <defineItems />
+                                              <sections>
+                                                <Section>
+                                                  <childBlocks />
+                                                  <inputs>
+                                                    <Input>
+                                                      <isOperation>false</isOperation>
+                                                      <value>trun</value>
+                                                    </Input>
+                                                  </inputs>
+                                                </Section>
+                                              </sections>
+                                              <OuterArea>
+                                                <childBlocks />
+                                              </OuterArea>
+                                            </Block>
+                                          </operation>
                                         </Input>
                                       </inputs>
                                     </Section>
@@ -1165,18 +1068,134 @@
                                     <childBlocks />
                                   </OuterArea>
                                 </Block>
-                              </operation>
-                            </Input>
-                          </inputs>
-                        </Section>
-                      </sections>
-                      <OuterArea>
-                        <childBlocks />
-                      </OuterArea>
-                    </Block>
-                  </operation>
-                </Input>
-              </inputs>
+                              </childBlocks>
+                              <inputs>
+                                <Input>
+                                  <isOperation>true</isOperation>
+                                  <value></value>
+                                  <operation>
+                                    <Block>
+                                      <blockName>Block Cst Block_Read</blockName>
+                                      <position>(-172.58, 35.00, 0.00)</position>
+                                      <varManagerName></varManagerName>
+                                      <varName />
+                                      <defineID />
+                                      <isLocalVar />
+                                      <defineItems />
+                                      <sections>
+                                        <Section>
+                                          <childBlocks />
+                                          <inputs>
+                                            <Input>
+                                              <isOperation>true</isOperation>
+                                              <value>0</value>
+                                              <operation>
+                                                <Block>
+                                                  <blockName>Block Op Variable</blockName>
+                                                  <position>(11.16, 25.00, 0.00)</position>
+                                                  <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
+                                                  <varName>Sensor_left</varName>
+                                                  <defineID />
+                                                  <isLocalVar />
+                                                  <defineItems />
+                                                  <sections>
+                                                    <Section>
+                                                      <childBlocks />
+                                                      <inputs>
+                                                        <Input>
+                                                          <isOperation>false</isOperation>
+                                                          <value>Sensor_left</value>
+                                                        </Input>
+                                                      </inputs>
+                                                    </Section>
+                                                  </sections>
+                                                  <OuterArea>
+                                                    <childBlocks />
+                                                  </OuterArea>
+                                                </Block>
+                                              </operation>
+                                            </Input>
+                                          </inputs>
+                                        </Section>
+                                      </sections>
+                                      <OuterArea>
+                                        <childBlocks />
+                                      </OuterArea>
+                                    </Block>
+                                  </operation>
+                                </Input>
+                              </inputs>
+                            </Section>
+                          </sections>
+                          <OuterArea>
+                            <childBlocks />
+                          </OuterArea>
+                        </Block>
+                      </childBlocks>
+                      <inputs>
+                        <Input>
+                          <isOperation>true</isOperation>
+                          <value></value>
+                          <operation>
+                            <Block>
+                              <blockName>Block Cst Block_Read</blockName>
+                              <position>(-180.14, 35.00, 0.00)</position>
+                              <varManagerName></varManagerName>
+                              <varName />
+                              <defineID />
+                              <isLocalVar />
+                              <defineItems />
+                              <sections>
+                                <Section>
+                                  <childBlocks />
+                                  <inputs>
+                                    <Input>
+                                      <isOperation>true</isOperation>
+                                      <value>0</value>
+                                      <operation>
+                                        <Block>
+                                          <blockName>Block Op Variable</blockName>
+                                          <position>(3.60, 25.00, 0.00)</position>
+                                          <varManagerName>MG_BlocksEngine2.Environment.BE2_VariablesManager</varManagerName>
+                                          <varName>Sensor_right</varName>
+                                          <defineID />
+                                          <isLocalVar />
+                                          <defineItems />
+                                          <sections>
+                                            <Section>
+                                              <childBlocks />
+                                              <inputs>
+                                                <Input>
+                                                  <isOperation>false</isOperation>
+                                                  <value>Sensor_right</value>
+                                                </Input>
+                                              </inputs>
+                                            </Section>
+                                          </sections>
+                                          <OuterArea>
+                                            <childBlocks />
+                                          </OuterArea>
+                                        </Block>
+                                      </operation>
+                                    </Input>
+                                  </inputs>
+                                </Section>
+                              </sections>
+                              <OuterArea>
+                                <childBlocks />
+                              </OuterArea>
+                            </Block>
+                          </operation>
+                        </Input>
+                      </inputs>
+                    </Section>
+                  </sections>
+                  <OuterArea>
+                    <childBlocks />
+                  </OuterArea>
+                </Block>
+              </childBlocks>
+              <inputs />
             </Section>
           </sections>
           <OuterArea>
@@ -1258,7 +1277,7 @@
             <inputs>
               <Input>
                 <isOperation>false</isOperation>
-                <value>go</value>
+                <value>Variable</value>
               </Input>
               <Input>
                 <isOperation>false</isOperation>

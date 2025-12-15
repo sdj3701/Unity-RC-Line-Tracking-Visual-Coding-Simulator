@@ -6,7 +6,7 @@ using UnityEngine.UI;
 
 public class RCCar : MonoBehaviour
 {
-    public GameObject[] wheel;
+    public GameObject[] wheels;
     public GameObject[] Sensor;
     private BlocksGenerated controller;
     public Button But_Start, But_Stop;
@@ -89,13 +89,13 @@ public class RCCar : MonoBehaviour
     private void WheelRotationAndMotorDrive()
     {
         if (s0Black)
-            wheel[0].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
+            wheels[0].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
         else if (s1Black)
-            wheel[1].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
+            wheels[1].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
         else
         {
-            wheel[0].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
-            wheel[1].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
+            wheels[0].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
+            wheels[1].transform.Rotate(-Vector3.up * speed * Time.deltaTime);
         }
             
         // 모터 및 바퀴 좌우회전
