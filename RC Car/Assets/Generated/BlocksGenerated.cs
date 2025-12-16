@@ -3,9 +3,7 @@ using System.Collections;
 using UnityEngine;
 public class BlocksGenerated : MonoBehaviour
 {
-    RCCarSensor _car;
     int _lfPwm, _lbPwm, _rfPwm, _rbPwm;
-    void Awake() => _car = GetComponent<RCCarSensor>();
     public float LeftMotor  { get; private set; }
     public float RightMotor { get; private set; }
     object Sensor_right = 4f;
@@ -75,17 +73,17 @@ public class BlocksGenerated : MonoBehaviour
         {
             Right_turn(trun);
         }
-        // if (digitalRead(Sensor_left))
-        // {
-        //     left_turn(trun);
-        // }
-        // if (digitalRead(Sensor_right))
-        // {
-        //     if (digitalRead(Sensor_left))
-        //     {
-        //         forward(go);
-        //     }
-        // }
+        if (digitalRead(Sensor_left))
+        {
+            left_turn(trun);
+        }
+        if (digitalRead(Sensor_right))
+        {
+            if (digitalRead(Sensor_left))
+            {
+                forward(go);
+            }
+        }
 
     }
 }
