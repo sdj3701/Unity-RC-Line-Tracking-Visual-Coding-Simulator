@@ -826,9 +826,7 @@ public class BE2_CodeExporter : MonoBehaviour
         sb.AppendLine("using UnityEngine;");
         sb.AppendLine("public class " + className + " : MonoBehaviour");
         sb.AppendLine("{");
-        sb.AppendLine("    RCCarSensor _car;");
         sb.AppendLine("    int _lfPwm, _lbPwm, _rfPwm, _rbPwm;");
-        sb.AppendLine("    void Awake() => _car = GetComponent<RCCarSensor>();");
         sb.AppendLine("    public float LeftMotor  { get; private set; }");
         sb.AppendLine("    public float RightMotor { get; private set; }");
 

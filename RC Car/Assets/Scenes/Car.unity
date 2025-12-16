@@ -122,6 +122,39 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &24956318
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 24956319}
+  m_Layer: 0
+  m_Name: Sensor
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &24956319
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 24956318}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1105718451}
+  - {fileID: 461777628}
+  m_Father: {fileID: 332058177}
+  m_RootOrder: 0
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &223824168
 GameObject:
   m_ObjectHideFlags: 0
@@ -150,13 +183,11 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 223824168}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.06, y: 1.66, z: -10.08}
+  m_LocalPosition: {x: -0.06, y: 2, z: -10.08}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 332058177}
-  - {fileID: 1105718451}
-  - {fileID: 461777628}
   m_Father: {fileID: 0}
   m_RootOrder: 3
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -198,7 +229,7 @@ Rigidbody:
   m_UseGravity: 1
   m_IsKinematic: 0
   m_Interpolate: 0
-  m_Constraints: 16
+  m_Constraints: 80
   m_CollisionDetection: 0
 --- !u!114 &223824172
 MonoBehaviour:
@@ -213,10 +244,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   logic: {fileID: 223824173}
-  wheels: []
-  Sensor: []
+  wheels:
+  - {fileID: 1111230767}
+  - {fileID: 471977167}
+  Sensors:
+  - {fileID: 461777627}
+  - {fileID: 1105718450}
   maxLinearSpeed: 5
   maxAngularSpeed: 120
+  wheelVisualSpeed: 360
+  wheelRotateAxis: {x: 0, y: 1, z: 0}
 --- !u!114 &223824173
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -391,12 +428,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 332058176}
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0.5799999, y: 0.49999988, z: 0}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 471977168}
-  - {fileID: 1111230768}
+  - {fileID: 24956319}
+  - {fileID: 1726650832}
   m_Father: {fileID: 223824169}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -489,13 +526,13 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 461777627}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1.028, y: 0.473, z: -0.75}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0.44800007, y: -0.02699995, z: 0.75}
   m_LocalScale: {x: 0.1, y: 0.1, z: 0.5}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 223824169}
-  m_RootOrder: 2
+  m_Father: {fileID: 24956319}
+  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!65 &461777629
 BoxCollider:
@@ -591,7 +628,7 @@ Transform:
   m_LocalScale: {x: 1, y: 0.1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 332058177}
+  m_Father: {fileID: 1726650832}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 90, y: 90, z: 0}
 --- !u!136 &471977169
@@ -628,7 +665,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: -951720642154281844, guid: dd2e2dad2a0459fcf8cd3dd5f45a45e9, type: 3}
+  - {fileID: 2100000, guid: 13c9c2df76a502547a0d193afcc257db, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1074,13 +1111,13 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1105718450}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.131, y: 0.473, z: -0.75}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -0.44899994, y: -0.02699995, z: 0.75}
   m_LocalScale: {x: 0.1, y: 0.1, z: 0.5}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 223824169}
-  m_RootOrder: 1
+  m_Father: {fileID: 24956319}
+  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!65 &1105718452
 BoxCollider:
@@ -1176,7 +1213,7 @@ Transform:
   m_LocalScale: {x: 1, y: 0.1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 332058177}
+  m_Father: {fileID: 1726650832}
   m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 90, y: 90, z: 0}
 --- !u!136 &1111230769
@@ -1213,7 +1250,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: -951720642154281844, guid: dd2e2dad2a0459fcf8cd3dd5f45a45e9, type: 3}
+  - {fileID: 2100000, guid: 13c9c2df76a502547a0d193afcc257db, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1681,6 +1718,39 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_LightCookieSize: {x: 1, y: 1}
   m_LightCookieOffset: {x: 0, y: 0}
+--- !u!1 &1726650831
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1726650832}
+  m_Layer: 0
+  m_Name: Wheel
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1726650832
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1726650831}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 471977168}
+  - {fileID: 1111230768}
+  m_Father: {fileID: 332058177}
+  m_RootOrder: 1
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1893682669
 GameObject:
   m_ObjectHideFlags: 0

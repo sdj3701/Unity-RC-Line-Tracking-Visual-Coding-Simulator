@@ -10,7 +10,7 @@ public class BlocksGenerated : MonoBehaviour
     public float RightMotor { get; private set; }
     object Sensor_right = 4f;
     object Sensor_left = 3f;
-    object Variable = 200f;
+    object go = 200f;
     object stop = 0f;
     object trun = 150f;
     object pin_wheel_right_forward = 10f;
@@ -30,6 +30,13 @@ public class BlocksGenerated : MonoBehaviour
             analogWrite(pin_wheel_left_back, stop);
             analogWrite(pin_wheel_right_back, stop);
             analogWrite(pin_wheel_right_forward, stop);
+    }
+    public void forward(object Speed)
+    {
+            analogWrite(pin_wheel_left_forward, Speed);
+            analogWrite(pin_wheel_right_forward, Speed);
+            analogWrite(pin_wheel_left_back, stop);
+            analogWrite(pin_wheel_right_back, stop);
     }
     System.Collections.Generic.Dictionary<int, bool> __digitalInputs = new System.Collections.Generic.Dictionary<int, bool>();
     public void analogWrite(object pin, object value)
@@ -68,17 +75,17 @@ public class BlocksGenerated : MonoBehaviour
         {
             Right_turn(trun);
         }
-        if (digitalRead(Sensor_left))
-        {
-            left_turn(trun);
-        }
-        if (digitalRead(Sensor_right))
-        {
-            if (digitalRead(Sensor_left))
-            {
-                left_turn(trun);
-            }
-        }
+        // if (digitalRead(Sensor_left))
+        // {
+        //     left_turn(trun);
+        // }
+        // if (digitalRead(Sensor_right))
+        // {
+        //     if (digitalRead(Sensor_left))
+        //     {
+        //         forward(go);
+        //     }
+        // }
 
     }
 }
