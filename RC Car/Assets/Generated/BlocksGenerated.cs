@@ -36,6 +36,12 @@ public class BlocksGenerated : MonoBehaviour
             analogWrite(pin_wheel_left_back, stop);
             analogWrite(pin_wheel_right_back, stop);
     }
+
+    public void SetDigitalInput(int pin, bool value)
+    {
+        __digitalInputs[pin] = value;
+    }
+
     System.Collections.Generic.Dictionary<int, bool> __digitalInputs = new System.Collections.Generic.Dictionary<int, bool>();
     public void analogWrite(object pin, object value)
     {
