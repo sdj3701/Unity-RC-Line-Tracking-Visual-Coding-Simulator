@@ -841,11 +841,11 @@ public class BE2_CodeExporter : MonoBehaviour
         }
         if (_needsDigitalRead)
         {
+            sb.AppendLine("    System.Collections.Generic.Dictionary<int, bool> __digitalInputs = new System.Collections.Generic.Dictionary<int, bool>();");
             sb.AppendLine("    public void SetDigitalInput(int pin, bool value)");
             sb.AppendLine("    {");
             sb.AppendLine("    __digitalInputs[pin] = value;");
             sb.AppendLine("    }");
-            sb.AppendLine("    System.Collections.Generic.Dictionary<int, bool> __digitalInputs = new System.Collections.Generic.Dictionary<int, bool>();");
         }
         if (_needsAnalogWrite)
         {
