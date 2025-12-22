@@ -36,13 +36,11 @@ public class BlocksGenerated : MonoBehaviour
             analogWrite(pin_wheel_left_back, stop);
             analogWrite(pin_wheel_right_back, stop);
     }
-
+    System.Collections.Generic.Dictionary<int, bool> __digitalInputs = new System.Collections.Generic.Dictionary<int, bool>();
     public void SetDigitalInput(int pin, bool value)
     {
-        __digitalInputs[pin] = value;
+    __digitalInputs[pin] = value;
     }
-
-    System.Collections.Generic.Dictionary<int, bool> __digitalInputs = new System.Collections.Generic.Dictionary<int, bool>();
     public void analogWrite(object pin, object value)
     {
         int  p = Convert.ToInt32(pin);
@@ -82,12 +80,12 @@ public class BlocksGenerated : MonoBehaviour
         if (digitalRead(Sensor_left))
         {
             left_turn(trun);
-        }
-        if (digitalRead(Sensor_right))
-        {
-            if (digitalRead(Sensor_left))
+            if (digitalRead(Sensor_right))
             {
-                forward(go);
+                if (digitalRead(Sensor_left))
+                {
+                    forward(go);
+                }
             }
         }
 
