@@ -144,6 +144,9 @@ namespace MG_BlocksEngine2.Core
 
         public void PopulateStack()
         {
+            if (TriggerInstruction == null) TriggerInstruction = GetComponent<I_BE2_Instruction>();
+            if (TriggerInstruction == null) return;
+
             InstructionsArray = new I_BE2_Instruction[0];
             PopulateStackRecursive(TriggerInstruction.InstructionBase.Block);
             _arrayLength = InstructionsArray.Length;

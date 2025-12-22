@@ -39,7 +39,7 @@ public class BlocksGenerated : MonoBehaviour
     System.Collections.Generic.Dictionary<int, bool> __digitalInputs = new System.Collections.Generic.Dictionary<int, bool>();
     public void SetDigitalInput(int pin, bool value)
     {
-    __digitalInputs[pin] = value;
+        __digitalInputs[pin] = value;
     }
     public void analogWrite(object pin, object value)
     {
@@ -68,6 +68,7 @@ public class BlocksGenerated : MonoBehaviour
     {
         __digitalInputs[Convert.ToInt32(Sensor_right)] = true;
         __digitalInputs[Convert.ToInt32(Sensor_left)] = true;
+        forward(go);
 
     }
 
@@ -80,12 +81,12 @@ public class BlocksGenerated : MonoBehaviour
         if (digitalRead(Sensor_left))
         {
             left_turn(trun);
-            if (digitalRead(Sensor_right))
+        }
+        if (digitalRead(Sensor_right))
+        {
+            if (digitalRead(Sensor_left))
             {
-                if (digitalRead(Sensor_left))
-                {
-                    forward(go);
-                }
+                Right_turn(trun);
             }
         }
 

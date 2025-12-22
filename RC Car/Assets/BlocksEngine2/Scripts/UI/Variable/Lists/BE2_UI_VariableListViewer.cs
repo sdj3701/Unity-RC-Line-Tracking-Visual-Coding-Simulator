@@ -27,6 +27,11 @@ namespace MG_BlocksEngine2.UI
 
         void Awake()
         {
+            Initialize();
+        }
+
+        void Initialize()
+        {
             _panelListOp = transform.GetChild(0);
             _panelList = transform.GetChild(1);
 
@@ -40,8 +45,15 @@ namespace MG_BlocksEngine2.UI
 
         void OnEnable()
         {
+            if (_panelList == null) Initialize();
+
+            _removeListButton.onClick.RemoveAllListeners();
             _removeListButton.onClick.AddListener(RemoveList);
+            
+            _createItemButton.onClick.RemoveAllListeners();
             _createItemButton.onClick.AddListener(delegate { AddListItem("", true); });
+            
+            _showListToggle.onValueChanged.RemoveAllListeners();
             _showListToggle.onValueChanged.AddListener(delegate
             {
                 _panelList.gameObject.SetActive(_showListToggle.isOn);
@@ -57,9 +69,10 @@ namespace MG_BlocksEngine2.UI
             _removeListButton.onClick.RemoveAllListeners();
             _createItemButton.onClick.RemoveAllListeners();
             _showListToggle.onValueChanged.RemoveAllListeners();
-
             BE2_MainEventsManager.Instance.StopListening(BE2EventTypes.OnAnyVariableValueChanged, UpdateViewerValues);
         }
+
+
 
         void Start()
         {
@@ -82,7 +95,11 @@ namespace MG_BlocksEngine2.UI
         IEnumerator C_UpdateViewerValues()
         {
             yield return new WaitForEndOfFrame();
+            
+            if (BE2_VariablesListManager.instance == null || _panelList == null) yield break;
+
             List<string> list = BE2_VariablesListManager.instance.GetListStringValues(listName);
+            if (list == null) yield break;
             
             for (int i = 0; i < 10000; i++)
             {

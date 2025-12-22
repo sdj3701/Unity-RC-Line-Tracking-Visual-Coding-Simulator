@@ -37,19 +37,31 @@ namespace MG_BlocksEngine2.Block.Instruction
 
         protected override void OnEnableInstruction()
         {
-            if (_initialized)
-                return;
-
-            Initialize(defineInstruction);
+            if (!_initialized)
+            {
+                Initialize(defineInstruction);
+            }
+            else
+            {
+                // Just re-register listeners
+                if (defineInstruction)
+                {
+                    defineInstruction.onDefineChange.AddListener(RebuildFunctionInstance);
+                }
+                BE2_MainEventsManager.Instance.StartListening(BE2EventTypesBlock.OnFunctionDefinitionRemoved, Remove);
+            }
         }
 
         protected override void OnDisableInstruction()
         {
-            defineInstruction.onDefineChange.RemoveListener(RebuildFunctionInstance);
+            if (defineInstruction)
+                defineInstruction.onDefineChange.RemoveListener(RebuildFunctionInstance);
+            
             BE2_MainEventsManager.Instance.StopListening(BE2EventTypesBlock.OnFunctionDefinitionRemoved, Remove);
-            _initialized = false;
+            // Do NOT reset _initialized = false here, to preserve state through Hot Reload
         }
 
+        [SerializeField]
         bool _initialized = false;
         public void Initialize(BE2_Ins_DefineFunction defineInstruction)
         {
@@ -90,6 +102,8 @@ namespace MG_BlocksEngine2.Block.Instruction
         IEnumerator C_RebuildFunctionInstance()
         {
             yield return new WaitForEndOfFrame();
+
+            if (Block == null || Block.Layout == null) yield break;
 
             I_BE2_BlockSectionBody body = Block.Layout.SectionsArray[0].Body;
             for (int i = body.ChildBlocksCount - 1; i >= 0; i--)

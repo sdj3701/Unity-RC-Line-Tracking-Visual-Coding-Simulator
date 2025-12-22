@@ -70,6 +70,8 @@ namespace MG_BlocksEngine2.Block.Instruction
         // v2.10 - bugfix: trigger blocks won't work if programmingEnv is disable and enabled again
         void OnEnable()
         {
+            if (Block == null) Awake();
+
             BE2_MainEventsManager.Instance.StartListening(BE2EventTypes.OnPlay, OnButtonPlay);
             BE2_MainEventsManager.Instance.StartListening(BE2EventTypes.OnStop, OnButtonStop);
             BE2_MainEventsManager.Instance.StartListening(BE2EventTypes.OnPrimaryKeyUpEnd, GetBlockStack);

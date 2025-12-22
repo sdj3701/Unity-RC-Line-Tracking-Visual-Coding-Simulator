@@ -844,7 +844,7 @@ public class BE2_CodeExporter : MonoBehaviour
             sb.AppendLine("    System.Collections.Generic.Dictionary<int, bool> __digitalInputs = new System.Collections.Generic.Dictionary<int, bool>();");
             sb.AppendLine("    public void SetDigitalInput(int pin, bool value)");
             sb.AppendLine("    {");
-            sb.AppendLine("    __digitalInputs[pin] = value;");
+            sb.AppendLine("        __digitalInputs[pin] = value;");
             sb.AppendLine("    }");
         }
         if (_needsAnalogWrite)
@@ -957,8 +957,33 @@ public class BE2_CodeExporter : MonoBehaviour
         }
 #endif
 #if UNITY_EDITOR
-        if (!isPlayMode)
+        // Use ImportAsset to refresh only the specific generated file
+        // This is more efficient than a full Refresh(), but modifying a C# script 
+        // will still trigger an assembly reload regardless.
+        try
         {
+            if (isPlayMode)
+            {
+                // In PlayMode, we updated the file at 'assetPath' (calculated above, but not in scope here strictly, 
+                // so we rely on relativeAssetPath if it's strictly inside Assets).
+                // Re-calculate asset path logic briefly to be safe or just use relativeAssetPath if standard.
+                // However, ImportAsset expects a path starting with "Assets/".
+                if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
+                {
+                    UnityEditor.AssetDatabase.ImportAsset(relativeAssetPath, UnityEditor.ImportAssetOptions.ForceUpdate);
+                }
+            }
+            else
+            {
+                 if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
+                {
+                    UnityEditor.AssetDatabase.ImportAsset(relativeAssetPath, UnityEditor.ImportAssetOptions.ForceUpdate);
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Fallback to full refresh if something goes wrong
             UnityEditor.AssetDatabase.Refresh();
         }
 #endif

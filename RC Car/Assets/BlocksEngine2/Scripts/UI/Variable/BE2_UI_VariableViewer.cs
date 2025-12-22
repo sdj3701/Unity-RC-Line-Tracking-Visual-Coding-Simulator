@@ -19,28 +19,33 @@ namespace MG_BlocksEngine2.UI
 
         void Awake()
         {
+            Initialize();
+            _removeButton.onClick.AddListener(RemoveVariable);
+        }
+
+        void Initialize()
+        {
             _variable = GetVariableName();
-            // v2.8 - adjusted variable viwer with "remove variable" button 
             foreach (Transform child in transform)
             {
                 _inputField = BE2_InputField.GetBE2Component(child);
-
                 if (!_removeButton)
                     _removeButton = child.GetComponent<Button>();
             }
-
-            _removeButton.onClick.AddListener(RemoveVariable);
         }
 
         void OnEnable()
         {
+            if (_inputField == null) Initialize();
+
             BE2_MainEventsManager.Instance.StartListening(BE2EventTypes.OnAnyVariableValueChanged, UpdateViewerValue);
             _inputField.onEndEdit.AddListener(delegate { UpdateVariableValue(); });
         }
 
         void OnDisable()
         {
-            _inputField.onEndEdit.RemoveAllListeners();
+            if (_inputField != null) _inputField.onEndEdit.RemoveAllListeners();
+            if (_removeButton) _removeButton.onClick.RemoveAllListeners();
             BE2_MainEventsManager.Instance.StopListening(BE2EventTypes.OnAnyVariableValueChanged, UpdateViewerValue);
         }
 

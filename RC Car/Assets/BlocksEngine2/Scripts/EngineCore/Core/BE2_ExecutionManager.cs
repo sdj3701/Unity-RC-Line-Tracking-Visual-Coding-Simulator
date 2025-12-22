@@ -98,6 +98,10 @@ namespace MG_BlocksEngine2.Core
 
         void Update()
         {
+            // Hot Reload support
+            if (_pointer == null) _pointer = BE2_Pointer.Instance;
+            if (_inputManager == null) _inputManager = BE2_InputManager.Instance;
+
             // v2.7 - Execution Manager agregates the Pointer and Input Manager updates to be execute in the same update call to improve performance 
             _pointer.OnUpdate();
             _inputManager.OnUpdate();
@@ -179,13 +183,15 @@ namespace MG_BlocksEngine2.Core
 
         public void RemoveFromBlocksStackList(I_BE2_BlocksStack blocksStack)
         {
+            if (blocksStacksArray == null) return;
             I_BE2_BlocksStack[] tempStacks = BE2_ArrayUtils.FindAll(ref blocksStacksArray, (x => x == blocksStack));
 
             if (tempStacks.Length > 0)
             {
                 BE2_ArrayUtils.Remove(ref blocksStacksArray, blocksStack);
 
-                BE2_MainEventsManager.Instance.TriggerEvent(BE2EventTypes.OnBlocksStackArrayUpdate);
+                if (BE2_MainEventsManager.Instance != null)
+                    BE2_MainEventsManager.Instance.TriggerEvent(BE2EventTypes.OnBlocksStackArrayUpdate);
 
                 // v2.9 - BlocksStack Execute action is now executed from the OnUpdate event
                 RemoveFromUpdate(blocksStack.Execute);

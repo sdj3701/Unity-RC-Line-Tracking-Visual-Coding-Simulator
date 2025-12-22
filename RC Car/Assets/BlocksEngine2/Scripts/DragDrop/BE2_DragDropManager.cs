@@ -98,6 +98,8 @@ namespace MG_BlocksEngine2.DragDrop
         {
             Instance = this;
 
+            if (_contextMenuManager == null) _contextMenuManager = BE2_UI_ContextMenuManager.instance;
+
             BE2_MainEventsManager.Instance.StartListening(BE2EventTypes.OnPrimaryKeyDown, OnPointerDown);
             BE2_MainEventsManager.Instance.StartListening(BE2EventTypes.OnSecondaryKeyDown, OnRightPointerDownOrHold);
             BE2_MainEventsManager.Instance.StartListening(BE2EventTypes.OnPrimaryKeyHold, OnRightPointerDownOrHold);
@@ -110,7 +112,9 @@ namespace MG_BlocksEngine2.DragDrop
 
         private void OnDisable()
         {
-            BE2_MainEventsManager.Instance.StopListening(BE2EventTypes.OnPrimaryKeyDown, OnPointerDown);
+            if (BE2_MainEventsManager.Instance != null)
+            {
+                BE2_MainEventsManager.Instance.StopListening(BE2EventTypes.OnPrimaryKeyDown, OnPointerDown);
             BE2_MainEventsManager.Instance.StopListening(BE2EventTypes.OnSecondaryKeyDown, OnRightPointerDownOrHold);
             BE2_MainEventsManager.Instance.StopListening(BE2EventTypes.OnPrimaryKeyHold, OnRightPointerDownOrHold);
             BE2_MainEventsManager.Instance.StopListening(BE2EventTypes.OnDrag, OnDrag);
@@ -118,6 +122,7 @@ namespace MG_BlocksEngine2.DragDrop
 
             BE2_MainEventsManager.Instance.StopListening(BE2EventTypes.OnAuxKeyDown, DisableGroupDrag);
             BE2_MainEventsManager.Instance.StopListening(BE2EventTypes.OnAuxKeyUp, EnableGroupDrag);
+            }
         }
 
         // v2.13 - BE2_DragDropManager.OnPointerDown made coroutine again to fix issues on using the device simulator
@@ -125,6 +130,9 @@ namespace MG_BlocksEngine2.DragDrop
         IEnumerator C_OnPointerDown()
         {
             yield return new WaitForEndOfFrame();
+
+            if (Raycaster == null) Raycaster = GetComponent<I_BE2_Raycaster>();
+            if (Raycaster == null) yield break;
 
             I_BE2_Drag drag = Raycaster.GetDragAtPosition(BE2_InputManager.Instance.ScreenPointerPosition);
             if (drag != null)
