@@ -68,7 +68,7 @@ public class BlocksGenerated : MonoBehaviour
     {
         __digitalInputs[Convert.ToInt32(Sensor_right)] = true;
         __digitalInputs[Convert.ToInt32(Sensor_left)] = true;
-        forward(go);
+        Right_turn(trun);
 
     }
 
@@ -86,7 +86,7 @@ public class BlocksGenerated : MonoBehaviour
         {
             if (digitalRead(Sensor_left))
             {
-                Right_turn(trun);
+                forward(go);
             }
         }
 

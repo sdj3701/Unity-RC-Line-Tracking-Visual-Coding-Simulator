@@ -881,50 +881,39 @@ public class BE2_CodeExporter : MonoBehaviour
         sb.AppendLine("}");
 
         // 항상 Assets 폴더 경로 계산
-        string fullPath = relativeAssetPath;
+        string fullPath;
+        #if UNITY_EDITOR
+        // Write into Assets in Editor so it recompiles there
+        fullPath = relativeAssetPath;
         if (!Path.IsPathRooted(fullPath))
         {
             if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
-            {
-                string sub = relativeAssetPath.Substring(7);
-                fullPath = Path.Combine(Application.dataPath, sub);
-            }
+                fullPath = Path.Combine(Application.dataPath, relativeAssetPath.Substring(7));
             else
-            {
                 fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
-            }
         }
+        #else
+        // Player build: use a writable path
+        fullPath = Path.Combine(Application.persistentDataPath, Path.GetFileName(relativeAssetPath));
+        #endif
+
         var dir = Path.GetDirectoryName(fullPath);
         if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-
         File.WriteAllText(fullPath, sb.ToString());
-        LastSavedPath = fullPath;
-        bool isPlayMode = Application.isPlaying;
-        Debug.Log($"[BE2_CodeExporter] Saved generated script to: {fullPath} (PlayMode={isPlayMode})");
 
-        // Save XML next to the C# file
-        string xmlPath = Path.ChangeExtension(fullPath, ".be2");
-        if (!string.IsNullOrEmpty(xml))
-        {
-            File.WriteAllText(xmlPath, xml);
-            Debug.Log($"[BE2_CodeExporter] Saved generated blocks XML to: {xmlPath}");
-        }
-
-#if UNITY_EDITOR
-        // Play Mode 여부와 상관없이 ImportAsset 호출하여 컴파일 유도
+        #if UNITY_EDITOR
         try
         {
             if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
-            {
                 UnityEditor.AssetDatabase.ImportAsset(relativeAssetPath, UnityEditor.ImportAssetOptions.ForceUpdate);
-            }
         }
         catch (Exception ex)
         {
             Debug.LogWarning($"[BE2_CodeExporter] ImportAsset failed: {ex.Message}. Falling back to Refresh.");
             UnityEditor.AssetDatabase.Refresh();
         }
-#endif
+        #endif
+
         return true;
     }
 
