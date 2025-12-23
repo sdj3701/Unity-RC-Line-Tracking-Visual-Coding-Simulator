@@ -521,45 +521,24 @@ public class BE2_CodeExporter : MonoBehaviour
         // Repurposed: load existing XML and instantiate blocks into an available Env
         bool isPlayMode = Application.isPlaying;
 
-        // Resolve editor path from relative asset path
-        string resolvedEditorPath = relativeAssetPath;
-        if (!Path.IsPathRooted(resolvedEditorPath))
+        // Resolve path: default to project Assets folder
+        string fullPath = relativeAssetPath;
+        if (!Path.IsPathRooted(fullPath))
         {
             if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
             {
                 string sub = relativeAssetPath.Substring(7);
-                resolvedEditorPath = Path.Combine(Application.dataPath, sub);
+                fullPath = Path.Combine(Application.dataPath, sub);
             }
             else
             {
-                resolvedEditorPath = Path.Combine(Application.dataPath, relativeAssetPath);
+                fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
             }
         }
 
-        // PlayMode preferred path (same naming convention as previous saver)
-        string playModePath = null;
-        if (isPlayMode)
+        if (!File.Exists(fullPath))
         {
-            string fileName = Path.GetFileName(relativeAssetPath);
-            if (string.IsNullOrEmpty(fileName)) fileName = "BlocksGenerated.be2";
-            var generatedDir = Path.Combine(Application.persistentDataPath, "Generated");
-            playModePath = Path.Combine(generatedDir, fileName);
-        }
-
-        // Choose an existing file to load
-        string pathToLoad = null;
-        if (!string.IsNullOrEmpty(playModePath) && File.Exists(playModePath))
-        {
-            pathToLoad = playModePath;
-        }
-        else if (File.Exists(resolvedEditorPath))
-        {
-            pathToLoad = resolvedEditorPath;
-        }
-
-        if (string.IsNullOrEmpty(pathToLoad))
-        {
-            Debug.LogWarning($"[BE2_CodeExporter] XML file not found. Tried: '{playModePath}', '{resolvedEditorPath}'");
+            Debug.LogWarning($"[BE2_CodeExporter] XML file not found at: '{fullPath}'");
             return false;
         }
 
@@ -582,24 +561,16 @@ public class BE2_CodeExporter : MonoBehaviour
         }
         if (targetEnv == null) targetEnv = envs[0];
 
-        bool ok = MG_BlocksEngine2.Serializer.BE2_BlocksSerializer.LoadCode(pathToLoad, targetEnv);
+        bool ok = MG_BlocksEngine2.Serializer.BE2_BlocksSerializer.LoadCode(fullPath, targetEnv);
         if (ok)
         {
-            LastSavedPath = pathToLoad;
-            Debug.Log($"[BE2_CodeExporter] Loaded blocks XML from: {pathToLoad} into env '{targetEnv.name}' (PlayMode={isPlayMode})");
-#if UNITY_EDITOR
-            if (isPlayMode)
-            {
-                UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastTempXmlPath", pathToLoad);
-                string relXml = relativeAssetPath;
-                UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastRelXmlAssetPath", relXml);
-            }
-#endif
+            LastSavedPath = fullPath;
+            Debug.Log($"[BE2_CodeExporter] Loaded blocks XML from: {fullPath} into env '{targetEnv.name}' (PlayMode={isPlayMode})");
             return true;
         }
         else
         {
-            Debug.LogWarning($"[BE2_CodeExporter] Failed to load blocks XML from: {pathToLoad}");
+            Debug.LogWarning($"[BE2_CodeExporter] Failed to load blocks XML from: {fullPath}");
             return false;
         }
     }
@@ -908,37 +879,29 @@ public class BE2_CodeExporter : MonoBehaviour
             sb.AppendLine("    }");
         }
         sb.AppendLine("}");
-        string fullPath;
-        bool isPlayMode = Application.isPlaying;
-        if (isPlayMode)
+
+        // 항상 Assets 폴더 경로 계산
+        string fullPath = relativeAssetPath;
+        if (!Path.IsPathRooted(fullPath))
         {
-            string fileName = Path.GetFileName(relativeAssetPath);
-            if (string.IsNullOrEmpty(fileName)) fileName = "BlocksGenerated.cs";
-            var nonAssetsDir = Path.Combine(Application.persistentDataPath, "Generated");
-            if (!Directory.Exists(nonAssetsDir)) Directory.CreateDirectory(nonAssetsDir);
-            fullPath = Path.Combine(nonAssetsDir, fileName);
-        }
-        else
-        {
-            fullPath = relativeAssetPath;
-            if (!Path.IsPathRooted(fullPath))
+            if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
             {
-                if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
-                {
-                    string sub = relativeAssetPath.Substring(7);
-                    fullPath = Path.Combine(Application.dataPath, sub);
-                }
-                else
-                {
-                    fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
-                }
+                string sub = relativeAssetPath.Substring(7);
+                fullPath = Path.Combine(Application.dataPath, sub);
             }
-            var dir = Path.GetDirectoryName(fullPath);
-            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            else
+            {
+                fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
+            }
         }
+        var dir = Path.GetDirectoryName(fullPath);
+        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
         File.WriteAllText(fullPath, sb.ToString());
         LastSavedPath = fullPath;
+        bool isPlayMode = Application.isPlaying;
         Debug.Log($"[BE2_CodeExporter] Saved generated script to: {fullPath} (PlayMode={isPlayMode})");
+
         // Save XML next to the C# file
         string xmlPath = Path.ChangeExtension(fullPath, ".be2");
         if (!string.IsNullOrEmpty(xml))
@@ -946,44 +909,19 @@ public class BE2_CodeExporter : MonoBehaviour
             File.WriteAllText(xmlPath, xml);
             Debug.Log($"[BE2_CodeExporter] Saved generated blocks XML to: {xmlPath}");
         }
+
 #if UNITY_EDITOR
-        if (isPlayMode)
-        {
-            UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastTempPath", fullPath);
-            UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastRelAssetPath", relativeAssetPath);
-            UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastTempXmlPath", xmlPath);
-            string relXml = Path.ChangeExtension(relativeAssetPath, ".be2");
-            UnityEditor.EditorPrefs.SetString("BE2_CodeExporter_LastRelXmlAssetPath", relXml);
-        }
-#endif
-#if UNITY_EDITOR
-        // Use ImportAsset to refresh only the specific generated file
-        // This is more efficient than a full Refresh(), but modifying a C# script 
-        // will still trigger an assembly reload regardless.
+        // Play Mode 여부와 상관없이 ImportAsset 호출하여 컴파일 유도
         try
         {
-            if (isPlayMode)
+            if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
             {
-                // In PlayMode, we updated the file at 'assetPath' (calculated above, but not in scope here strictly, 
-                // so we rely on relativeAssetPath if it's strictly inside Assets).
-                // Re-calculate asset path logic briefly to be safe or just use relativeAssetPath if standard.
-                // However, ImportAsset expects a path starting with "Assets/".
-                if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
-                {
-                    UnityEditor.AssetDatabase.ImportAsset(relativeAssetPath, UnityEditor.ImportAssetOptions.ForceUpdate);
-                }
-            }
-            else
-            {
-                 if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
-                {
-                    UnityEditor.AssetDatabase.ImportAsset(relativeAssetPath, UnityEditor.ImportAssetOptions.ForceUpdate);
-                }
+                UnityEditor.AssetDatabase.ImportAsset(relativeAssetPath, UnityEditor.ImportAssetOptions.ForceUpdate);
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Fallback to full refresh if something goes wrong
+            Debug.LogWarning($"[BE2_CodeExporter] ImportAsset failed: {ex.Message}. Falling back to Refresh.");
             UnityEditor.AssetDatabase.Refresh();
         }
 #endif
@@ -1232,12 +1170,6 @@ public class BE2_CodeExporter : MonoBehaviour
             if (targetEnv == null) { Debug.LogWarning("[BE2_CodeExporter] No ProgrammingEnv found for import."); return false; }
 
             string xmlPath = null;
-#if UNITY_EDITOR
-            // Prefer temp path saved during Play
-            string tempXml = UnityEditor.EditorPrefs.GetString("BE2_CodeExporter_LastTempXmlPath", string.Empty);
-            if (!string.IsNullOrEmpty(tempXml) && File.Exists(tempXml))
-                xmlPath = tempXml;
-#endif
             if (xmlPath == null)
             {
                 if (!string.IsNullOrEmpty(LastSavedPath))
@@ -1248,7 +1180,7 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             if (xmlPath == null)
             {
-                // Fallback next to Assets path
+                // Fallback next to Default Assets path
                 string rel = "Assets/Generated/BlocksGenerated.be2";
                 if (rel.StartsWith("Assets/"))
                 {

@@ -190,7 +190,7 @@ namespace MG_BlocksEngine2.Core
             {
                 BE2_ArrayUtils.Remove(ref blocksStacksArray, blocksStack);
 
-                if (BE2_MainEventsManager.Instance != null)
+                if (!_isQuitting && BE2_MainEventsManager.Instance != null)
                     BE2_MainEventsManager.Instance.TriggerEvent(BE2EventTypes.OnBlocksStackArrayUpdate);
 
                 // v2.9 - BlocksStack Execute action is now executed from the OnUpdate event
@@ -225,6 +225,17 @@ namespace MG_BlocksEngine2.Core
                 if (programmingEnv != null)
                     _programmingEnvsList.Add(programmingEnv);
             }
+        }
+        bool _isQuitting = false;
+
+        void OnApplicationQuit()
+        {
+            _isQuitting = true;
+        }
+
+        void OnDestroy()
+        {
+            _isQuitting = true;
         }
     }
 }
