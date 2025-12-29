@@ -313,17 +313,47 @@ public static class BE2XmlToRuntimeJson
                               .ToList();
             
             string pinToken = inputs.ElementAtOrDefault(0)?.Descendants("varName").FirstOrDefault()?.Value;
-            string valueToken = inputs.ElementAtOrDefault(1)?.Descendants("varName").FirstOrDefault()?.Value
-                                ?? inputs.ElementAtOrDefault(1)?.Element("value")?.Value;
+            
+            // value 추출 - FunctionLocalVariable인지 확인
+            var valueInput = inputs.ElementAtOrDefault(1);
+            string valueVar = null;
+            float val = 0;
+            
+            if (valueInput != null)
+            {
+                var opBlock = valueInput.Element("operation")?.Element("Block");
+                if (opBlock != null)
+                {
+                    var opBlockName = opBlock.Element("blockName")?.Value?.Trim();
+                    
+                    // FunctionLocalVariable인 경우 - 런타임에 해석할 변수 이름 저장
+                    if (opBlockName == "Block Op FunctionLocalVariable")
+                    {
+                        valueVar = opBlock.Element("varName")?.Value;
+                        Debug.Log($"[BE2XmlToRuntimeJson] PWM uses local variable: {valueVar}");
+                    }
+                    else
+                    {
+                        // 일반 변수인 경우
+                        string valueToken = opBlock.Element("varName")?.Value;
+                        val = ResolveFloat(valueToken);
+                    }
+                }
+                else
+                {
+                    // 직접 값인 경우
+                    val = ResolveFloat(valueInput.Element("value")?.Value);
+                }
+            }
 
             int pin = ResolveInt(pinToken);
-            float val = ResolveFloat(valueToken);
 
             return new RuntimeBlockNode
             {
                 type = "analogWrite",
                 pin = pin,
-                value = val
+                value = val,
+                valueVar = valueVar
             };
         }
         
@@ -600,6 +630,14 @@ public static class BE2XmlToRuntimeJson
             sb.AppendLine(",");
             sb.Append(innerIndent);
             sb.Append($"\"value\": {node.value}");
+        }
+        
+        // valueVar (변수 참조)
+        if (!string.IsNullOrEmpty(node.valueVar))
+        {
+            sb.AppendLine(",");
+            sb.Append(innerIndent);
+            sb.Append($"\"valueVar\": \"{EscapeJson(node.valueVar)}\"");
         }
         
         // functionName

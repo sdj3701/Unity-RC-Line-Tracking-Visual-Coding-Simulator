@@ -25,7 +25,8 @@ public class RuntimeBlockNode
     public string type;                // "forward","turnLeft","turnRight","repeat","forever","if","ifElse","wait","digitalRead","analogWrite","stop","functionCall"
     public float number;               // speed or repeat count or wait seconds
     public int pin;                    // for digitalRead/analogWrite
-    public float value;                // for analogWrite
+    public float value;                // for analogWrite (static value)
+    public string valueVar;            // for analogWrite - variable name to resolve at runtime (e.g., "Speed")
     public string functionName;        // for functionCall - the function to call
     public string conditionVar;        // for if/ifElse - the variable name used in condition
     public RuntimeBlockNode[] body;    // main body
@@ -219,24 +220,34 @@ public class RuntimeBlocksRunner : MonoBehaviour
             if (c == '"')
             {
                 string key = ParseString(json, ref idx);
-                while (json[idx] != ':') idx++;
+                
+                // ':' 찾기 (경계 체크 포함)
+                while (idx < json.Length && json[idx] != ':') idx++;
+                if (idx >= json.Length) break;
                 idx++; 
+                
+                // 공백 스킵
+                while (idx < json.Length && char.IsWhiteSpace(json[idx])) idx++;
+                if (idx >= json.Length) break;
 
                 if (key == "type") node.type = ParseString(json, ref idx);
                 else if (key == "number") node.number = ParseFloat(json, ref idx);
                 else if (key == "pin") node.pin = (int)ParseFloat(json, ref idx);
                 else if (key == "value") node.value = ParseFloat(json, ref idx);
+                else if (key == "valueVar") node.valueVar = ParseString(json, ref idx);
                 else if (key == "functionName") node.functionName = ParseString(json, ref idx);
                 else if (key == "conditionVar") node.conditionVar = ParseString(json, ref idx);
                 else if (key == "body") 
                 {
-                    while(json[idx] != '[') idx++;
-                    node.body = ParseNodeArray(json, ref idx).ToArray();
+                    while(idx < json.Length && json[idx] != '[') idx++;
+                    if (idx < json.Length)
+                        node.body = ParseNodeArray(json, ref idx).ToArray();
                 }
                 else if (key == "elseBody") 
                 {
-                    while(json[idx] != '[') idx++;
-                    node.elseBody = ParseNodeArray(json, ref idx).ToArray();
+                    while(idx < json.Length && json[idx] != '[') idx++;
+                    if (idx < json.Length)
+                        node.elseBody = ParseNodeArray(json, ref idx).ToArray();
                 }
                 else
                 {
@@ -253,33 +264,70 @@ public class RuntimeBlocksRunner : MonoBehaviour
 
     string ParseString(string json, ref int idx)
     {
-        idx++; 
+        // '"' 찾기
+        while (idx < json.Length && json[idx] != '"') idx++;
+        if (idx >= json.Length) return "";
+        
+        idx++; // skip opening "
         int start = idx;
-        while (json[idx] != '"') idx++; 
+        
+        // 닫는 '"' 찾기
+        while (idx < json.Length && json[idx] != '"') idx++; 
+        
+        if (idx >= json.Length) return "";
+        
         string s = json.Substring(start, idx - start);
-        idx++; 
+        idx++; // skip closing "
         return s;
     }
 
     float ParseFloat(string json, ref int idx)
     {
-        while(char.IsWhiteSpace(json[idx]) || json[idx] == ':') idx++;
+        // 공백과 ':' 스킵
+        while(idx < json.Length && (char.IsWhiteSpace(json[idx]) || json[idx] == ':')) idx++;
+        
+        if (idx >= json.Length) return 0f;
+        
         int start = idx;
         while (idx < json.Length && (char.IsDigit(json[idx]) || json[idx] == '.' || json[idx] == '-' || json[idx] == 'e' || json[idx] == 'E'))
         {
             idx++;
         }
+        
+        if (start == idx) return 0f;
+        
         string numStr = json.Substring(start, idx - start);
-        float.TryParse(numStr, out float connect);
-        return connect;
+        float.TryParse(numStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float result);
+        return result;
     }
 
     void SkipValue(string json, ref int idx)
     {
+        // 중첩 객체/배열 처리를 위한 깊이 추적
+        int depth = 0;
+        bool inString = false;
+        
         while (idx < json.Length)
         {
             char c = json[idx];
-            if (c == ',' || c == '}') return; 
+            
+            if (inString)
+            {
+                if (c == '"' && (idx == 0 || json[idx-1] != '\\'))
+                    inString = false;
+                idx++;
+                continue;
+            }
+            
+            if (c == '"') { inString = true; idx++; continue; }
+            if (c == '{' || c == '[') { depth++; idx++; continue; }
+            if (c == '}' || c == ']') 
+            { 
+                if (depth > 0) { depth--; idx++; continue; }
+                return; 
+            }
+            if ((c == ',') && depth == 0) return;
+            
             idx++;
         }
     }
@@ -305,7 +353,7 @@ public class RuntimeBlocksRunner : MonoBehaviour
         }
     }
 
-    IEnumerator Eval(RuntimeBlockNode n)
+    IEnumerator Eval(RuntimeBlockNode n, System.Collections.Generic.Dictionary<string, float> localVars = null)
     {
         if (n == null) yield break;
         Debug.Log($"[RuntimeBlocksRunner] Eval: {n.type}");
@@ -330,41 +378,55 @@ public class RuntimeBlocksRunner : MonoBehaviour
                 yield return null;
                 break;
             case "analogWrite":
-                io.AnalogWrite(n.pin, n.value);
-                yield return null;
+                {
+                    // valueVar가 있으면 로컬 변수에서 값을 가져옴
+                    float writeValue = n.value;
+                    if (!string.IsNullOrEmpty(n.valueVar) && localVars != null && localVars.TryGetValue(n.valueVar, out float localVal))
+                    {
+                        writeValue = localVal;
+                    }
+                    Debug.Log($"[RuntimeBlocksRunner] AnalogWrite pin={n.pin}, value={writeValue} (valueVar={n.valueVar})");
+                    io.AnalogWrite(n.pin, writeValue);
+                    yield return null;
+                }
                 break;
             case "digitalRead":
                 _ = io.DigitalRead(n.pin);
                 break;
             case "repeat":
                 for (int i = 0; i < (int)n.number; i++)
-                    yield return EvalList(n.body);
+                    yield return EvalList(n.body, localVars);
                 break;
             case "forever":
                 while (true)
                 {
-                    yield return EvalList(n.body);
+                    yield return EvalList(n.body, localVars);
                     yield return null; // Safety break
                 }
             case "if":
                 if (io.DigitalRead(n.pin))
-                    yield return EvalList(n.body);
+                    yield return EvalList(n.body, localVars);
                 break;
             case "ifElse":
                 if (io.DigitalRead(n.pin))
-                    yield return EvalList(n.body);
+                    yield return EvalList(n.body, localVars);
                 else
-                    yield return EvalList(n.elseBody);
+                    yield return EvalList(n.elseBody, localVars);
                 break;
             case "wait":
                 yield return new WaitForSeconds(n.number);
                 break;
             case "functionCall":
                 Debug.Log($"[RuntimeBlocksRunner] FunctionCall: {n.functionName} with arg {n.number}");
-                // 함수 정의를 찾아서 body 실행
+                // 함수 정의를 찾아서 body 실행 (인자를 로컬 변수로 전달)
                 if (!string.IsNullOrEmpty(n.functionName) && functionDefinitions.TryGetValue(n.functionName, out var funcBody))
                 {
-                    yield return EvalList(funcBody);
+                    // 새로운 로컬 변수 컨텍스트 생성 (Speed 파라미터에 n.number 할당)
+                    var funcLocalVars = new System.Collections.Generic.Dictionary<string, float>
+                    {
+                        { "Speed", n.number }  // 함수 인자 전달
+                    };
+                    yield return EvalList(funcBody, funcLocalVars);
                 }
                 else
                 {
@@ -374,10 +436,10 @@ public class RuntimeBlocksRunner : MonoBehaviour
         }
     }
 
-    IEnumerator EvalList(RuntimeBlockNode[] list)
+    IEnumerator EvalList(RuntimeBlockNode[] list, System.Collections.Generic.Dictionary<string, float> localVars = null)
     {
         if (list == null) yield break;
         foreach (var c in list)
-            yield return Eval(c);
+            yield return Eval(c, localVars);
     }
 }
