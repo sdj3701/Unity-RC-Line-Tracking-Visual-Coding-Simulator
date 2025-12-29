@@ -40,8 +40,20 @@ public class RuntimeBlocksRunner : MonoBehaviour
 
     void Awake()
     {
+        if (ioBehaviour == null) 
+        {
+            // Auto-detect adapter if not assigned
+            ioBehaviour = GetComponent<MonoBehaviour>(); 
+            if (!(ioBehaviour is IRuntimeIO)) ioBehaviour = FindObjectOfType<RCCarRuntimeAdapter>();
+        }
+
         io = ioBehaviour as IRuntimeIO;
-        if (io == null) { Debug.LogError("IRuntimeIO not set"); enabled = false; return; }
+        if (io == null) 
+        { 
+            Debug.LogError("IRuntimeIO not set. Please assign RCCarRuntimeAdapter to RuntimeBlocksRunner."); 
+            enabled = false; 
+            return; 
+        }
         LoadProgram();
     }
 

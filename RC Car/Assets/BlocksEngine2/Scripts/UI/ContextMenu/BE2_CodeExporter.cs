@@ -791,6 +791,7 @@ public class BE2_CodeExporter : MonoBehaviour
         string code = GenerateCSharpFromAllEnvs();
         if (string.IsNullOrEmpty(code) && (_functionsSb == null || _functionsSb.Length == 0) && (_loopSb == null || _loopSb.Length == 0)) return false;
         string xml = GenerateXmlFromAllEnvs();
+        BE2XmlToRuntimeJson.Export(xml);
         var sb = new StringBuilder();
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections;");
