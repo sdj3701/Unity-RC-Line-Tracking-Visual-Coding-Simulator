@@ -65,7 +65,7 @@ public class BE2_CodeExporter : MonoBehaviour
         return sb.ToString();
     }
 
-    string GenerateXmlFromAllEnvs()
+    public string GenerateXmlFromAllEnvs()
     {
         var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
         var sb = new StringBuilder();
@@ -791,7 +791,8 @@ public class BE2_CodeExporter : MonoBehaviour
         string code = GenerateCSharpFromAllEnvs();
         if (string.IsNullOrEmpty(code) && (_functionsSb == null || _functionsSb.Length == 0) && (_loopSb == null || _loopSb.Length == 0)) return false;
         string xml = GenerateXmlFromAllEnvs();
-        BE2XmlToRuntimeJson.Export(xml);
+        // Automatic export removed to separate concerns as requested by user
+        // BE2XmlToRuntimeJson.Export(xml);
         var sb = new StringBuilder();
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections;");
