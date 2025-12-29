@@ -168,6 +168,8 @@ GameObject:
   - component: {fileID: 223824171}
   - component: {fileID: 223824173}
   - component: {fileID: 223824172}
+  - component: {fileID: 223824175}
+  - component: {fileID: 223824174}
   m_Layer: 0
   m_Name: Car
   m_TagString: Untagged
@@ -238,7 +240,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 223824168}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d7f3b20a70f57aa44b3cb62a52132615, type: 3}
   m_Name: 
@@ -266,11 +268,56 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 223824168}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 61d718367cb991d4ea87a3da3c3416a0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &223824174
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 223824168}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0a6c540ceac4ea7498a3813e49fe8618, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  sensors:
+  - {fileID: 461777627}
+  - {fileID: 1105718450}
+  leftPin: 3
+  rightPin: 4
+  rayDistance: 2
+  blackThreshold: 0.2
+  whiteMeansTrue: 1
+  pinLeftF: 9
+  pinLeftB: 6
+  pinRightF: 10
+  pinRightB: 11
+  maxLinearSpeed: 5
+  maxAngularSpeed: 120
+  wheelVisualSpeed: 360
+  wheelRotateAxis: {x: 0, y: 1, z: 0}
+  wheels:
+  - {fileID: 1111230767}
+  - {fileID: 471977167}
+--- !u!114 &223824175
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 223824168}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 63e8b3febcbf30449ad22c94ab651955, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  runtimeJsonFile: BlocksRuntime.json
+  ioBehaviour: {fileID: 223824170}
 --- !u!1 &278407762
 GameObject:
   m_ObjectHideFlags: 0

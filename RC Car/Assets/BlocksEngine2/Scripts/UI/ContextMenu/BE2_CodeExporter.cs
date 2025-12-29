@@ -880,39 +880,39 @@ public class BE2_CodeExporter : MonoBehaviour
         }
         sb.AppendLine("}");
 
-        // 항상 Assets 폴더 경로 계산
-        string fullPath;
-        #if UNITY_EDITOR
-        // Write into Assets in Editor so it recompiles there
-        fullPath = relativeAssetPath;
-        if (!Path.IsPathRooted(fullPath))
-        {
-            if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
-                fullPath = Path.Combine(Application.dataPath, relativeAssetPath.Substring(7));
-            else
-                fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
-        }
-        #else
-        // Player build: use a writable path
-        fullPath = Path.Combine(Application.persistentDataPath, Path.GetFileName(relativeAssetPath));
-        #endif
+        // // 항상 Assets 폴더 경로 계산
+        // string fullPath;
+        // #if UNITY_EDITOR
+        // // Write into Assets in Editor so it recompiles there
+        // fullPath = relativeAssetPath;
+        // if (!Path.IsPathRooted(fullPath))
+        // {
+        //     if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
+        //         fullPath = Path.Combine(Application.dataPath, relativeAssetPath.Substring(7));
+        //     else
+        //         fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
+        // }
+        // #else
+        // // Player build: use a writable path
+        // fullPath = Path.Combine(Application.persistentDataPath, Path.GetFileName(relativeAssetPath));
+        // #endif
 
-        var dir = Path.GetDirectoryName(fullPath);
-        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(fullPath, sb.ToString());
+        // var dir = Path.GetDirectoryName(fullPath);
+        // if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        // File.WriteAllText(fullPath, sb.ToString());
 
-        #if UNITY_EDITOR
-        try
-        {
-            if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
-                UnityEditor.AssetDatabase.ImportAsset(relativeAssetPath, UnityEditor.ImportAssetOptions.ForceUpdate);
-        }
-        catch (Exception ex)
-        {
-            Debug.LogWarning($"[BE2_CodeExporter] ImportAsset failed: {ex.Message}. Falling back to Refresh.");
-            UnityEditor.AssetDatabase.Refresh();
-        }
-        #endif
+        // #if UNITY_EDITOR
+        // try
+        // {
+        //     if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
+        //         UnityEditor.AssetDatabase.ImportAsset(relativeAssetPath, UnityEditor.ImportAssetOptions.ForceUpdate);
+        // }
+        // catch (Exception ex)
+        // {
+        //     Debug.LogWarning($"[BE2_CodeExporter] ImportAsset failed: {ex.Message}. Falling back to Refresh.");
+        //     UnityEditor.AssetDatabase.Refresh();
+        // }
+        // #endif
 
         return true;
     }
