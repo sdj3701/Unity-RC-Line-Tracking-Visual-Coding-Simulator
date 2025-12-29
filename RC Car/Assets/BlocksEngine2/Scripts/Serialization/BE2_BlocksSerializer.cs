@@ -81,8 +81,28 @@ namespace MG_BlocksEngine2.Serializer
                 serializableBlock.varManagerName = varManagerType.ToString();
 
                 // v2.1 - using BE2_Text to enable usage of Text or TMP components
-                BE2_Text varName = BE2_Text.GetBE2Text(block.Transform.GetChild(0).GetChild(0).GetChild(0));
-                serializableBlock.varName = varName.text;
+                // BE2_Text varName = BE2_Text.GetBE2Text(block.Transform.GetChild(0).GetChild(0).GetChild(0));
+                // serializableBlock.varName = varName.text;
+
+                // FIX: Search for the actual variable variable item in the header, skipping static labels (e.g. "Set", "Change")
+                string foundVarName = "Variable";
+                if (block.Layout.SectionsArray.Length > 0)
+                {
+                    foreach (var item in block.Layout.SectionsArray[0].Header.ItemsArray)
+                    {
+                        // Skip static labels
+                        if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null) continue;
+
+                        // Found the first non-label item (likely the variable Dropdown or Input)
+                        BE2_Text textComp = BE2_Text.GetBE2Text(item.Transform);
+                        if (textComp != null)
+                        {
+                            foundVarName = textComp.text;
+                            break;
+                        }
+                    }
+                }
+                serializableBlock.varName = foundVarName;
             }
             else
             {
@@ -475,8 +495,21 @@ namespace MG_BlocksEngine2.Serializer
                     if (serializableBlock.varManagerName != null && serializableBlock.varManagerName != "")
                     {
                         //                                        | block        | section   | header    | text      |
-                        BE2_Text newVarName = BE2_Text.GetBE2Text(block.Transform.GetChild(0).GetChild(0).GetChild(0));
-                        newVarName.text = serializableBlock.varName;
+                        //                                        | block        | section   | header    | text      |
+                        // BE2_Text newVarName = BE2_Text.GetBE2Text(block.Transform.GetChild(0).GetChild(0).GetChild(0));
+                        // newVarName.text = serializableBlock.varName;
+                        
+                        BE2_Text newVarName = null;
+                        if (block.Layout.SectionsArray.Length > 0)
+                        {
+                            foreach (var item in block.Layout.SectionsArray[0].Header.ItemsArray)
+                            {
+                                if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null) continue;
+                                newVarName = BE2_Text.GetBE2Text(item.Transform);
+                                if (newVarName != null) break;
+                            }
+                        }
+                        if (newVarName != null) newVarName.text = serializableBlock.varName;
 
                         System.Type varManagerType = System.Type.GetType(serializableBlock.varManagerName);
                         if (varManagerType != null)
@@ -494,8 +527,22 @@ namespace MG_BlocksEngine2.Serializer
                     {
                         //                                        | block        | section   | header    | text      |
                         // BE2_Text newVarName = BE2_Text.GetBE2Text(block.Transform.GetChild(0).GetChild(0).GetChild(0));
-                        TMP_Text newVarName = block.Transform.GetChild(0).GetChild(0).GetChild(0).GetComponent<TMP_Text>();
-                        newVarName.text = serializableBlock.varName;
+                        //                                        | block        | section   | header    | text      |
+                        // BE2_Text newVarName = BE2_Text.GetBE2Text(block.Transform.GetChild(0).GetChild(0).GetChild(0));
+                        // TMP_Text newVarName = block.Transform.GetChild(0).GetChild(0).GetChild(0).GetComponent<TMP_Text>();
+                        // newVarName.text = serializableBlock.varName;
+
+                        TMP_Text newVarName = null;
+                        if (block.Layout.SectionsArray.Length > 0)
+                        {
+                            foreach (var item in block.Layout.SectionsArray[0].Header.ItemsArray)
+                            {
+                                if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null) continue;
+                                newVarName = item.Transform.GetComponentInChildren<TMP_Text>();
+                                if (newVarName != null) break;
+                            }
+                        }
+                        if (newVarName != null) newVarName.text = serializableBlock.varName;
                     }
 
                     // add inputs

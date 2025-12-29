@@ -317,7 +317,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   runtimeJsonFile: BlocksRuntime.json
-  ioBehaviour: {fileID: 223824170}
+  ioBehaviour: {fileID: 0}
 --- !u!1 &278407762
 GameObject:
   m_ObjectHideFlags: 0

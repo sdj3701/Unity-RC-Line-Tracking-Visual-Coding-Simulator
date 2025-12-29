@@ -38,7 +38,7 @@ public class RuntimeBlocksRunner : MonoBehaviour
     RuntimeBlockProgram program;
     Coroutine loopCo;
 
-    void Awake()
+    void Start()
     {
         if (ioBehaviour == null) 
         {
@@ -46,7 +46,7 @@ public class RuntimeBlocksRunner : MonoBehaviour
             ioBehaviour = GetComponent<MonoBehaviour>(); 
             if (!(ioBehaviour is IRuntimeIO)) ioBehaviour = FindObjectOfType<RCCarRuntimeAdapter>();
         }
-
+        Debug.Log($"[RuntimeBlocksRunner] ioBehaviour: {ioBehaviour}");
         io = ioBehaviour as IRuntimeIO;
         if (io == null) 
         { 
@@ -94,18 +94,23 @@ public class RuntimeBlocksRunner : MonoBehaviour
         {
             case "forward":
                 io.MoveForward(n.number);
+                yield return null; // Add yield to prevent freeze
                 break;
             case "turnLeft":
                 io.TurnLeft(n.number);
+                yield return null;
                 break;
             case "turnRight":
                 io.TurnRight(n.number);
+                yield return null;
                 break;
             case "stop":
                 io.Stop();
+                yield return null;
                 break;
             case "analogWrite":
                 io.AnalogWrite(n.pin, n.value);
+                yield return null;
                 break;
             case "digitalRead":
                 // side-effect only; could store to a variable if you extend the model
