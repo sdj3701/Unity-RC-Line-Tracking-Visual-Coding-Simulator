@@ -64941,11 +64941,13 @@ MonoBehaviour:
     type: 3}
   LabelTextTemplate: {fileID: 6054300827138557466, guid: 6d47798909d8e50ae94822bfb829aca6,
     type: 3}
-  instructionName: Loop
-  blockType: 2
+  instructionName: 
+  blockType: 1
   blockColor: {r: 0.9529412, g: 0.6117647, b: 0.07058824, a: 1}
-  blockHeaderMarkup: Loop
-  inputValues: []
+  blockHeaderMarkup: if $text else if $text
+  inputValues:
+  - 
+  - 
   newInstructionPath: '[dataPath]/BlocksEngine2/Scripts/EngineCore/Instruction/BlockInstructions/Custom/'
   newBlockPrefabPath: Assets/BlocksEngine2/Prefabs/Resources/Blocks/Custom/
   usePersistentPathOnBuild: 1

@@ -36,89 +36,69 @@ public class RuntimeBlockNode
 public class RuntimeBlocksRunner : MonoBehaviour
 {
     [SerializeField] string runtimeJsonFile = "BlocksRuntime.json";
-    [SerializeField] MonoBehaviour ioBehaviour; // assign RCCarRuntimeAdapter
-    IRuntimeIO io;
+    
     RuntimeBlockProgram program;
-    Coroutine loopCo;
+    IRuntimeIO io;
+    bool isInitialized = false;
     
     // 함수 정의를 저장하는 딕셔너리 (functionCall 시 body 실행용)
     System.Collections.Generic.Dictionary<string, RuntimeBlockNode[]> functionDefinitions = 
         new System.Collections.Generic.Dictionary<string, RuntimeBlockNode[]>();
 
-    void Start()
+    // ============================================================
+    // 공개 API (RCCarRuntimeAdapter에서 호출)
+    // ============================================================
+    
+    /// <summary>
+    /// 외부에서 IO 인터페이스를 설정하고 프로그램을 로드
+    /// </summary>
+    public void Initialize(IRuntimeIO runtimeIO)
     {
-        // Instead of failing only once, start a routine to wait for valid IO
-        StartCoroutine(WaitForIOAndStart());
-    }
-
-    IEnumerator WaitForIOAndStart()
-    {
-        while (ioBehaviour == null)
-        {
-            if (ioBehaviour == null)
-            {
-                ioBehaviour = GetComponent<MonoBehaviour>();
-                if (ioBehaviour != null && !(ioBehaviour is IRuntimeIO)) ioBehaviour = null;
-            }
-
-            if (ioBehaviour == null)
-            {
-                var adapter = FindObjectsOfType<RCCarRuntimeAdapter>(true);
-                if (adapter != null && adapter.Length > 0) ioBehaviour = adapter[0];
-            }
-
-            if (ioBehaviour == null)
-            {
-                // Wait for next frame and try again
-                yield return null; 
-            }
-        }
-
-        Debug.Log($"[RuntimeBlocksRunner] ioBehaviour: {ioBehaviour}");
-        io = ioBehaviour as IRuntimeIO;
-        if (io == null) 
-        { 
-            Debug.LogError("IRuntimeIO not set. Please assign RCCarRuntimeAdapter to RuntimeBlocksRunner."); 
-            enabled = false; 
-            yield break;
-        }
+        io = runtimeIO;
         LoadProgram();
-        if (program != null) loopCo = StartCoroutine(RunLoop());
+        isInitialized = program != null && program.roots != null;
+        Debug.Log($"[RuntimeBlocksRunner] Initialized. IsReady: {isInitialized}");
     }
-
-    public void OnEnable()
+    
+    /// <summary>
+    /// 매 FixedUpdate에서 호출. 모든 블록을 한 번 평가합니다.
+    /// </summary>
+    public void Tick()
     {
-        // If the object is disabled and re-enabled, resume the loop if program is loaded.
-        if (program != null) 
+        if (!isInitialized) return;
+        
+        foreach (var node in program.roots)
         {
-            if (loopCo != null) StopCoroutine(loopCo);
-            loopCo = StartCoroutine(RunLoop());
+            EvalSync(node, null);
         }
-        Debug.Log($"[RuntimeBlocksRunner] OnEnable: {enabled}");
     }
+    
+    /// <summary>
+    /// 프로그램이 로드되었는지 확인
+    /// </summary>
+    public bool IsReady => isInitialized;
 
-    public void OnDisable()
-    {
-        if (loopCo != null) StopCoroutine(loopCo);
-        Debug.Log($"[RuntimeBlocksRunner] OnDisable: {enabled}");
-    }
-
+    // ============================================================
+    // 프로그램 로딩
+    // ============================================================
+    
     void LoadProgram()
     {
         var path = Path.Combine(Application.persistentDataPath, runtimeJsonFile);
-        if (!File.Exists(path)) { Debug.LogWarning($"Runtime program not found: {path}"); return; }
+        if (!File.Exists(path)) 
+        { 
+            Debug.LogWarning($"Runtime program not found: {path}"); 
+            return; 
+        }
         
-        // Use custom parser instead of JsonUtility to avoid depth limit
         try
         {
             var json = File.ReadAllText(path);
             program = ParseJsonProgram(json);
-            
-            // 함수 정의 수집 (functionCall에서 사용)
             BuildFunctionDefinitions();
             
-            Debug.Log("[RuntimeBlocksRunner] Program loaded successfully using custom parser.");
-            Debug.Log($"[RuntimeBlocksRunner] Function definitions loaded: {functionDefinitions.Count}");
+            Debug.Log("[RuntimeBlocksRunner] Program loaded successfully.");
+            Debug.Log($"[RuntimeBlocksRunner] Function definitions: {functionDefinitions.Count}");
         }
         catch (Exception ex)
         {
@@ -126,47 +106,135 @@ public class RuntimeBlocksRunner : MonoBehaviour
         }
     }
     
-    /// <summary>
-    /// roots에서 "functionDefine" 타입 노드를 찾아 함수 정의 딕셔너리에 저장
-    /// </summary>
     void BuildFunctionDefinitions()
     {
         functionDefinitions.Clear();
-        
         if (program?.roots == null) return;
         
         foreach (var node in program.roots)
-        {
             CollectFunctionDefinitions(node);
-        }
     }
     
     void CollectFunctionDefinitions(RuntimeBlockNode node)
     {
         if (node == null) return;
         
-        // functionDefine 타입이면 딕셔너리에 저장
         if (node.type == "functionDefine" && !string.IsNullOrEmpty(node.functionName))
         {
             functionDefinitions[node.functionName] = node.body ?? new RuntimeBlockNode[0];
-            Debug.Log($"[RuntimeBlocksRunner] Registered function: {node.functionName} with {node.body?.Length ?? 0} body nodes");
         }
         
-        // 재귀적으로 body와 elseBody도 검사
         if (node.body != null)
-        {
             foreach (var child in node.body)
                 CollectFunctionDefinitions(child);
-        }
         
         if (node.elseBody != null)
-        {
             foreach (var child in node.elseBody)
                 CollectFunctionDefinitions(child);
-        }
     }
 
-    // --- Custom Recursive JSON Parser (Simple & Lightweight) ---
+    // ============================================================
+    // 동기식 블록 평가 (FixedUpdate 호출용)
+    // ============================================================
+    
+    void EvalSync(RuntimeBlockNode n, System.Collections.Generic.Dictionary<string, float> localVars)
+    {
+        if (n == null) return;
+        
+        switch (n.type)
+        {
+            case "functionDefine":
+                // 함수 정의는 실행하지 않음 (호출 시에만 실행)
+                break;
+                
+            case "forward":
+                io.MoveForward(n.number);
+                break;
+                
+            case "turnLeft":
+                io.TurnLeft(n.number);
+                break;
+                
+            case "turnRight":
+                io.TurnRight(n.number);
+                break;
+                
+            case "stop":
+                io.Stop();
+                break;
+                
+            case "analogWrite":
+                {
+                    float writeValue = n.value;
+                    if (!string.IsNullOrEmpty(n.valueVar) && localVars != null && localVars.TryGetValue(n.valueVar, out float localVal))
+                    {
+                        writeValue = localVal;
+                    }
+                    Debug.Log($"[EvalSync] analogWrite: pin={n.pin}, value={writeValue}, valueVar={n.valueVar}");
+                    io.AnalogWrite(n.pin, writeValue);
+                }
+                break;
+                
+            case "digitalRead":
+                _ = io.DigitalRead(n.pin);
+                break;
+                
+            case "repeat":
+                for (int i = 0; i < (int)n.number; i++)
+                    EvalListSync(n.body, localVars);
+                break;
+                
+            case "forever":
+                // forever의 body를 매 Tick마다 한 번씩 실행
+                EvalListSync(n.body, localVars);
+                break;
+                
+            case "if":
+                if (io.DigitalRead(n.pin))
+                    EvalListSync(n.body, localVars);
+                break;
+                
+            case "ifElse":
+                if (io.DigitalRead(n.pin))
+                    EvalListSync(n.body, localVars);
+                else
+                    EvalListSync(n.elseBody, localVars);
+                break;
+                
+            case "wait":
+                // FixedUpdate 기반에서는 wait 블록을 무시 (또는 별도 타이머 구현 필요)
+                // TODO: 필요시 waitTimer 상태 변수로 구현 가능
+                break;
+                
+            case "functionCall":
+                Debug.Log($"[EvalSync] functionCall: {n.functionName}, arg={n.number}");
+                if (!string.IsNullOrEmpty(n.functionName) && functionDefinitions.TryGetValue(n.functionName, out var funcBody))
+                {
+                    var funcLocalVars = new System.Collections.Generic.Dictionary<string, float>
+                    {
+                        { "Speed", n.number }
+                    };
+                    EvalListSync(funcBody, funcLocalVars);
+                }
+                else
+                {
+                    Debug.LogWarning($"[EvalSync] Function not found: {n.functionName}");
+                }
+                break;
+        }
+    }
+    
+    void EvalListSync(RuntimeBlockNode[] list, System.Collections.Generic.Dictionary<string, float> localVars)
+    {
+        if (list == null) return;
+        foreach (var node in list)
+            EvalSync(node, localVars);
+    }
+
+    // ============================================================
+    // JSON 파싱 (기존 코드 유지)
+    // ============================================================
+    
     RuntimeBlockProgram ParseJsonProgram(string json)
     {
         int idx = json.IndexOf("\"roots\"");
@@ -187,19 +255,9 @@ public class RuntimeBlocksRunner : MonoBehaviour
         while (idx < json.Length)
         {
             char c = json[idx];
-            if (c == ']' ) 
-            {
-                idx++; 
-                break; 
-            }
-            if (c == '{')
-            {
-                list.Add(ParseNode(json, ref idx));
-            }
-            else
-            {
-                idx++;
-            }
+            if (c == ']') { idx++; break; }
+            if (c == '{') list.Add(ParseNode(json, ref idx));
+            else idx++;
         }
         return list;
     }
@@ -212,21 +270,15 @@ public class RuntimeBlocksRunner : MonoBehaviour
         while (idx < json.Length)
         {
             char c = json[idx];
-            if (c == '}') 
-            {
-                idx++; 
-                break; 
-            }
+            if (c == '}') { idx++; break; }
             if (c == '"')
             {
                 string key = ParseString(json, ref idx);
                 
-                // ':' 찾기 (경계 체크 포함)
                 while (idx < json.Length && json[idx] != ':') idx++;
                 if (idx >= json.Length) break;
                 idx++; 
                 
-                // 공백 스킵
                 while (idx < json.Length && char.IsWhiteSpace(json[idx])) idx++;
                 if (idx >= json.Length) break;
 
@@ -240,59 +292,43 @@ public class RuntimeBlocksRunner : MonoBehaviour
                 else if (key == "body") 
                 {
                     while(idx < json.Length && json[idx] != '[') idx++;
-                    if (idx < json.Length)
-                        node.body = ParseNodeArray(json, ref idx).ToArray();
+                    if (idx < json.Length) node.body = ParseNodeArray(json, ref idx).ToArray();
                 }
                 else if (key == "elseBody") 
                 {
                     while(idx < json.Length && json[idx] != '[') idx++;
-                    if (idx < json.Length)
-                        node.elseBody = ParseNodeArray(json, ref idx).ToArray();
+                    if (idx < json.Length) node.elseBody = ParseNodeArray(json, ref idx).ToArray();
                 }
-                else
-                {
-                    SkipValue(json, ref idx);
-                }
+                else SkipValue(json, ref idx);
             }
-            else
-            {
-                idx++;
-            }
+            else idx++;
         }
         return node;
     }
 
     string ParseString(string json, ref int idx)
     {
-        // '"' 찾기
         while (idx < json.Length && json[idx] != '"') idx++;
         if (idx >= json.Length) return "";
         
-        idx++; // skip opening "
+        idx++; 
         int start = idx;
-        
-        // 닫는 '"' 찾기
         while (idx < json.Length && json[idx] != '"') idx++; 
-        
         if (idx >= json.Length) return "";
         
         string s = json.Substring(start, idx - start);
-        idx++; // skip closing "
+        idx++;
         return s;
     }
 
     float ParseFloat(string json, ref int idx)
     {
-        // 공백과 ':' 스킵
         while(idx < json.Length && (char.IsWhiteSpace(json[idx]) || json[idx] == ':')) idx++;
-        
         if (idx >= json.Length) return 0f;
         
         int start = idx;
         while (idx < json.Length && (char.IsDigit(json[idx]) || json[idx] == '.' || json[idx] == '-' || json[idx] == 'e' || json[idx] == 'E'))
-        {
             idx++;
-        }
         
         if (start == idx) return 0f;
         
@@ -303,7 +339,6 @@ public class RuntimeBlocksRunner : MonoBehaviour
 
     void SkipValue(string json, ref int idx)
     {
-        // 중첩 객체/배열 처리를 위한 깊이 추적
         int depth = 0;
         bool inString = false;
         
@@ -313,8 +348,7 @@ public class RuntimeBlocksRunner : MonoBehaviour
             
             if (inString)
             {
-                if (c == '"' && (idx == 0 || json[idx-1] != '\\'))
-                    inString = false;
+                if (c == '"' && (idx == 0 || json[idx-1] != '\\')) inString = false;
                 idx++;
                 continue;
             }
@@ -326,119 +360,9 @@ public class RuntimeBlocksRunner : MonoBehaviour
                 if (depth > 0) { depth--; idx++; continue; }
                 return; 
             }
-            if ((c == ',') && depth == 0) return;
+            if (c == ',' && depth == 0) return;
             
             idx++;
         }
-    }
-    // --- End Custom Parser ---
-
-    IEnumerator RunLoop()
-    {
-        Debug.Log("[RuntimeBlocksRunner] RunLoop Started");
-        while (true)
-        {
-            if (program?.roots != null)
-            {
-                Debug.Log($"[RuntimeBlocksRunner] RunLoop iterating. Roots count: {program.roots.Length}");
-                foreach (var node in program.roots)
-                    yield return Eval(node);
-            }
-            else 
-            {
-                Debug.LogWarning("[RuntimeBlocksRunner] program.roots is null");
-                yield return null;
-            }
-            yield return null; // Safety yield per loop
-        }
-    }
-
-    IEnumerator Eval(RuntimeBlockNode n, System.Collections.Generic.Dictionary<string, float> localVars = null)
-    {
-        if (n == null) yield break;
-        switch (n.type)
-        {
-            case "forward":
-                Debug.Log($"[RuntimeBlocksRunner] Action: Forward {n.number}");
-                io.MoveForward(n.number);
-                yield return null; 
-                break;
-            case "turnLeft":
-                Debug.Log($"[RuntimeBlocksRunner] Action: TurnLeft {n.number}");
-                io.TurnLeft(n.number);
-                yield return null;
-                break;
-            case "turnRight":
-                io.TurnRight(n.number);
-                yield return null;
-                break;
-            case "stop":
-                io.Stop();
-                yield return null;
-                break;
-            case "analogWrite":
-                {
-                    // valueVar가 있으면 로컬 변수에서 값을 가져옴
-                    float writeValue = n.value;
-                    if (!string.IsNullOrEmpty(n.valueVar) && localVars != null && localVars.TryGetValue(n.valueVar, out float localVal))
-                    {
-                        writeValue = localVal;
-                    }
-                    Debug.Log($"[RuntimeBlocksRunner] AnalogWrite pin={n.pin}, value={writeValue} (valueVar={n.valueVar})");
-                    io.AnalogWrite(n.pin, writeValue);
-                    yield return null;
-                }
-                break;
-            case "digitalRead":
-                _ = io.DigitalRead(n.pin);
-                break;
-            case "repeat":
-                for (int i = 0; i < (int)n.number; i++)
-                    yield return EvalList(n.body, localVars);
-                break;
-            case "forever":
-                while (true)
-                {
-                    yield return EvalList(n.body, localVars);
-                    yield return null; // Safety break
-                }
-            case "if":
-                if (io.DigitalRead(n.pin))
-                    yield return EvalList(n.body, localVars);
-                break;
-            case "ifElse":
-                if (io.DigitalRead(n.pin))
-                    yield return EvalList(n.body, localVars);
-                else
-                    yield return EvalList(n.elseBody, localVars);
-                break;
-            case "wait":
-                yield return new WaitForSeconds(n.number);
-                break;
-            case "functionCall":
-                Debug.Log($"[RuntimeBlocksRunner] FunctionCall: {n.functionName} with arg {n.number}");
-                // 함수 정의를 찾아서 body 실행 (인자를 로컬 변수로 전달)
-                if (!string.IsNullOrEmpty(n.functionName) && functionDefinitions.TryGetValue(n.functionName, out var funcBody))
-                {
-                    // 새로운 로컬 변수 컨텍스트 생성 (Speed 파라미터에 n.number 할당)
-                    var funcLocalVars = new System.Collections.Generic.Dictionary<string, float>
-                    {
-                        { "Speed", n.number }  // 함수 인자 전달
-                    };
-                    yield return EvalList(funcBody, funcLocalVars);
-                }
-                else
-                {
-                    Debug.LogWarning($"[RuntimeBlocksRunner] Function not found: {n.functionName}");
-                }
-                break;
-        }
-    }
-
-    IEnumerator EvalList(RuntimeBlockNode[] list, System.Collections.Generic.Dictionary<string, float> localVars = null)
-    {
-        if (list == null) yield break;
-        foreach (var c in list)
-            yield return Eval(c, localVars);
     }
 }

@@ -86,36 +86,22 @@ namespace MG_BlocksEngine2.Serializer
 
                 // FIX: Search for the actual variable variable item in the header, skipping static labels (e.g. "Set", "Change")
                 string foundVarName = "Variable";
-                Debug.Log($"[BlockToSerializable] 블록 '{block.Transform.name}' 변수명 탐색 시작 (기본값: {foundVarName})");
-                
                 if (block.Layout.SectionsArray.Length > 0)
                 {
                     foreach (var item in block.Layout.SectionsArray[0].Header.ItemsArray)
                     {
                         // Skip static labels
-                        if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null) 
-                        {
-                            Debug.Log($"  - 스킵: Label 아이템 '{item.Transform.name}'");
-                            continue;
-                        }
+                        if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null) continue;
 
                         // Found the first non-label item (likely the variable Dropdown or Input)
                         BE2_Text textComp = BE2_Text.GetBE2Text(item.Transform);
-                        Debug.Log($"  - 검사: '{item.Transform.name}', BE2_Text 존재: {textComp != null}");
                         if (textComp != null)
                         {
                             foundVarName = textComp.text;
-                            Debug.Log($"  - 변수명 발견: '{foundVarName}'");
                             break;
                         }
                     }
                 }
-                else
-                {
-                    Debug.Log($"  - 경고: SectionsArray가 비어있음!");
-                }
-                
-                Debug.Log($"[BlockToSerializable] 최종 변수명: '{foundVarName}' (블록: '{block.Transform.name}')");
                 serializableBlock.varName = foundVarName;
             }
             else
