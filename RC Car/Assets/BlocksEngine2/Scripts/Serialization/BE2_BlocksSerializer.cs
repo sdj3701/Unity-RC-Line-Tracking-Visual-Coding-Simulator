@@ -86,22 +86,36 @@ namespace MG_BlocksEngine2.Serializer
 
                 // FIX: Search for the actual variable variable item in the header, skipping static labels (e.g. "Set", "Change")
                 string foundVarName = "Variable";
+                Debug.Log($"[BlockToSerializable] 블록 '{block.Transform.name}' 변수명 탐색 시작 (기본값: {foundVarName})");
+                
                 if (block.Layout.SectionsArray.Length > 0)
                 {
                     foreach (var item in block.Layout.SectionsArray[0].Header.ItemsArray)
                     {
                         // Skip static labels
-                        if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null) continue;
+                        if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null) 
+                        {
+                            Debug.Log($"  - 스킵: Label 아이템 '{item.Transform.name}'");
+                            continue;
+                        }
 
                         // Found the first non-label item (likely the variable Dropdown or Input)
                         BE2_Text textComp = BE2_Text.GetBE2Text(item.Transform);
+                        Debug.Log($"  - 검사: '{item.Transform.name}', BE2_Text 존재: {textComp != null}");
                         if (textComp != null)
                         {
                             foundVarName = textComp.text;
+                            Debug.Log($"  - 변수명 발견: '{foundVarName}'");
                             break;
                         }
                     }
                 }
+                else
+                {
+                    Debug.Log($"  - 경고: SectionsArray가 비어있음!");
+                }
+                
+                Debug.Log($"[BlockToSerializable] 최종 변수명: '{foundVarName}' (블록: '{block.Transform.name}')");
                 serializableBlock.varName = foundVarName;
             }
             else
@@ -505,6 +519,11 @@ namespace MG_BlocksEngine2.Serializer
 
                     if (serializableBlock.varManagerName != null && serializableBlock.varManagerName != "")
                     {
+                        Debug.Log($"[SerializableToBlock] 변수 블록 로드 시작");
+                        Debug.Log($"  - 블록명: '{serializableBlock.blockName}'");
+                        Debug.Log($"  - XML에서 읽은 varName: '{serializableBlock.varName}'");
+                        Debug.Log($"  - varManagerName: '{serializableBlock.varManagerName}'");
+                        
                         //                                        | block        | section   | header    | text      |
                         //                                        | block        | section   | header    | text      |
                         // BE2_Text newVarName = BE2_Text.GetBE2Text(block.Transform.GetChild(0).GetChild(0).GetChild(0));
@@ -513,20 +532,47 @@ namespace MG_BlocksEngine2.Serializer
                         BE2_Text newVarName = null;
                         if (block.Layout.SectionsArray.Length > 0)
                         {
+                            Debug.Log($"  - SectionsArray 길이: {block.Layout.SectionsArray.Length}");
+                            Debug.Log($"  - ItemsArray 길이: {block.Layout.SectionsArray[0].Header.ItemsArray.Length}");
+                            
                             foreach (var item in block.Layout.SectionsArray[0].Header.ItemsArray)
                             {
-                                if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null) continue;
+                                if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null)
+                                {
+                                    Debug.Log($"  - 스킵(Label): '{item.Transform.name}'");
+                                    continue;
+                                }
+                                Debug.Log($"  - 검사: '{item.Transform.name}'");
                                 newVarName = BE2_Text.GetBE2Text(item.Transform);
-                                if (newVarName != null) break;
+                                Debug.Log($"  - BE2_Text 발견: {newVarName != null}");
+                                if (newVarName != null)
+                                {
+                                    Debug.Log($"  - 현재 텍스트 값: '{newVarName.text}'");
+                                    break;
+                                }
                             }
                         }
-                        if (newVarName != null) newVarName.text = serializableBlock.varName;
+                        else
+                        {
+                            Debug.Log($"  - 경고: SectionsArray가 비어있음!");
+                        }
+                        
+                        if (newVarName != null)
+                        {
+                            Debug.Log($"  - 변수명 적용: '{newVarName.text}' → '{serializableBlock.varName}'");
+                            newVarName.text = serializableBlock.varName;
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"  - 경고: BE2_Text를 찾지 못해 변수명 적용 불가!");
+                        }
 
                         System.Type varManagerType = System.Type.GetType(serializableBlock.varManagerName);
                         if (varManagerType != null)
                         {
                             I_BE2_VariablesManager varManager = MonoBehaviour.FindObjectOfType(varManagerType) as I_BE2_VariablesManager;
                             varManager.CreateAndAddVarToPanel(serializableBlock.varName);
+                            Debug.Log($"  - 변수 패널에 추가 완료: '{serializableBlock.varName}'");
                         }
                         else
                         {
