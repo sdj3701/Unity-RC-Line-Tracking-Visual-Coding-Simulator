@@ -356,7 +356,6 @@ public class RuntimeBlocksRunner : MonoBehaviour
     IEnumerator Eval(RuntimeBlockNode n, System.Collections.Generic.Dictionary<string, float> localVars = null)
     {
         if (n == null) yield break;
-        Debug.Log($"[RuntimeBlocksRunner] Eval: {n.type}");
         switch (n.type)
         {
             case "forward":

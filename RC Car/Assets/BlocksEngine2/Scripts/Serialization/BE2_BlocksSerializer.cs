@@ -334,7 +334,18 @@ namespace MG_BlocksEngine2.Serializer
                             }
                             else if (inputDropdown != null && !inputDropdown.isNull)
                             {
-                                inputDropdown.value = inputDropdown.GetIndexOf(serializableInput.value);
+                                int idx = inputDropdown.GetIndexOf(serializableInput.value);
+                                if (idx >= 0)
+                                {
+                                    inputDropdown.value = idx;
+                                }
+                                else
+                                {
+                                    // 변수가 드롭다운에 없으면 옵션으로 추가 후 선택
+                                    inputDropdown.AddOption(serializableInput.value);
+                                    inputDropdown.value = inputDropdown.GetOptionsCount() - 1;
+                                    inputDropdown.RefreshShownValue();
+                                }
                             }
                         }
 
