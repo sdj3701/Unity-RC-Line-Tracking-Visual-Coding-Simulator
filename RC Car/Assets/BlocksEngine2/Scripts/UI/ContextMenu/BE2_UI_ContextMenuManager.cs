@@ -118,6 +118,10 @@ namespace MG_BlocksEngine2.UI
 
                 System.IO.File.WriteAllText(path, xmlContent);
                 Debug.Log($"XML generated and saved to: {path}");
+                
+                // JSON 생성 (XML을 직접 전달하여 중복 생성 방지)
+                BE2XmlToRuntimeJson.Export(xmlContent);
+                Debug.Log("[CodeGenerated] JSON also generated and saved.");
             }
             catch (System.Exception ex)
             {
