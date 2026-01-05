@@ -10,6 +10,7 @@ using TMPro;
 
 public class BE2_CodeExporter : MonoBehaviour
 {
+    #region Fields - C# Code Generation
     // 변수 선언 여부를 추적하기 위한 집합 (중복 선언 방지)
     System.Collections.Generic.HashSet<string> _declaredVars = new System.Collections.Generic.HashSet<string>();
     // 함수 정의 중복 생성을 방지하고, Run() 상단에 삽입할 로컬 함수 버퍼를 관리
@@ -27,6 +28,12 @@ public class BE2_CodeExporter : MonoBehaviour
     StringBuilder _classFieldsSb = new StringBuilder();
     System.Collections.Generic.HashSet<string> _functionDeclaredVars;
     public string LastSavedPath;
+    #endregion
+
+    #region C# Code Generation - Main Entry
+    /// <summary>
+    /// 모든 환경에서 블록을 C# 코드로 변환
+    /// </summary>
     public string GenerateCSharpFromAllEnvs()
     {
         var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
@@ -64,7 +71,12 @@ public class BE2_CodeExporter : MonoBehaviour
         }
         return sb.ToString();
     }
+    #endregion
 
+    #region XML Generation - Main Entry
+    /// <summary>
+    /// 모든 환경에서 블록을 XML로 변환 (BE2 저장 형식)
+    /// </summary>
     public string GenerateXmlFromAllEnvs()
     {
         var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
@@ -82,7 +94,9 @@ public class BE2_CodeExporter : MonoBehaviour
         }
         return sb.ToString();
     }
+    #endregion
 
+    #region Utility Methods
     string Indent(int level)
     {
         if (level <= 0) return string.Empty;
@@ -142,6 +156,54 @@ public class BE2_CodeExporter : MonoBehaviour
         return sb.ToString();
     }
 
+    // BE2 변수명을 C# 식별자로 정규화
+    string SanitizeVarName(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return "var_";
+        var sb = new StringBuilder();
+        // 첫 글자는 문자 또는 '_'
+        if (!(char.IsLetter(raw[0]) || raw[0] == '_')) sb.Append('_');
+        for (int i = 0; i < raw.Length; i++)
+        {
+            char ch = raw[i];
+            if (char.IsLetterOrDigit(ch) || ch == '_') sb.Append(ch);
+            else sb.Append('_');
+        }
+        var name = sb.ToString();
+        if (string.IsNullOrEmpty(name)) name = "var_";
+        return name;
+    }
+
+    string SanitizeIdentifier(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return "input";
+        var sbId = new System.Text.StringBuilder(s.Length);
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            if (char.IsLetterOrDigit(c) || c == '_') sbId.Append(c);
+        }
+        if (sbId.Length == 0) return "input";
+        if (char.IsDigit(sbId[0])) sbId.Insert(0, '_');
+        return sbId.ToString();
+    }
+
+    // 깊이 우선으로 자식 Transform를 이름으로 탐색
+    Transform FindChildDeep(Transform root, string targetName)
+    {
+        if (root == null || string.IsNullOrEmpty(targetName)) return null;
+        if (root.name == targetName) return root;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            var child = root.GetChild(i);
+            var found = FindChildDeep(child, targetName);
+            if (found != null) return found;
+        }
+        return null;
+    }
+    #endregion
+
+    #region C# Code Generation - Block Processing
     string GenerateForBlock(I_BE2_Block block, int indent, bool isInWhenPlay)
     {
         var ins = block.Instruction;
@@ -203,7 +265,6 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             case nameof(BE2_Ins_MoveForward):
             {
-                // 이동 블록: 입력값이 블록(변수/연산)일 수 있으므로 표현식으로 변환
                 var inputs = baseIns.Section0Inputs;
                 string expr = inputs != null && inputs.Length > 0 ? BuildValueExpression(inputs[0]) : "0f";
                 sb.AppendLine(Indent(indent) + "transform.position += transform.forward * (" + expr + ");");
@@ -211,7 +272,6 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             case nameof(BE2_Ins_TurnDirection):
             {
-                // 회전 방향 블록: 조건식 안에 변수/연산 사용 가능하도록 표현식 생성 후 비교
                 var inputs = baseIns.Section0Inputs;
                 string dirExpr = inputs != null && inputs.Length > 0 ? BuildValueExpression(inputs[0]) : QuoteString("");
                 string dirVar = "__dir" + indent;
@@ -243,7 +303,6 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             case nameof(BE2_Ins_Wait):
             {
-                // 대기 블록: 현재 Run()이 void이므로 동기 대기 미지원. 주석으로 안내만 출력
                 var inputs = baseIns.Section0Inputs;
                 string expr = inputs != null && inputs.Length > 0 ? BuildValueExpression(inputs[0]) : "0f";
                 sb.AppendLine(Indent(indent) + "// TODO: " + "Wait " + "(" + expr + ") 초 대기는 void 메서드에서 직접 지원되지 않습니다.");
@@ -251,14 +310,12 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             case nameof(BE2_Ins_Repeat):
             {
-                // 반복 블록: 반복 횟수에 변수/연산 사용 가능
                 var inputs = baseIns.Section0Inputs;
                 string countExpr = inputs != null && inputs.Length > 0 ? BuildValueExpression(inputs[0]) : "0";
                 string loopVar = "i" + indent.ToString();
                 sb.AppendLine(Indent(indent) + "for (int " + loopVar + " = 0; " + loopVar + " < (int)(" + countExpr + "); " + loopVar + ")");
                 sb.AppendLine(Indent(indent) + "{");
                 sb.Append(GenerateSectionBody(block, 0, indent + 1, isInWhenPlay));
-                // 무한 루프는 주의해서 사용하세요.
                 sb.AppendLine(Indent(indent) + "}");
                 break;
             }
@@ -267,13 +324,11 @@ public class BE2_CodeExporter : MonoBehaviour
                 sb.AppendLine(Indent(indent) + "while (true)");
                 sb.AppendLine(Indent(indent) + "{");
                 sb.Append(GenerateSectionBody(block, 0, indent + 1, isInWhenPlay));
-                // 무한 루프는 주의해서 사용하세요.
                 sb.AppendLine(Indent(indent) + "}");
                 break;
             }
             case nameof(BE2_Ins_RepeatUntil):
             {
-                // 조건이 참이 될 때까지 반복: 조건식에 변수/연산 사용 가능
                 var inputs = baseIns.Section0Inputs;
                 string condExpr = inputs != null && inputs.Length > 0 ? BuildBooleanExpression(inputs[0]) : "false";
                 sb.AppendLine(Indent(indent) + "while (!(" + condExpr + "))");
@@ -284,7 +339,6 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             case nameof(BE2_Ins_If):
             {
-                // If 블록: 조건식에 변수/연산 사용 가능
                 var inputs = baseIns.Section0Inputs;
                 string condExpr = inputs != null && inputs.Length > 0 ? BuildBooleanExpression(inputs[0]) : "false";
                 sb.AppendLine(Indent(indent) + "if (" + condExpr + ")");
@@ -295,7 +349,6 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             case nameof(BE2_Ins_IfElse):
             {
-                // If/Else 블록: 조건식에 변수/연산 사용 가능
                 var inputs = baseIns.Section0Inputs;
                 string condExpr = inputs != null && inputs.Length > 0 ? BuildBooleanExpression(inputs[0]) : "false";
                 sb.AppendLine(Indent(indent) + "if (" + condExpr + ")");
@@ -310,7 +363,6 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             case nameof(BE2_Ins_SetVariable):
             {
-                // 변수 설정 블록: object 선언 후 대입 (최초 1회 선언)
                 var inputs = baseIns.Section0Inputs;
                 if (inputs != null && inputs.Length >= 2)
                 {
@@ -339,10 +391,6 @@ public class BE2_CodeExporter : MonoBehaviour
                                 _classFieldVars.Add(varName);
                                 _declaredVars.Add(varName);
                             }
-                            else
-                            {
-                                // 이미 클래스 필드로 선언된 경우, Start 내 재할당은 하지 않음 (필드 초기값 유지)
-                            }
                         }
                         else
                         {
@@ -366,7 +414,6 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             case nameof(BE2_Ins_AddVariable):
             {
-                // 변수 더하기 블록: 문자열/숫자 형식은 런타임에 결정되므로 단순 +로 생성
                 var inputs = baseIns.Section0Inputs;
                 if (inputs != null && inputs.Length >= 2)
                 {
@@ -394,10 +441,6 @@ public class BE2_CodeExporter : MonoBehaviour
                                 _classFieldsSb.AppendLine("    object " + varName + " = " + addExpr + ";");
                                 _classFieldVars.Add(varName);
                             }
-                            else
-                            {
-                                // 이미 클래스 필드로 선언된 경우, Start 내 재할당은 하지 않음 (필드 초기값 유지)
-                            }
                         }
                         else if (_classFieldVars.Contains(varName))
                         {
@@ -418,7 +461,6 @@ public class BE2_CodeExporter : MonoBehaviour
             }
             default:
             {
-                // 조건 블록에 대한 일반 처리: 섹션 수로 if/else 판단 (타입명이 다를 때 대비)
                 if (block.Type == MG_BlocksEngine2.Block.BlockTypeEnum.condition && baseIns != null)
                 {
                     var inputs = baseIns.Section0Inputs;
@@ -440,7 +482,6 @@ public class BE2_CodeExporter : MonoBehaviour
                         break;
                     }
                 }
-                // 기본: 자식 순차 블록 생성
                 sb.Append(GenerateSequentialChildren(block, indent, isInWhenPlay));
                 break;
             }
@@ -463,7 +504,6 @@ public class BE2_CodeExporter : MonoBehaviour
             for (int c = 0; c < children.Length; c++)
             {
                 var child = children[c];
-                // 단독으로 놓인 연산/변수 블록은 결과를 콘솔에 출력하도록 처리
                 if (child != null && child.Type == MG_BlocksEngine2.Block.BlockTypeEnum.operation)
                 {
                     string expr = GenerateOperationExpression(child);
@@ -479,7 +519,28 @@ public class BE2_CodeExporter : MonoBehaviour
         return sb.ToString();
     }
 
-    // 입력으로부터 C# 값 표현식 생성 (숫자/문자열/연산/변수 블록 지원)
+    string GenerateSectionBody(I_BE2_Block block, int sectionIndex, int indent, bool isInWhenPlay)
+    {
+        var layout = block.Layout;
+        if (layout == null || layout.SectionsArray == null) return string.Empty;
+        if (sectionIndex < 0 || sectionIndex >= layout.SectionsArray.Length) return string.Empty;
+        var section = layout.SectionsArray[sectionIndex];
+        if (section == null || section.Body == null) return string.Empty;
+        section.Body.UpdateChildBlocksList();
+        var children = section.Body.ChildBlocksArray;
+        var sb = new StringBuilder();
+        if (children != null)
+        {
+            for (int i = 0; i < children.Length; i++)
+            {
+                sb.Append(GenerateForBlock(children[i], indent, isInWhenPlay));
+            }
+        }
+        return sb.ToString();
+    }
+    #endregion
+
+    #region C# Code Generation - Expression Builders
     string BuildValueExpression(I_BE2_BlockSectionHeaderInput input)
     {
         if (input == null) return "";
@@ -487,7 +548,6 @@ public class BE2_CodeExporter : MonoBehaviour
         var block = spot != null ? spot.Block : null;
         if (block != null)
         {
-            // 입력에 블록이 놓인 경우 해당 블록의 연산 표현식 생성
             string op = GenerateOperationExpression(block);
             if (!string.IsNullOrEmpty(op)) return op;
         }
@@ -504,7 +564,6 @@ public class BE2_CodeExporter : MonoBehaviour
                 }
             }
         }
-        // 블록이 없으면 현재 입력값을 그대로 사용
         var vals = input.InputValues;
         if (vals.isText)
         {
@@ -516,66 +575,6 @@ public class BE2_CodeExporter : MonoBehaviour
         }
     }
 
-    public bool LoadXmlToAssets(string relativeAssetPath = "Assets/Generated/BlocksGenerated.be2")
-    {
-        // Repurposed: load existing XML and instantiate blocks into an available Env
-        bool isPlayMode = Application.isPlaying;
-
-        // Resolve path: default to project Assets folder
-        string fullPath = relativeAssetPath;
-        if (!Path.IsPathRooted(fullPath))
-        {
-            if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
-            {
-                string sub = relativeAssetPath.Substring(7);
-                fullPath = Path.Combine(Application.dataPath, sub);
-            }
-            else
-            {
-                fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
-            }
-        }
-
-        if (!File.Exists(fullPath))
-        {
-            Debug.LogWarning($"[BE2_CodeExporter] XML file not found at: '{fullPath}'");
-            return false;
-        }
-
-        var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
-        if (envs == null || envs.Length == 0)
-        {
-            Debug.LogWarning("[BE2_CodeExporter] No BE2_ProgrammingEnv found to load XML into.");
-            return false;
-        }
-
-        // Prefer an active env; fallback to first
-        MG_BlocksEngine2.Environment.BE2_ProgrammingEnv targetEnv = null;
-        for (int i = 0; i < envs.Length; i++)
-        {
-            if (envs[i] != null && envs[i].gameObject.activeInHierarchy)
-            {
-                targetEnv = envs[i];
-                break;
-            }
-        }
-        if (targetEnv == null) targetEnv = envs[0];
-
-        bool ok = MG_BlocksEngine2.Serializer.BE2_BlocksSerializer.LoadCode(fullPath, targetEnv);
-        if (ok)
-        {
-            LastSavedPath = fullPath;
-            Debug.Log($"[BE2_CodeExporter] Loaded blocks XML from: {fullPath} into env '{targetEnv.name}' (PlayMode={isPlayMode})");
-            return true;
-        }
-        else
-        {
-            Debug.LogWarning($"[BE2_CodeExporter] Failed to load blocks XML from: {fullPath}");
-            return false;
-        }
-    }
-
-    // 불리언 표현식 생성 (Equal, BiggerThan 등)
     string BuildBooleanExpression(I_BE2_BlockSectionHeaderInput input)
     {
         if (input == null) return "false";
@@ -599,14 +598,12 @@ public class BE2_CodeExporter : MonoBehaviour
                 }
             }
         }
-        // 숫자/문자열 입력을 bool로 간주: "1"/true만 참
         var vals = input.InputValues;
         if (vals.isText)
             return vals.stringValue == "1" || vals.stringValue.ToLower() == "true" ? "true" : "false";
         return vals.floatValue != 0 ? "true" : "false";
     }
 
-    // 연산/변수 블록을 C# 표현식으로 변환
     string GenerateOperationExpression(I_BE2_Block opBlock)
     {
         if (opBlock == null || opBlock.Instruction == null) return string.Empty;
@@ -616,7 +613,6 @@ public class BE2_CodeExporter : MonoBehaviour
         {
             case nameof(BE2_Op_FunctionLocalVariable):
             {
-                // 함수 로컬 변수 참조를 파라미터명으로 매핑
                 string v = "";
                 TMP_Text text = null;
                 var flv = opBlock.Instruction as BE2_Op_FunctionLocalVariable;
@@ -637,12 +633,10 @@ public class BE2_CodeExporter : MonoBehaviour
                 {
                     return _currentFunctionParamName;
                 }
-                // 매핑이 없으면 빈 문자열
                 return string.Empty;
             }
             case nameof(BE2_Op_Variable):
             {
-                // 변수 참조 블록: 변수명을 C# 식별자로 변환하여 사용
                 var name = baseIns.Section0Inputs[0].StringValue;
                 return SanitizeVarName(name);
             }
@@ -748,51 +742,276 @@ public class BE2_CodeExporter : MonoBehaviour
             }
         }
     }
-    // BE2 변수명을 C# 식별자로 정규화
-    string SanitizeVarName(string raw)
-    {
-        if (string.IsNullOrEmpty(raw)) return "var_";
-        var sb = new StringBuilder();
-        // 첫 글자는 문자 또는 '_'
-        if (!(char.IsLetter(raw[0]) || raw[0] == '_')) sb.Append('_');
-        for (int i = 0; i < raw.Length; i++)
-        {
-            char ch = raw[i];
-            if (char.IsLetterOrDigit(ch) || ch == '_') sb.Append(ch);
-            else sb.Append('_');
-        }
-        var name = sb.ToString();
-        if (string.IsNullOrEmpty(name)) name = "var_";
-        return name;
-    }
+    #endregion
 
-    string GenerateSectionBody(I_BE2_Block block, int sectionIndex, int indent, bool isInWhenPlay)
+    #region C# Code Generation - Function Blocks
+    string BuildFunctionName(BE2_Ins_DefineFunction def)
     {
-        var layout = block.Layout;
-        if (layout == null || layout.SectionsArray == null) return string.Empty;
-        if (sectionIndex < 0 || sectionIndex >= layout.SectionsArray.Length) return string.Empty;
-        var section = layout.SectionsArray[sectionIndex];
-        if (section == null || section.Body == null) return string.Empty;
-        section.Body.UpdateChildBlocksList();
-        var children = section.Body.ChildBlocksArray;
-        var sb = new StringBuilder();
-        if (children != null)
+        if (def == null) return "Func_";
+        var layout = def.Block != null ? def.Block.Layout : null;
+        var header = (layout != null && layout.SectionsArray != null && layout.SectionsArray.Length > 0) ? layout.SectionsArray[0].Header : null;
+        System.Collections.Generic.List<string> labelParts = new System.Collections.Generic.List<string>();
+        if (header != null)
         {
-            for (int i = 0; i < children.Length; i++)
+            header.UpdateItemsArray();
+            var items = header.ItemsArray;
+            if (items != null)
             {
-                sb.Append(GenerateForBlock(children[i], indent, isInWhenPlay));
+                for (int i = 0; i < items.Length; i++)
+                {
+                    var item = items[i];
+                    if (item == null) continue;
+                    var isLabel = item.Transform.GetComponentInChildren<MG_BlocksEngine2.UI.FunctionBlock.Label>() != null;
+                    if (isLabel)
+                    {
+                        var t = item.Transform.GetComponentInChildren<TMPro.TMP_Text>();
+                        if (t != null && !string.IsNullOrEmpty(t.text))
+                        {
+                            labelParts.Add(SanitizeVarName(t.text));
+                        }
+                    }
+                }
             }
         }
-        return sb.ToString();
+        if (labelParts.Count > 0)
+        {
+            return string.Join("_", labelParts.ToArray());
+        }
+        string id = string.IsNullOrEmpty(def.defineID) ? Guid.NewGuid().ToString("N") : def.defineID.Replace("-", "");
+        return id;
     }
 
+    void EnsureFunctionGenerated(BE2_Ins_DefineFunction def)
+    {
+        if (def == null) return;
+        if (_generatedFunctionIds.Contains(def.defineID)) return;
+
+        var layout = def.Block != null ? def.Block.Layout : null;
+        var header = (layout != null && layout.SectionsArray != null && layout.SectionsArray.Length > 0) ? layout.SectionsArray[0].Header : null;
+
+        _currentLocalVarMap = new System.Collections.Generic.Dictionary<string, string>();
+        bool hasParam = false;
+        string enteredParamNameRaw = null;
+        if (header != null)
+        {
+            Transform paramTransform = FindChildDeep(header.RectTransform, "Template Define Op Local Variable(Clone)");
+            if (paramTransform == null)
+            {
+                paramTransform = FindChildDeep(header.RectTransform, "Template Define Local Variable(Clone)");
+            }
+            if (paramTransform == null)
+            {
+                Transform ScanForLocalVar(Transform r)
+                {
+                    if (r == null) return null;
+                    if (!string.IsNullOrEmpty(r.name) && r.name.IndexOf("Local Variable", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                        return r;
+                    for (int i = 0; i < r.childCount; i++)
+                    {
+                        var got = ScanForLocalVar(r.GetChild(i));
+                        if (got != null) return got;
+                    }
+                    return null;
+                }
+                paramTransform = ScanForLocalVar(header.RectTransform);
+            }
+
+            if (paramTransform != null)
+            {
+                hasParam = true;
+                string detected = null;
+                var t = paramTransform.GetComponentInChildren<TMPro.TMP_Text>();
+                if (t != null && !string.IsNullOrEmpty(t.text))
+                {
+                    detected = t.text;
+                }
+                else
+                {
+                    var inputField = paramTransform.GetComponentInChildren<TMPro.TMP_InputField>();
+                    if (inputField != null && !string.IsNullOrEmpty(inputField.text))
+                        detected = inputField.text;
+                }
+                if (!string.IsNullOrEmpty(detected))
+                {
+                    enteredParamNameRaw = detected;
+                }
+            }
+
+            header.UpdateItemsArray();
+            var items = header.ItemsArray;
+            if (items != null && hasParam)
+            {
+                string singleParam = !string.IsNullOrEmpty(enteredParamNameRaw) ? SanitizeIdentifier(enteredParamNameRaw) : "input";
+                for (int i = 0; i < items.Length; i++)
+                {
+                    var item = items[i];
+                    if (item == null) continue;
+                    var isLabel = item.Transform.GetComponentInChildren<MG_BlocksEngine2.UI.FunctionBlock.Label>() != null;
+                    if (!isLabel)
+                    {
+                        string localName = null;
+                        var tx = item.Transform.GetComponentInChildren<TMPro.TMP_Text>();
+                        if (tx != null && !string.IsNullOrEmpty(tx.text))
+                        {
+                            localName = tx.text;
+                        }
+                        else
+                        {
+                            var inputField = item.Transform.GetComponentInChildren<TMPro.TMP_InputField>();
+                            if (inputField != null && !string.IsNullOrEmpty(inputField.text))
+                                localName = inputField.text;
+                        }
+                        if (!string.IsNullOrEmpty(localName))
+                        {
+                            if (!_currentLocalVarMap.ContainsKey(localName))
+                                _currentLocalVarMap.Add(localName, singleParam);
+                        }
+                    }
+                }
+            }
+        }
+
+        string methodName = BuildFunctionName(def);
+        _inFunctionBody = true;
+        string finalParamName = !string.IsNullOrEmpty(enteredParamNameRaw) ? SanitizeIdentifier(enteredParamNameRaw) : "input";
+        string paramDecl = hasParam ? ("object " + finalParamName) : string.Empty;
+        _currentFunctionParamName = hasParam ? finalParamName : null;
+        _functionsSb.AppendLine("    public void " + methodName + "(" + paramDecl + ")");
+        _functionsSb.AppendLine("    {");
+        _functionDeclaredVars = new System.Collections.Generic.HashSet<string>();
+        string body = GenerateSectionBody(def.Block, 0, 3, false);
+        if (!string.IsNullOrEmpty(body))
+        {
+            _functionsSb.Append(body);
+        }
+        _functionsSb.AppendLine("    }");
+        _inFunctionBody = false;
+        _currentLocalVarMap = null;
+        _currentFunctionParamName = null;
+        _functionDeclaredVars = null;
+
+        _generatedFunctionIds.Add(def.defineID);
+    }
+    #endregion
+
+    #region XML File Operations
+    /// <summary>
+    /// XML 파일을 로드하여 환경에 블록 생성
+    /// </summary>
+    public bool LoadXmlToAssets(string relativeAssetPath = "Assets/Generated/BlocksGenerated.be2")
+    {
+        bool isPlayMode = Application.isPlaying;
+        string fullPath = relativeAssetPath;
+        if (!Path.IsPathRooted(fullPath))
+        {
+            if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
+            {
+                string sub = relativeAssetPath.Substring(7);
+                fullPath = Path.Combine(Application.dataPath, sub);
+            }
+            else
+            {
+                fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
+            }
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            Debug.LogWarning($"[BE2_CodeExporter] XML file not found at: '{fullPath}'");
+            return false;
+        }
+
+        var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
+        if (envs == null || envs.Length == 0)
+        {
+            Debug.LogWarning("[BE2_CodeExporter] No BE2_ProgrammingEnv found to load XML into.");
+            return false;
+        }
+
+        MG_BlocksEngine2.Environment.BE2_ProgrammingEnv targetEnv = null;
+        for (int i = 0; i < envs.Length; i++)
+        {
+            if (envs[i] != null && envs[i].gameObject.activeInHierarchy)
+            {
+                targetEnv = envs[i];
+                break;
+            }
+        }
+        if (targetEnv == null) targetEnv = envs[0];
+
+        bool ok = MG_BlocksEngine2.Serializer.BE2_BlocksSerializer.LoadCode(fullPath, targetEnv);
+        if (ok)
+        {
+            LastSavedPath = fullPath;
+            Debug.Log($"[BE2_CodeExporter] Loaded blocks XML from: {fullPath} into env '{targetEnv.name}' (PlayMode={isPlayMode})");
+            return true;
+        }
+        else
+        {
+            Debug.LogWarning($"[BE2_CodeExporter] Failed to load blocks XML from: {fullPath}");
+            return false;
+        }
+    }
+
+    public bool ImportLastGeneratedToEnv(MG_BlocksEngine2.Environment.BE2_ProgrammingEnv targetEnv = null)
+    {
+        try
+        {
+            if (targetEnv == null)
+            {
+                var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
+                if (envs != null && envs.Length > 0) targetEnv = envs[0];
+            }
+            if (targetEnv == null) { Debug.LogWarning("[BE2_CodeExporter] No ProgrammingEnv found for import."); return false; }
+
+            string xmlPath = null;
+            if (xmlPath == null)
+            {
+                if (!string.IsNullOrEmpty(LastSavedPath))
+                {
+                    string candidate = Path.ChangeExtension(LastSavedPath, ".be2");
+                    if (File.Exists(candidate)) xmlPath = candidate;
+                }
+            }
+            if (xmlPath == null)
+            {
+                string rel = "Assets/Generated/BlocksGenerated.be2";
+                if (rel.StartsWith("Assets/"))
+                {
+                    string sub = rel.Substring(7);
+                    string candidate = Path.Combine(Application.dataPath, sub);
+                    if (File.Exists(candidate)) xmlPath = candidate;
+                }
+            }
+            if (string.IsNullOrEmpty(xmlPath)) { Debug.LogWarning("[BE2_CodeExporter] No generated XML found to import."); return false; }
+
+            string xmlString = File.ReadAllText(xmlPath);
+            if (string.IsNullOrWhiteSpace(xmlString)) { Debug.LogWarning("[BE2_CodeExporter] XML file is empty."); return false; }
+            BE2_BlocksSerializer.XMLToBlocksCode(xmlString, targetEnv);
+            Debug.Log($"[BE2_CodeExporter] Imported blocks from: {xmlPath}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[BE2_CodeExporter] Import failed: {ex.Message}");
+            return false;
+        }
+    }
+    #endregion
+
+    #region C# Script File Operations
+    /// <summary>
+    /// C# 스크립트 파일로 저장 (현재 대부분 비활성화)
+    /// </summary>
     public bool SaveScriptToAssets(string relativeAssetPath = "Assets/Generated/BlocksGenerated.cs", string className = "BlocksGenerated", string methodName = "Start")
     {
         string code = GenerateCSharpFromAllEnvs();
         if (string.IsNullOrEmpty(code) && (_functionsSb == null || _functionsSb.Length == 0) && (_loopSb == null || _loopSb.Length == 0)) return false;
-        string xml = GenerateXmlFromAllEnvs();
-        // Automatic export removed to separate concerns as requested by user
+        
+        // XML도 함께 생성 (런타임 JSON 변환용)
+        // string xml = GenerateXmlFromAllEnvs();
         // BE2XmlToRuntimeJson.Export(xml);
+        
         var sb = new StringBuilder();
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections;");
@@ -807,7 +1026,6 @@ public class BE2_CodeExporter : MonoBehaviour
         {
             sb.Append(_classFieldsSb.ToString());
         }
-        // 사용자 정의 함수들을 클래스 스코프에 먼저 선언
         if (_functionsSb != null && _functionsSb.Length > 0)
         {
             sb.Append(_functionsSb.ToString());
@@ -866,7 +1084,7 @@ public class BE2_CodeExporter : MonoBehaviour
             sb.AppendLine("        " + lines[i]);
         }
         sb.AppendLine("    }");
-        // Generate Loop() method if BE2_Cst_Loop was present
+        
         if (_loopSb != null && _loopSb.Length > 0)
         {
             sb.AppendLine();
@@ -882,316 +1100,41 @@ public class BE2_CodeExporter : MonoBehaviour
         }
         sb.AppendLine("}");
 
-        // // 항상 Assets 폴더 경로 계산
-        // string fullPath;
-        // #if UNITY_EDITOR
-        // // Write into Assets in Editor so it recompiles there
-        // fullPath = relativeAssetPath;
-        // if (!Path.IsPathRooted(fullPath))
-        // {
-        //     if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
-        //         fullPath = Path.Combine(Application.dataPath, relativeAssetPath.Substring(7));
-        //     else
-        //         fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
-        // }
-        // #else
-        // // Player build: use a writable path
-        // fullPath = Path.Combine(Application.persistentDataPath, Path.GetFileName(relativeAssetPath));
-        // #endif
-
-        // var dir = Path.GetDirectoryName(fullPath);
-        // if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-        // File.WriteAllText(fullPath, sb.ToString());
-
-        // #if UNITY_EDITOR
-        // try
-        // {
-        //     if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
-        //         UnityEditor.AssetDatabase.ImportAsset(relativeAssetPath, UnityEditor.ImportAssetOptions.ForceUpdate);
-        // }
-        // catch (Exception ex)
-        // {
-        //     Debug.LogWarning($"[BE2_CodeExporter] ImportAsset failed: {ex.Message}. Falling back to Refresh.");
-        //     UnityEditor.AssetDatabase.Refresh();
-        // }
-        // #endif
-
-        return true;
-    }
-
-    // Helper methods for user-defined Function Blocks
-    string BuildFunctionName(BE2_Ins_DefineFunction def)
-    {
-        if (def == null) return "Func_";
-        var layout = def.Block != null ? def.Block.Layout : null;
-        var header = (layout != null && layout.SectionsArray != null && layout.SectionsArray.Length > 0) ? layout.SectionsArray[0].Header : null;
-        System.Collections.Generic.List<string> labelParts = new System.Collections.Generic.List<string>();
-        if (header != null)
+        // 파일 저장 비활성화됨 - 필요시 주석 해제
+        /*
+        string fullPath;
+        #if UNITY_EDITOR
+        fullPath = relativeAssetPath;
+        if (!Path.IsPathRooted(fullPath))
         {
-            header.UpdateItemsArray();
-            var items = header.ItemsArray;
-            if (items != null)
-            {
-                for (int i = 0; i < items.Length; i++)
-                {
-                    var item = items[i];
-                    if (item == null) continue;
-                    // 라벨 여부 판단: Label 컴포넌트 존재 시 라벨로 간주
-                    var isLabel = item.Transform.GetComponentInChildren<MG_BlocksEngine2.UI.FunctionBlock.Label>() != null;
-                    if (isLabel)
-                    {
-                        var t = item.Transform.GetComponentInChildren<TMPro.TMP_Text>();
-                        if (t != null && !string.IsNullOrEmpty(t.text))
-                        {
-                            labelParts.Add(SanitizeVarName(t.text));
-                        }
-                    }
-                }
-            }
+            if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
+                fullPath = Path.Combine(Application.dataPath, relativeAssetPath.Substring(7));
+            else
+                fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
         }
-        if (labelParts.Count > 0)
-        {
-            return string.Join("_", labelParts.ToArray());
-        }
-        string id = string.IsNullOrEmpty(def.defineID) ? Guid.NewGuid().ToString("N") : def.defineID.Replace("-", "");
-        return id;
-    }
+        #else
+        fullPath = Path.Combine(Application.persistentDataPath, Path.GetFileName(relativeAssetPath));
+        #endif
 
-    void EnsureFunctionGenerated(BE2_Ins_DefineFunction def)
-    {
-        if (def == null) return;
-        if (_generatedFunctionIds.Contains(def.defineID)) return;
+        var dir = Path.GetDirectoryName(fullPath);
+        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        File.WriteAllText(fullPath, sb.ToString());
 
-        var layout = def.Block != null ? def.Block.Layout : null;
-        var header = (layout != null && layout.SectionsArray != null && layout.SectionsArray.Length > 0) ? layout.SectionsArray[0].Header : null;
-
-        _currentLocalVarMap = new System.Collections.Generic.Dictionary<string, string>();
-        bool hasParam = false;
-        string enteredParamNameRaw = null;
-        if (header != null)
-        {
-            // 1) 특정 템플릿 이름으로 파라미터 오브젝트 탐색
-            Transform paramTransform = FindChildDeep(header.RectTransform, "Template Define Op Local Variable(Clone)");
-            if (paramTransform == null)
-            {
-                paramTransform = FindChildDeep(header.RectTransform, "Template Define Local Variable(Clone)");
-                if (paramTransform != null)
-                {
-                    Debug.Log("[BE2_CodeExporter] Param object found (alt name): 'Template Define Local Variable(Clone)'");
-                }
-            }
-            // 2) fallback: 이름에 'Local Variable' 문자열이 포함된 하위 오브젝트 검색
-            if (paramTransform == null)
-            {
-                Transform ScanForLocalVar(Transform r)
-                {
-                    if (r == null) return null;
-                    if (!string.IsNullOrEmpty(r.name) && r.name.IndexOf("Local Variable", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                        return r;
-                    for (int i = 0; i < r.childCount; i++)
-                    {
-                        var got = ScanForLocalVar(r.GetChild(i));
-                        if (got != null) return got;
-                    }
-                    return null;
-                }
-                paramTransform = ScanForLocalVar(header.RectTransform);
-                if (paramTransform != null)
-                {
-                    Debug.Log("[BE2_CodeExporter] Fallback param object found: " + paramTransform.name);
-                }
-                else
-                {
-                    Debug.Log("[BE2_CodeExporter] Param object NOT found under header. Listing direct children:");
-                    for (int i = 0; i < header.RectTransform.childCount; i++)
-                    {
-                        var ch = header.RectTransform.GetChild(i);
-                        Debug.Log("[BE2_CodeExporter]  - child: " + ch.name);
-                    }
-                }
-            }
-
-            // 3) 파라미터명 후보 결정
-            if (paramTransform != null)
-            {
-                hasParam = true;
-                string detected = null;
-                var t = paramTransform.GetComponentInChildren<TMPro.TMP_Text>();
-                if (t != null && !string.IsNullOrEmpty(t.text))
-                {
-                    detected = t.text;
-                }
-                else
-                {
-                    var inputField = paramTransform.GetComponentInChildren<TMPro.TMP_InputField>();
-                    if (inputField != null && !string.IsNullOrEmpty(inputField.text))
-                        detected = inputField.text;
-                }
-                if (!string.IsNullOrEmpty(detected))
-                {
-                    enteredParamNameRaw = detected;
-                }
-            }
-
-            // 4) 아이템 텍스트 기반 보정 및 맵핑
-            header.UpdateItemsArray();
-            var items = header.ItemsArray;
-            if (items != null)
-            {
-                // 보정: 비-라벨 아이템들 텍스트에도 'text'가 있으면 preferTextName true
-                for (int i = 0; i < items.Length; i++)
-                {
-                    var item = items[i];
-                    if (item == null) continue;
-                    var isLabel = item.Transform.GetComponentInChildren<MG_BlocksEngine2.UI.FunctionBlock.Label>() != null;
-                    if (!isLabel)
-                    {
-                        string localText = null;
-                        var tx = item.Transform.GetComponentInChildren<TMPro.TMP_Text>();
-                        if (tx != null && !string.IsNullOrEmpty(tx.text)) localText = tx.text;
-                        else
-                        {
-                            var inputField = item.Transform.GetComponentInChildren<TMPro.TMP_InputField>();
-                            if (inputField != null && !string.IsNullOrEmpty(inputField.text)) localText = inputField.text;
-                        }
-                        if (!string.IsNullOrEmpty(localText) && localText.IndexOf("text", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                        }
-                    }
-                }
-
-                // 맵핑: 모든 로컬 변수명을 단일 파라미터(text|input)로 매핑
-                if (hasParam)
-                {
-                    string singleParam = !string.IsNullOrEmpty(enteredParamNameRaw) ? SanitizeIdentifier(enteredParamNameRaw) : "input";
-                    for (int i = 0; i < items.Length; i++)
-                    {
-                        var item = items[i];
-                        if (item == null) continue;
-                        var isLabel = item.Transform.GetComponentInChildren<MG_BlocksEngine2.UI.FunctionBlock.Label>() != null;
-                        if (!isLabel)
-                        {
-                            string localName = null;
-                            var tx = item.Transform.GetComponentInChildren<TMPro.TMP_Text>();
-                            if (tx != null && !string.IsNullOrEmpty(tx.text))
-                            {
-                                localName = tx.text;
-                            }
-                            else
-                            {
-                                var inputField = item.Transform.GetComponentInChildren<TMPro.TMP_InputField>();
-                                if (inputField != null && !string.IsNullOrEmpty(inputField.text))
-                                    localName = inputField.text;
-                            }
-                            if (!string.IsNullOrEmpty(localName))
-                            {
-                                if (!_currentLocalVarMap.ContainsKey(localName))
-                                    _currentLocalVarMap.Add(localName, singleParam);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        else
-        {
-            Debug.Log("[BE2_CodeExporter] Header is null. Cannot detect params.");
-        }
-
-        string methodName = BuildFunctionName(def);
-        _inFunctionBody = true;
-        string finalParamName = !string.IsNullOrEmpty(enteredParamNameRaw) ? SanitizeIdentifier(enteredParamNameRaw) : "input";
-        string paramDecl = hasParam ? ("object " + finalParamName) : string.Empty;
-        _currentFunctionParamName = hasParam ? finalParamName : null;
-        Debug.Log($"[BE2_CodeExporter] Final function '{methodName}' paramDecl: '{paramDecl}' (hasParam={hasParam})");
-        _functionsSb.AppendLine("    public void " + methodName + "(" + paramDecl + ")");
-        _functionsSb.AppendLine("    {");
-        _functionDeclaredVars = new System.Collections.Generic.HashSet<string>();
-        string body = GenerateSectionBody(def.Block, 0, 3, false);
-        if (!string.IsNullOrEmpty(body))
-        {
-            _functionsSb.Append(body);
-        }
-        _functionsSb.AppendLine("    }");
-        _inFunctionBody = false;
-        _currentLocalVarMap = null;
-        _currentFunctionParamName = null;
-        _functionDeclaredVars = null;
-
-        _generatedFunctionIds.Add(def.defineID);
-    }
-
-    // 깊이 우선으로 자식 Transform를 이름으로 탐색
-    Transform FindChildDeep(Transform root, string targetName)
-    {
-        if (root == null || string.IsNullOrEmpty(targetName)) return null;
-        if (root.name == targetName) return root;
-        for (int i = 0; i < root.childCount; i++)
-        {
-            var child = root.GetChild(i);
-            var found = FindChildDeep(child, targetName);
-            if (found != null) return found;
-        }
-        return null;
-    }
-
-    string SanitizeIdentifier(string s)
-    {
-        if (string.IsNullOrWhiteSpace(s)) return "input";
-        var sbId = new System.Text.StringBuilder(s.Length);
-        for (int i = 0; i < s.Length; i++)
-        {
-            char c = s[i];
-            if (char.IsLetterOrDigit(c) || c == '_') sbId.Append(c);
-        }
-        if (sbId.Length == 0) return "input";
-        if (char.IsDigit(sbId[0])) sbId.Insert(0, '_');
-        return sbId.ToString();
-    }
-
-    public bool ImportLastGeneratedToEnv(MG_BlocksEngine2.Environment.BE2_ProgrammingEnv targetEnv = null)
-    {
+        #if UNITY_EDITOR
         try
         {
-            if (targetEnv == null)
-            {
-                var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
-                if (envs != null && envs.Length > 0) targetEnv = envs[0];
-            }
-            if (targetEnv == null) { Debug.LogWarning("[BE2_CodeExporter] No ProgrammingEnv found for import."); return false; }
-
-            string xmlPath = null;
-            if (xmlPath == null)
-            {
-                if (!string.IsNullOrEmpty(LastSavedPath))
-                {
-                    string candidate = Path.ChangeExtension(LastSavedPath, ".be2");
-                    if (File.Exists(candidate)) xmlPath = candidate;
-                }
-            }
-            if (xmlPath == null)
-            {
-                // Fallback next to Default Assets path
-                string rel = "Assets/Generated/BlocksGenerated.be2";
-                if (rel.StartsWith("Assets/"))
-                {
-                    string sub = rel.Substring(7);
-                    string candidate = Path.Combine(Application.dataPath, sub);
-                    if (File.Exists(candidate)) xmlPath = candidate;
-                }
-            }
-            if (string.IsNullOrEmpty(xmlPath)) { Debug.LogWarning("[BE2_CodeExporter] No generated XML found to import."); return false; }
-
-            string xmlString = File.ReadAllText(xmlPath);
-            if (string.IsNullOrWhiteSpace(xmlString)) { Debug.LogWarning("[BE2_CodeExporter] XML file is empty."); return false; }
-            BE2_BlocksSerializer.XMLToBlocksCode(xmlString, targetEnv);
-            Debug.Log($"[BE2_CodeExporter] Imported blocks from: {xmlPath}");
-            return true;
+            if (relativeAssetPath.StartsWith("Assets/") || relativeAssetPath.StartsWith("Assets\\"))
+                UnityEditor.AssetDatabase.ImportAsset(relativeAssetPath, UnityEditor.ImportAssetOptions.ForceUpdate);
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[BE2_CodeExporter] Import failed: {ex.Message}");
-            return false;
+            Debug.LogWarning($"[BE2_CodeExporter] ImportAsset failed: {ex.Message}. Falling back to Refresh.");
+            UnityEditor.AssetDatabase.Refresh();
         }
+        #endif
+        */
+
+        return true;
     }
+    #endregion
 }
