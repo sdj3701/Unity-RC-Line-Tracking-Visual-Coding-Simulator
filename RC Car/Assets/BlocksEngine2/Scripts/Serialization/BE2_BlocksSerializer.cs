@@ -504,12 +504,7 @@ namespace MG_BlocksEngine2.Serializer
                     }
 
                     if (serializableBlock.varManagerName != null && serializableBlock.varManagerName != "")
-                    {
-                        Debug.Log($"[SerializableToBlock] 변수 블록 로드 시작");
-                        Debug.Log($"  - 블록명: '{serializableBlock.blockName}'");
-                        Debug.Log($"  - XML에서 읽은 varName: '{serializableBlock.varName}'");
-                        Debug.Log($"  - varManagerName: '{serializableBlock.varManagerName}'");
-                        
+                    {                        
                         //                                        | block        | section   | header    | text      |
                         //                                        | block        | section   | header    | text      |
                         // BE2_Text newVarName = BE2_Text.GetBE2Text(block.Transform.GetChild(0).GetChild(0).GetChild(0));
@@ -518,22 +513,15 @@ namespace MG_BlocksEngine2.Serializer
                         BE2_Text newVarName = null;
                         if (block.Layout.SectionsArray.Length > 0)
                         {
-                            Debug.Log($"  - SectionsArray 길이: {block.Layout.SectionsArray.Length}");
-                            Debug.Log($"  - ItemsArray 길이: {block.Layout.SectionsArray[0].Header.ItemsArray.Length}");
-                            
                             foreach (var item in block.Layout.SectionsArray[0].Header.ItemsArray)
                             {
                                 if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null)
                                 {
-                                    Debug.Log($"  - 스킵(Label): '{item.Transform.name}'");
                                     continue;
                                 }
-                                Debug.Log($"  - 검사: '{item.Transform.name}'");
                                 newVarName = BE2_Text.GetBE2Text(item.Transform);
-                                Debug.Log($"  - BE2_Text 발견: {newVarName != null}");
                                 if (newVarName != null)
                                 {
-                                    Debug.Log($"  - 현재 텍스트 값: '{newVarName.text}'");
                                     break;
                                 }
                             }
@@ -545,7 +533,6 @@ namespace MG_BlocksEngine2.Serializer
                         
                         if (newVarName != null)
                         {
-                            Debug.Log($"  - 변수명 적용: '{newVarName.text}' → '{serializableBlock.varName}'");
                             newVarName.text = serializableBlock.varName;
                         }
                         else
@@ -558,7 +545,6 @@ namespace MG_BlocksEngine2.Serializer
                         {
                             I_BE2_VariablesManager varManager = MonoBehaviour.FindObjectOfType(varManagerType) as I_BE2_VariablesManager;
                             varManager.CreateAndAddVarToPanel(serializableBlock.varName);
-                            Debug.Log($"  - 변수 패널에 추가 완료: '{serializableBlock.varName}'");
                         }
                         else
                         {

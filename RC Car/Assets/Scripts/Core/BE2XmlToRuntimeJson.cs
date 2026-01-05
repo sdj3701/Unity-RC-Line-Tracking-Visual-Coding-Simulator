@@ -35,14 +35,12 @@ public static class BE2XmlToRuntimeJson
     public static void Export(string xmlText)
     {
         var jsonPath = Path.Combine(Application.persistentDataPath, "BlocksRuntime.json");
-        Debug.Log($"[BE2XmlToRuntimeJson] Splitting XML. Total length: {xmlText.Length}");
         
         // 초기화
         functionDefinitions.Clear();
         variables.Clear();
         
         var chunks = xmlText.Split(new[] { "#" }, StringSplitOptions.RemoveEmptyEntries);
-        Debug.Log($"[BE2XmlToRuntimeJson] Chunks found: {chunks.Length}");
 
         var allBlocks = new List<XElement>();
         
@@ -67,11 +65,6 @@ public static class BE2XmlToRuntimeJson
         {
             ProcessVariableDefinitions(block);
         }
-        Debug.Log($"[BE2XmlToRuntimeJson] Variables found: {variables.Count}");
-        foreach (var kv in variables)
-        {
-            Debug.Log($"  Variable: {kv.Key} = {kv.Value}");
-        }
         
         // 3단계: 함수 정의 먼저 수집 (DefineFunction 블록들)
         foreach (var block in allBlocks)
@@ -81,11 +74,6 @@ public static class BE2XmlToRuntimeJson
             {
                 ProcessFunctionDefinition(block);
             }
-        }
-        Debug.Log($"[BE2XmlToRuntimeJson] Function definitions found: {functionDefinitions.Count}");
-        foreach (var kv in functionDefinitions)
-        {
-            Debug.Log($"  Function: {kv.Key} with {kv.Value.Count} body nodes");
         }
         
         // 4단계: Entry Point 블록 찾기 (Forever 블록 또는 실행 가능한 블록들)
@@ -111,7 +99,6 @@ public static class BE2XmlToRuntimeJson
         // Forever 블록이 없으면 다른 실행 가능한 블록들을 찾음
         if (roots.Count == 0)
         {
-            Debug.LogWarning("[BE2XmlToRuntimeJson] No Forever block found. Looking for other entry points...");
             foreach (var block in allBlocks)
             {
                 var name = block.Element("blockName")?.Value?.Trim();
@@ -137,8 +124,6 @@ public static class BE2XmlToRuntimeJson
         var program = new RuntimeBlockProgram { roots = roots.ToArray() };
         var json = BuildJson(program);
         File.WriteAllText(jsonPath, json);
-        Debug.Log($"[BE2XmlToRuntimeJson] Exported JSON to {jsonPath}");
-        Debug.Log($"[BE2XmlToRuntimeJson] JSON content:\n{json}");
     }
     
     /// <summary>
@@ -158,7 +143,6 @@ public static class BE2XmlToRuntimeJson
                 if (!string.IsNullOrEmpty(varName) && float.TryParse(valStr, out var v))
                 {
                     variables[varName] = v;
-                    Debug.Log($"[BE2XmlToRuntimeJson] SetVariable: {varName} = {v}");
                 }
             }
         }
@@ -203,7 +187,6 @@ public static class BE2XmlToRuntimeJson
         }
         
         functionDefinitions[defineID] = bodyNodes;
-        Debug.Log($"[BE2XmlToRuntimeJson] DefineFunction: {defineID} with {bodyNodes.Count} body blocks");
     }
     
     /// <summary>
@@ -215,9 +198,7 @@ public static class BE2XmlToRuntimeJson
         
         var name = block.Element("blockName")?.Value?.Trim();
         if (string.IsNullOrEmpty(name)) return null;
-        
-        Debug.Log($"[BE2XmlToRuntimeJson] Processing block: {name}");
-        
+                
         // Forever/Loop 블록 (BE2에서 "Block Ins Forever" 또는 "Block Cst Loop"로 표현됨)
         if (name == "Block Ins Forever" || name == "Block Cst Loop")
         {

@@ -81,14 +81,12 @@ public class BE2_CodeExporter : MonoBehaviour
     {
         var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
         var sb = new StringBuilder();
-        Debug.Log($"[BE2_CodeExporter] XML export scanning envs: {envs.Length}");
         for (int i = 0; i < envs.Length; i++)
         {
             var env = envs[i];
             if (env == null) continue;
             env.UpdateBlocksList();
             int count = env.BlocksList != null ? env.BlocksList.Count : 0;
-            Debug.Log($"[BE2_CodeExporter] Env '{env.name}' has top-level blocks: {count}");
             sb.Append(BE2_BlocksSerializer.BlocksCodeToXML(env));
             if (i < envs.Length - 1) sb.Append('\n');
         }
