@@ -243,6 +243,21 @@ namespace MG_BlocksEngine2.Serializer
         {
             string[] xmlBlocks = xmlString.Split('#');
 
+            // === 1차 순회: 모든 변수를 먼저 등록 (Dropdown 초기화 문제 방지) ===
+            // 참고: 변수 블록은 자식 블록으로 중첩되어 있을 수 있으므로 재귀적으로 검색
+            Debug.Log("[1차 순회] 변수 등록 시작...");
+            int varCount = 0;
+            foreach (string xmlBlock in xmlBlocks)
+            {
+                BE2_SerializableBlock serializableBlock = XMLToSerializable(xmlBlock);
+                if (serializableBlock != null)
+                {
+                    RegisterVariablesRecursive(serializableBlock, ref varCount);
+                }
+            }
+            Debug.Log($"[1차 순회] 변수 등록 완료. 총 {varCount}개 변수 등록됨.");
+
+            // === 2차 순회: 블록 생성 ===
             foreach (string xmlBlock in xmlBlocks)
             {
                 BE2_SerializableBlock serializableBlock = XMLToSerializable(xmlBlock);
@@ -272,6 +287,68 @@ namespace MG_BlocksEngine2.Serializer
             }
         }
 
+        // 재귀적으로 모든 중첩 블록에서 변수를 찾아 등록하는 헬퍼 함수
+        private static void RegisterVariablesRecursive(BE2_SerializableBlock serializableBlock, ref int varCount)
+        {
+            if (serializableBlock == null)
+                return;
+
+            // 현재 블록이 변수 블록인지 확인
+            if (!string.IsNullOrEmpty(serializableBlock.varManagerName))
+            {
+                Debug.Log($"[1차 순회] 변수 블록 발견: {serializableBlock.blockName}, varName: {serializableBlock.varName}");
+                
+                System.Type varManagerType = System.Type.GetType(serializableBlock.varManagerName);
+                if (varManagerType != null)
+                {
+                    I_BE2_VariablesManager varManager = MonoBehaviour.FindObjectOfType(varManagerType) as I_BE2_VariablesManager;
+                    if (varManager != null)
+                    {
+                        Debug.Log($"[1차 순회] CreateAndAddVarToPanel 호출: {serializableBlock.varName}");
+                        varManager.CreateAndAddVarToPanel(serializableBlock.varName);
+                        varCount++;
+                    }
+                }
+            }
+
+            // sections의 모든 자식 블록 순회
+            if (serializableBlock.sections != null)
+            {
+                foreach (var section in serializableBlock.sections)
+                {
+                    // childBlocks 순회
+                    if (section.childBlocks != null)
+                    {
+                        foreach (var childBlock in section.childBlocks)
+                        {
+                            RegisterVariablesRecursive(childBlock, ref varCount);
+                        }
+                    }
+
+                    // inputs의 operation 블록 순회
+                    if (section.inputs != null)
+                    {
+                        foreach (var input in section.inputs)
+                        {
+                            if (input.isOperation && input.operation != null)
+                            {
+                                RegisterVariablesRecursive(input.operation, ref varCount);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // outerArea의 자식 블록 순회
+            if (serializableBlock.outerArea != null && serializableBlock.outerArea.childBlocks != null)
+            {
+                foreach (var childBlock in serializableBlock.outerArea.childBlocks)
+                {
+                    RegisterVariablesRecursive(childBlock, ref varCount);
+                }
+            }
+        }
+
         public static BE2_SerializableBlock XMLToSerializable(string blockString)
         {
             // v2.2 - bugfix: fixed empty blockString from XML file causing error on load
@@ -291,6 +368,7 @@ namespace MG_BlocksEngine2.Serializer
         // v2.13 - name changed from C_AddInputs to C_AddInputsAndChildBlocks
         // v2.12.1 - added counter variable in the serializer to chech end of serialization of all inputs
         static int counterForEndOfDeserialization = 0;
+        // 메인 블록의 자식 블록 추가 기능
         static IEnumerator C_AddInputsAndChildBlocks(I_BE2_Block block, BE2_SerializableBlock serializableBlock, I_BE2_ProgrammingEnv programmingEnv)
         {
             yield return new WaitForEndOfFrame();
@@ -393,204 +471,111 @@ namespace MG_BlocksEngine2.Serializer
             counterForEndOfDeserialization--;
         }
 
-        // v2.9 - SerializableToBlock refactored to enable and facilitate the addition of custom variable types
+        // 메인 블록 생성
         public static I_BE2_Block SerializableToBlock(BE2_SerializableBlock serializableBlock, I_BE2_ProgrammingEnv programmingEnv)
         {
             I_BE2_Block block = null;
 
-            if (serializableBlock != null)
+            // serializableBlock이 null이면 처리 중단
+            if (serializableBlock == null)
             {
-                string prefabName = serializableBlock.blockName;
-                GameObject loadedPrefab = BE2_BlockUtils.LoadPrefabBlock(prefabName);
+                return null;
+            }
 
-                if (loadedPrefab)
+            // 1. XML에서 블록 이름을 가져와서 프리팹 로드
+            string prefabName = serializableBlock.blockName;
+            GameObject loadedPrefab = BE2_BlockUtils.LoadPrefabBlock(prefabName);
+
+            if (loadedPrefab == null)
+            {
+                Debug.LogWarning($"[SerializableToBlock] 프리팹을 찾을 수 없음: {prefabName}");
+                return null;
+            }
+
+            // 2. 프리팹을 Instantiate하여 블록 GameObject 생성
+            GameObject blockGo = MonoBehaviour.Instantiate(
+                loadedPrefab,
+                serializableBlock.position,
+                Quaternion.identity,
+                programmingEnv.Transform) as GameObject;
+
+            blockGo.name = prefabName;
+
+            // 3. XML에 저장된 올바른 위치에 배치
+            blockGo.transform.localPosition = new Vector3(
+                serializableBlock.position.x, 
+                serializableBlock.position.y, 
+                0);
+            blockGo.transform.localEulerAngles = Vector3.zero;
+
+            // 4. I_BE2_Block 인터페이스 가져오기
+            block = blockGo.GetComponent<I_BE2_Block>();
+
+            // 5. 변수 블록 처리 (SetVariable, ChangeVariable 등)
+            // 참고: 변수 등록은 XMLToBlocksCode의 1차 순회에서 이미 완료됨
+            if (!string.IsNullOrEmpty(serializableBlock.varManagerName))
+            {
+                // 블록 헤더에서 변수명을 표시할 컴포넌트 찾기
+                if (block.Layout.SectionsArray.Length > 0)
                 {
-                    GameObject blockGo = MonoBehaviour.Instantiate(
-                        loadedPrefab,
-                        serializableBlock.position,
-                        Quaternion.identity,
-                        programmingEnv.Transform) as GameObject;
-
-                    blockGo.name = prefabName;
-
-                    // v2.6 - adjustments on position and angle of blocks for supporting all canvas render modes              
-                    // v2.4 - bugfix: fixed blocks load in wrong position if resolution changes
-                    blockGo.transform.localPosition = new Vector3(serializableBlock.position.x, serializableBlock.position.y, 0);
-                    blockGo.transform.localEulerAngles = Vector3.zero;
-
-                    block = blockGo.GetComponent<I_BE2_Block>();
-
-                    // v2.12 - deserializer Function Blocks
-                    if (block.Instruction as BE2_Ins_DefineFunction)
+                    foreach (var item in block.Layout.SectionsArray[0].Header.ItemsArray)
                     {
-                        (block.Instruction as BE2_Ins_DefineFunction).defineID = serializableBlock.defineID;
+                        // Label은 스킵 (예: "Set", "Change" 텍스트)
+                        if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null)
+                            continue;
 
-                        foreach (DefineItem item in serializableBlock.defineItems)
+                        // TMP_Dropdown 확인 (Block Ins SetVariable 등)
+                        TMP_Dropdown dropdown = item.Transform.GetComponent<TMP_Dropdown>();
+                        if (dropdown != null)
                         {
-                            if (item.type == "label")
+                            // 옵션에서 해당 변수명 찾기
+                            int idx = -1;
+                            for (int i = 0; i < dropdown.options.Count; i++)
                             {
-                                GameObject labelDefine = MonoBehaviour.Instantiate(BE2_Inspector.Instance.LabelTextTemplate, Vector3.zero, Quaternion.identity,
-                                                                block.Layout.SectionsArray[0].Header.RectTransform);
-                                labelDefine.GetComponentInChildren<TMP_Text>().text = item.value;
-                            }
-                            else if (item.type == "variable")
-                            {
-                                GameObject inputDefine = MonoBehaviour.Instantiate(BE2_FunctionBlocksManager.Instance.templateDefineLocalVariable, Vector3.zero, Quaternion.identity,
-                                                                block.Layout.SectionsArray[0].Header.RectTransform);
-
-                                inputDefine.GetComponentInChildren<TMP_Text>().text = item.value;
-                            }
-                            else if (item.type == "custom")
-                            {
-                                GameObject inputDefine = MonoBehaviour.Instantiate(BE2_FunctionBlocksManager.Instance.templateDefineCustomHeaderItem, Vector3.zero, Quaternion.identity,
-                                                                block.Layout.SectionsArray[0].Header.RectTransform);
-
-                                inputDefine.GetComponentInChildren<BE2_BlockSectionHeader_Custom>().serializableValue = item.value;
-                            }
-                        }
-
-                        BE2_FunctionBlocksManager.Instance.CreateSelectionFunction(serializableBlock.defineItems, block.Instruction as BE2_Ins_DefineFunction);
-                    }
-
-                    if (block.Instruction is BE2_Ins_FunctionBlock)
-                    {
-                        programmingEnv.UpdateBlocksList();
-                        BE2_Ins_DefineFunction define = default;
-                        foreach (I_BE2_Block envBlock in programmingEnv.BlocksList)
-                        {
-                            define = envBlock.Instruction as BE2_Ins_DefineFunction;
-                            if (define != null)
-                            {
-                                // v2.12.1 - bugfix: loading more than one Function Blocks not recognizing the correct Define Block  
-                                if (define.defineID == serializableBlock.defineID)
+                                if (dropdown.options[i].text == serializableBlock.varName)
                                 {
+                                    idx = i;
                                     break;
                                 }
                             }
-                        }
 
-                        int i = 0;
-                        define.Block.Layout.SectionsArray[0].Header.UpdateItemsArray();
-                        foreach (I_BE2_BlockSectionHeaderItem item in define.Block.Layout.SectionsArray[0].Header.ItemsArray)
-                        {
-                            if (item.Transform.name.Contains("[FixedLabel]"))
+                            if (idx >= 0)
                             {
-                                i++;
-                                continue;
+                                dropdown.value = idx;
+                                dropdown.RefreshShownValue();
                             }
-
-                            if (item is BE2_BlockSectionHeader_Label)
+                            else
                             {
-                                GameObject label = MonoBehaviour.Instantiate(BE2_Inspector.Instance.LabelTextTemplate, Vector3.zero, Quaternion.identity,
-                                                                block.Layout.SectionsArray[0].Header.RectTransform);
-                                label.GetComponent<TMP_Text>().text = item.Transform.GetComponent<TMP_Text>().text;
+                                // 옵션에 없으면 captionText에 직접 설정
+                                dropdown.captionText.text = serializableBlock.varName;
                             }
-                            else if (item is BE2_BlockSectionHeader_LocalVariable)
-                            {
-                                GameObject input = MonoBehaviour.Instantiate(BE2_Inspector.Instance.InputFieldTemplate, Vector3.zero, Quaternion.identity,
-                                                                block.Layout.SectionsArray[0].Header.RectTransform);
-                            }
-                            else if (item is BE2_BlockSectionHeader_Custom)
-                            {
-                                GameObject input = MonoBehaviour.Instantiate(BE2_FunctionBlocksManager.Instance.templateDefineCustomHeaderItem, Vector3.zero, Quaternion.identity,
-                                                                block.Layout.SectionsArray[0].Header.RectTransform);
-                                input.GetComponentInChildren<BE2_BlockSectionHeader_Custom>().serializableValue = item.Transform.GetComponentInChildren<BE2_BlockSectionHeader_Custom>().serializableValue;
-                            }
-
-                            i++;
+                            break;
                         }
 
-                        BE2_ExecutionManager.Instance.StartCoroutine(C_InitializeFunctionInstruction(block.Instruction as BE2_Ins_FunctionBlock, define));
-                    }
-
-                    if (serializableBlock.varManagerName != null && serializableBlock.varManagerName != "")
-                    {                        
-                        //                                        | block        | section   | header    | text      |
-                        //                                        | block        | section   | header    | text      |
-                        // BE2_Text newVarName = BE2_Text.GetBE2Text(block.Transform.GetChild(0).GetChild(0).GetChild(0));
-                        // newVarName.text = serializableBlock.varName;
-                        
-                        BE2_Text newVarName = null;
-                        if (block.Layout.SectionsArray.Length > 0)
+                        // Dropdown이 아니면 BE2_Text 로직
+                        BE2_Text textComp = BE2_Text.GetBE2Text(item.Transform);
+                        if (textComp != null)
                         {
-                            foreach (var item in block.Layout.SectionsArray[0].Header.ItemsArray)
-                            {
-                                if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null)
-                                {
-                                    continue;
-                                }
-                                newVarName = BE2_Text.GetBE2Text(item.Transform);
-                                if (newVarName != null)
-                                {
-                                    break;
-                                }
-                            }
+                            textComp.text = serializableBlock.varName;
+                            break;
                         }
-                        else
-                        {
-                            Debug.Log($"  - 경고: SectionsArray가 비어있음!");
-                        }
-                        
-                        if (newVarName != null)
-                        {
-                            newVarName.text = serializableBlock.varName;
-                        }
-                        else
-                        {
-                            Debug.LogWarning($"  - 경고: BE2_Text를 찾지 못해 변수명 적용 불가!");
-                        }
-
-                        System.Type varManagerType = System.Type.GetType(serializableBlock.varManagerName);
-                        if (varManagerType != null)
-                        {
-                            I_BE2_VariablesManager varManager = MonoBehaviour.FindObjectOfType(varManagerType) as I_BE2_VariablesManager;
-                            varManager.CreateAndAddVarToPanel(serializableBlock.varName);
-                        }
-                        else
-                        {
-                            Debug.Log("Variables manager of type *" + serializableBlock.varManagerName + "* was not found.");
-                        }
-                    }
-
-                    if (serializableBlock.isLocalVar == "true")
-                    {
-                        //                                        | block        | section   | header    | text      |
-                        // BE2_Text newVarName = BE2_Text.GetBE2Text(block.Transform.GetChild(0).GetChild(0).GetChild(0));
-                        //                                        | block        | section   | header    | text      |
-                        // BE2_Text newVarName = BE2_Text.GetBE2Text(block.Transform.GetChild(0).GetChild(0).GetChild(0));
-                        // TMP_Text newVarName = block.Transform.GetChild(0).GetChild(0).GetChild(0).GetComponent<TMP_Text>();
-                        // newVarName.text = serializableBlock.varName;
-
-                        TMP_Text newVarName = null;
-                        if (block.Layout.SectionsArray.Length > 0)
-                        {
-                            foreach (var item in block.Layout.SectionsArray[0].Header.ItemsArray)
-                            {
-                                if (item.Transform.GetComponent<BE2_BlockSectionHeader_Label>() != null) continue;
-                                newVarName = item.Transform.GetComponentInChildren<TMP_Text>();
-                                if (newVarName != null) break;
-                            }
-                        }
-                        if (newVarName != null) newVarName.text = serializableBlock.varName;
-                    }
-
-                    // add inputs
-                    counterForEndOfDeserialization++;
-
-                    BE2_ExecutionManager.Instance.StartCoroutine(C_AddInputsAndChildBlocks(block, serializableBlock, programmingEnv));
-
-                    if (block.Type == BlockTypeEnum.trigger && block.Type != BlockTypeEnum.define)
-                    {
-                        BE2_ExecutionManager.Instance.AddToBlocksStackArray(block.Instruction.InstructionBase.BlocksStack, programmingEnv.TargetObject);
-
-                        // v2.11 - bugfix: trigger blocks loaded from the save menu didn't execut correctly if no PrimaryKey click was done before 
-                        block.Instruction.InstructionBase.BlocksStack.PopulateStack();
                     }
                 }
-
-                // v2.12 - added unload prefabs after use to liberate memory
-                BE2_BlockUtils.UnloadPrefab();
             }
+
+            // 6. 자식 블록들 생성 (Input의 Operation 블록, Section Body 자식, Outer Area 자식)
+            counterForEndOfDeserialization++;
+            BE2_ExecutionManager.Instance.StartCoroutine(C_AddInputsAndChildBlocks(block, serializableBlock, programmingEnv));
+
+            // 7. 트리거 블록이면 BlocksStack에 등록
+            if (block.Type == BlockTypeEnum.trigger && block.Type != BlockTypeEnum.define)
+            {
+                BE2_ExecutionManager.Instance.AddToBlocksStackArray(block.Instruction.InstructionBase.BlocksStack, programmingEnv.TargetObject);
+                block.Instruction.InstructionBase.BlocksStack.PopulateStack();
+            }
+
+            // 7. 사용한 프리팹 언로드 (메모리 해제)
+            BE2_BlockUtils.UnloadPrefab();
 
             return block;
         }

@@ -2,16 +2,10 @@ using UnityEngine;
 
 /// <summary>
 /// 가상 라인 센서 (IR 센서)
-/// 레이캐스트로 검은선/흰선을 감지합니다.
+/// 기능 이름으로 등록되어 동적 핀 매핑을 지원합니다.
 /// </summary>
 public class VirtualLineSensor : MonoBehaviour, IVirtualPeripheral
 {
-    [Header("Pin Configuration")]
-    [Tooltip("왼쪽 센서 핀")]
-    public int pinLeft = 3;
-    [Tooltip("오른쪽 센서 핀")]
-    public int pinRight = 4;
-    
     [Header("Sensor Objects")]
     [Tooltip("센서 위치 오브젝트들 (0=왼쪽, 1=오른쪽)")]
     public GameObject[] sensorObjects;
@@ -28,44 +22,39 @@ public class VirtualLineSensor : MonoBehaviour, IVirtualPeripheral
     [SerializeField] bool leftSensorValue;
     [SerializeField] bool rightSensorValue;
     
-    // 연결된 핀 목록
-    int[] connectedPins;
-    
-    void Awake()
-    {
-        connectedPins = new int[] { pinLeft, pinRight };
-    }
+    // 지원하는 기능 이름들
+    static readonly string[] supportedFunctions = { "leftSensor", "rightSensor" };
     
     // ============================================================
     // IVirtualPeripheral 구현
     // ============================================================
     
-    public int[] ConnectedPins => connectedPins ?? new int[] { pinLeft, pinRight };
+    public string[] SupportedFunctions => supportedFunctions;
     
-    public void OnPinWrite(int pin, float value)
+    public void OnFunctionWrite(string function, float value)
     {
         // 센서는 입력 전용 - 쓰기 무시
     }
     
-    public bool OnPinRead(int pin)
+    public bool OnFunctionRead(string function)
     {
-        if (pin == pinLeft)
+        switch (function)
         {
-            leftSensorValue = SampleSensor(0);
-            return leftSensorValue;
+            case "leftSensor":
+                leftSensorValue = SampleSensor(0);
+                return leftSensorValue;
+            case "rightSensor":
+                rightSensorValue = SampleSensor(1);
+                return rightSensorValue;
+            default:
+                return false;
         }
-        else if (pin == pinRight)
-        {
-            rightSensorValue = SampleSensor(1);
-            return rightSensorValue;
-        }
-        return false;
     }
     
-    public float OnPinAnalogRead(int pin)
+    public float OnFunctionAnalogRead(string function)
     {
         // 디지털 센서이므로 0 또는 1 반환
-        return OnPinRead(pin) ? 1f : 0f;
+        return OnFunctionRead(function) ? 1f : 0f;
     }
     
     // ============================================================

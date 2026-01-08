@@ -5,22 +5,29 @@
 public interface IVirtualPeripheral
 {
     /// <summary>
-    /// 이 주변장치가 사용하는 핀 번호들
+    /// 이 주변장치가 지원하는 기능 이름들
+    /// 예: ["leftSensor", "rightSensor"] 또는 ["leftMotorF", "leftMotorB", "rightMotorF", "rightMotorB"]
     /// </summary>
-    int[] ConnectedPins { get; }
+    string[] SupportedFunctions { get; }
     
     /// <summary>
-    /// 핀에 값이 쓰여질 때 호출됨 (analogWrite/digitalWrite)
+    /// 특정 기능에 값을 쓸 때 호출됨 (analogWrite/digitalWrite)
     /// </summary>
-    void OnPinWrite(int pin, float value);
+    /// <param name="function">기능 이름 (예: "leftMotorF")</param>
+    /// <param name="value">PWM 값 (0-255)</param>
+    void OnFunctionWrite(string function, float value);
     
     /// <summary>
-    /// 핀 값을 읽을 때 호출됨 (digitalRead)
+    /// 특정 기능의 디지털 값을 읽을 때 호출됨 (digitalRead)
     /// </summary>
-    bool OnPinRead(int pin);
+    /// <param name="function">기능 이름 (예: "leftSensor")</param>
+    /// <returns>센서 값</returns>
+    bool OnFunctionRead(string function);
     
     /// <summary>
-    /// 핀 아날로그 값을 읽을 때 호출됨 (analogRead)
+    /// 특정 기능의 아날로그 값을 읽을 때 호출됨 (analogRead)
     /// </summary>
-    float OnPinAnalogRead(int pin);
+    /// <param name="function">기능 이름</param>
+    /// <returns>아날로그 값 (0-1023)</returns>
+    float OnFunctionAnalogRead(string function);
 }

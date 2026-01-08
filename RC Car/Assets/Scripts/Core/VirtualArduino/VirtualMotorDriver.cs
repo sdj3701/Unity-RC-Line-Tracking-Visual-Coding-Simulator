@@ -2,20 +2,10 @@ using UnityEngine;
 
 /// <summary>
 /// 가상 모터 드라이버 (L298N 스타일)
-/// 4개의 PWM 핀으로 좌/우 모터를 제어합니다.
+/// 기능 이름으로 등록되어 동적 핀 매핑을 지원합니다.
 /// </summary>
 public class VirtualMotorDriver : MonoBehaviour, IVirtualPeripheral
 {
-    [Header("Pin Configuration")]
-    [Tooltip("왼쪽 모터 전진 핀")]
-    public int pinLeftForward = 9;
-    [Tooltip("왼쪽 모터 후진 핀")]
-    public int pinLeftBackward = 6;
-    [Tooltip("오른쪽 모터 전진 핀")]
-    public int pinRightForward = 10;
-    [Tooltip("오른쪽 모터 후진 핀")]
-    public int pinRightBackward = 11;
-    
     [Header("Output (Read-Only)")]
     [SerializeField] float leftMotorSpeed;
     [SerializeField] float rightMotorSpeed;
@@ -24,8 +14,8 @@ public class VirtualMotorDriver : MonoBehaviour, IVirtualPeripheral
     int pwmLeftForward, pwmLeftBackward;
     int pwmRightForward, pwmRightBackward;
     
-    // 연결된 핀 목록
-    int[] connectedPins;
+    // 지원하는 기능 이름들
+    static readonly string[] supportedFunctions = { "leftMotorF", "leftMotorB", "rightMotorF", "rightMotorB" };
     
     /// <summary>
     /// 현재 왼쪽 모터 속도 (-1 ~ 1)
@@ -37,41 +27,34 @@ public class VirtualMotorDriver : MonoBehaviour, IVirtualPeripheral
     /// </summary>
     public float RightMotorSpeed => rightMotorSpeed;
     
-    void Awake()
-    {
-        connectedPins = new int[] { pinLeftForward, pinLeftBackward, pinRightForward, pinRightBackward };
-    }
-    
     // ============================================================
     // IVirtualPeripheral 구현
     // ============================================================
     
-    public int[] ConnectedPins => connectedPins ?? new int[] { pinLeftForward, pinLeftBackward, pinRightForward, pinRightBackward };
+    public string[] SupportedFunctions => supportedFunctions;
     
-    public void OnPinWrite(int pin, float value)
+    public void OnFunctionWrite(string function, float value)
     {
         int pwm = Mathf.Clamp((int)value, 0, 255);
         
-        // 각 핀별 PWM 저장 및 상호 배타 처리
-        if (pin == pinLeftBackward) 
-        { 
-            pwmLeftBackward = pwm; 
-            if (pwm > 0) pwmLeftForward = 0; 
-        }
-        else if (pin == pinLeftForward) 
-        { 
-            pwmLeftForward = pwm; 
-            if (pwm > 0) pwmLeftBackward = 0; 
-        }
-        else if (pin == pinRightForward) 
-        { 
-            pwmRightForward = pwm; 
-            if (pwm > 0) pwmRightBackward = 0; 
-        }
-        else if (pin == pinRightBackward) 
-        { 
-            pwmRightBackward = pwm; 
-            if (pwm > 0) pwmRightForward = 0; 
+        switch (function)
+        {
+            case "leftMotorF":
+                pwmLeftForward = pwm;
+                if (pwm > 0) pwmLeftBackward = 0;
+                break;
+            case "leftMotorB":
+                pwmLeftBackward = pwm;
+                if (pwm > 0) pwmLeftForward = 0;
+                break;
+            case "rightMotorF":
+                pwmRightForward = pwm;
+                if (pwm > 0) pwmRightBackward = 0;
+                break;
+            case "rightMotorB":
+                pwmRightBackward = pwm;
+                if (pwm > 0) pwmRightForward = 0;
+                break;
         }
         
         // 모터 속도 계산 (Forward - Backward, 정규화)
@@ -79,13 +62,13 @@ public class VirtualMotorDriver : MonoBehaviour, IVirtualPeripheral
         rightMotorSpeed = Mathf.Clamp((pwmRightForward - pwmRightBackward) / 255f, -1f, 1f);
     }
     
-    public bool OnPinRead(int pin)
+    public bool OnFunctionRead(string function)
     {
         // 모터 드라이버는 출력 전용
         return false;
     }
     
-    public float OnPinAnalogRead(int pin)
+    public float OnFunctionAnalogRead(string function)
     {
         // 모터 드라이버는 출력 전용
         return 0f;
