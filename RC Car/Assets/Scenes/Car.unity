@@ -164,12 +164,12 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 223824169}
-  - component: {fileID: 223824170}
   - component: {fileID: 223824171}
-  - component: {fileID: 223824173}
-  - component: {fileID: 223824172}
   - component: {fileID: 223824175}
   - component: {fileID: 223824174}
+  - component: {fileID: 223824178}
+  - component: {fileID: 223824176}
+  - component: {fileID: 223824177}
   m_Layer: 0
   m_Name: Car
   m_TagString: Untagged
@@ -193,30 +193,6 @@ Transform:
   m_Father: {fileID: 0}
   m_RootOrder: 3
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &223824170
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 223824168}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1aae9cbeaff0ff94686b724a0684c40a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  wheels: []
-  Sensor:
-  - {fileID: 1105718450}
-  - {fileID: 461777627}
-  But_Start: {fileID: 935041439}
-  But_Stop: {fileID: 1317956503}
-  speed: 360
-  moveSpeed: 3
-  turnSpeed: 120
-  rayDistance: 2
-  blackThreshold: 0.2
-  lineTag: Line
 --- !u!54 &223824171
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -233,46 +209,6 @@ Rigidbody:
   m_Interpolate: 0
   m_Constraints: 80
   m_CollisionDetection: 0
---- !u!114 &223824172
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 223824168}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d7f3b20a70f57aa44b3cb62a52132615, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  logic: {fileID: 223824173}
-  wheels:
-  - {fileID: 1111230767}
-  - {fileID: 471977167}
-  Sensors:
-  - {fileID: 461777627}
-  - {fileID: 1105718450}
-  leftPin: 3
-  rightPin: 4
-  rayDistance: 2
-  blackThreshold: 0.2
-  whiteMeansTrue: 1
-  maxLinearSpeed: 5
-  maxAngularSpeed: 120
-  wheelVisualSpeed: 360
-  wheelRotateAxis: {x: 0, y: 1, z: 0}
---- !u!114 &223824173
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 223824168}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 61d718367cb991d4ea87a3da3c3416a0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!114 &223824174
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -285,18 +221,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0a6c540ceac4ea7498a3813e49fe8618, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  sensors:
-  - {fileID: 461777627}
-  - {fileID: 1105718450}
-  leftPin: 3
-  rightPin: 4
-  rayDistance: 2
-  blackThreshold: 0.2
-  whiteMeansTrue: 1
-  pinLeftF: 9
-  pinLeftB: 6
-  pinRightF: 10
-  pinRightB: 11
+  arduino: {fileID: 223824178}
+  motorDriver: {fileID: 223824177}
+  lineSensor: {fileID: 223824176}
   maxLinearSpeed: 5
   maxAngularSpeed: 120
   wheelVisualSpeed: 360
@@ -304,7 +231,7 @@ MonoBehaviour:
   wheels:
   - {fileID: 1111230767}
   - {fileID: 471977167}
-  blocksRunner: {fileID: 0}
+  blocksRunner: {fileID: 223824175}
 --- !u!114 &223824175
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -318,6 +245,60 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   runtimeJsonFile: BlocksRuntime.json
+--- !u!114 &223824176
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 223824168}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3e14a96f59fabba42a307ea758b28ade, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  pinLeft: 3
+  pinRight: 4
+  sensorObjects:
+  - {fileID: 1105718450}
+  - {fileID: 461777627}
+  rayDistance: 2
+  blackThreshold: 0.2
+  whiteMeansTrue: 1
+  leftSensorValue: 0
+  rightSensorValue: 0
+--- !u!114 &223824177
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 223824168}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6a4ab685bcd4bc142bed6cd233d673ea, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  pinLeftForward: 9
+  pinLeftBackward: 6
+  pinRightForward: 10
+  pinRightBackward: 11
+  leftMotorSpeed: 0
+  rightMotorSpeed: 0
+--- !u!114 &223824178
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 223824168}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e617c7caafa275a42bd4675a39f1c816, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  totalPins: 20
+  peripheralComponents: []
 --- !u!1 &278407762
 GameObject:
   m_ObjectHideFlags: 0

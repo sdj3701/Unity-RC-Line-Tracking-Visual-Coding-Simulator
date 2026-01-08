@@ -1,22 +1,22 @@
 using UnityEngine;
 
+/// <summary>
+/// RC Car 물리 시뮬레이션 어댑터
+/// VirtualArduinoMicro의 모터/센서 값을 물리 엔진에 적용합니다.
+/// </summary>
 [RequireComponent(typeof(Rigidbody))]
-public class RCCarRuntimeAdapter : MonoBehaviour, IRuntimeIO
+public class RCCarRuntimeAdapter : MonoBehaviour
 {
-    [Header("Sensors")]
-    public GameObject[] sensors; // 0=left,1=right
-    public int leftPin = 3;
-    public int rightPin = 4;
-    public float rayDistance = 2f;
-    [Range(0f,1f)] public float blackThreshold = 0.2f;
-    public bool whiteMeansTrue = true;
-
-    [Header("Motor Pins")]
-    public int pinLeftF = 9;
-    public int pinLeftB = 6;
-    public int pinRightF = 10;
-    public int pinRightB = 11;
-
+    [Header("Virtual Arduino")]
+    [Tooltip("가상 아두이노 마이크로 (자동 탐색 가능)")]
+    public VirtualArduinoMicro arduino;
+    
+    [Header("Virtual Peripherals")]
+    [Tooltip("가상 모터 드라이버 (자동 탐색 가능)")]
+    public VirtualMotorDriver motorDriver;
+    [Tooltip("가상 라인 센서 (자동 탐색 가능)")]
+    public VirtualLineSensor lineSensor;
+    
     [Header("Motion")]
     public float maxLinearSpeed = 5f;
     public float maxAngularSpeed = 120f;
@@ -30,10 +30,6 @@ public class RCCarRuntimeAdapter : MonoBehaviour, IRuntimeIO
 
     Rigidbody rb;
     
-    // 개별 PWM 값 저장 (BlocksGenerated 방식)
-    int _lfPwm, _lbPwm, _rfPwm, _rbPwm;
-    float leftMotor, rightMotor;
-    
     // 실행 상태
     bool isRunning = false;
     
@@ -42,26 +38,63 @@ public class RCCarRuntimeAdapter : MonoBehaviour, IRuntimeIO
     /// </summary>
     public bool IsRunning => isRunning;
 
-    void Awake() { rb = GetComponent<Rigidbody>(); }
+    void Awake() 
+    { 
+        rb = GetComponent<Rigidbody>(); 
+    }
 
     void Start()
     {
+        // VirtualArduinoMicro 찾기
+        if (arduino == null)
+            arduino = GetComponent<VirtualArduinoMicro>();
+        if (arduino == null)
+            arduino = FindObjectOfType<VirtualArduinoMicro>();
+        
+        // VirtualMotorDriver 찾기
+        if (motorDriver == null)
+            motorDriver = GetComponent<VirtualMotorDriver>();
+        if (motorDriver == null)
+            motorDriver = FindObjectOfType<VirtualMotorDriver>();
+            
+        // VirtualLineSensor 찾기
+        if (lineSensor == null)
+            lineSensor = GetComponent<VirtualLineSensor>();
+        if (lineSensor == null)
+            lineSensor = FindObjectOfType<VirtualLineSensor>();
+        
         // RuntimeBlocksRunner 찾기
         if (blocksRunner == null)
             blocksRunner = GetComponent<RuntimeBlocksRunner>();
         if (blocksRunner == null)
             blocksRunner = FindObjectOfType<RuntimeBlocksRunner>();
         
-        // 블록 러너 초기화 (이 어댑터를 IRuntimeIO로 전달)
-        if (blocksRunner != null)
+        // 블록 러너 초기화 (VirtualArduinoMicro를 IRuntimeIO로 전달)
+        if (blocksRunner != null && arduino != null)
         {
-            blocksRunner.Initialize(this);
-            Debug.Log("[RCCarRuntimeAdapter] RuntimeBlocksRunner initialized.");
+            blocksRunner.Initialize(arduino);
+            Debug.Log("[RCCarRuntimeAdapter] RuntimeBlocksRunner initialized with VirtualArduinoMicro.");
+        }
+        else if (blocksRunner != null)
+        {
+            Debug.LogWarning("[RCCarRuntimeAdapter] VirtualArduinoMicro not found! Block runner not initialized.");
         }
         else
         {
             Debug.LogWarning("[RCCarRuntimeAdapter] RuntimeBlocksRunner not found!");
         }
+        
+        // 컴포넌트 상태 로그
+        LogComponentStatus();
+    }
+    
+    void LogComponentStatus()
+    {
+        Debug.Log($"[RCCarRuntimeAdapter] Components status:");
+        Debug.Log($"  - VirtualArduinoMicro: {(arduino != null ? "OK" : "MISSING")}");
+        Debug.Log($"  - VirtualMotorDriver: {(motorDriver != null ? "OK" : "MISSING")}");
+        Debug.Log($"  - VirtualLineSensor: {(lineSensor != null ? "OK" : "MISSING")}");
+        Debug.Log($"  - RuntimeBlocksRunner: {(blocksRunner != null ? "OK" : "MISSING")}");
     }
 
     // ============================================================
@@ -83,6 +116,13 @@ public class RCCarRuntimeAdapter : MonoBehaviour, IRuntimeIO
     public void StopRunning()
     {
         isRunning = false;
+        
+        // 모터 정지
+        if (motorDriver != null)
+        {
+            motorDriver.SetMotorSpeed(0f, 0f);
+        }
+        
         Debug.Log("[RCCarRuntimeAdapter] Stopped running.");
     }
     
@@ -107,80 +147,23 @@ public class RCCarRuntimeAdapter : MonoBehaviour, IRuntimeIO
             blocksRunner.Tick();
         }
         
-        // 2. 물리 이동 적용
+        // 2. 모터 드라이버에서 속도 읽기 및 물리 이동 적용
+        float leftMotor = 0f;
+        float rightMotor = 0f;
+        
+        if (motorDriver != null)
+        {
+            leftMotor = motorDriver.LeftMotorSpeed;
+            rightMotor = motorDriver.RightMotorSpeed;
+        }
+        
         ApplyWheelVisualRotation(leftMotor, rightMotor);
+        
         Vector3 move = transform.forward * (leftMotor + rightMotor) * 0.5f * maxLinearSpeed * Time.fixedDeltaTime;
         rb.MovePosition(rb.position + move);
+        
         float angular = (rightMotor - leftMotor) * maxAngularSpeed * Time.fixedDeltaTime;
         rb.MoveRotation(rb.rotation * Quaternion.Euler(0f, angular, 0f));
-    }
-
-    // IRuntimeIO
-    public bool DigitalRead(int pin)
-    {
-        if (pin == leftPin) return SampleSensor(0);
-        if (pin == rightPin) return SampleSensor(1);
-        return false;
-    }
-
-    public void AnalogWrite(int pin, float value)
-    {
-        int pwm = Mathf.Clamp((int)value, 0, 255);
-        
-        // 각 핀별 PWM 저장 및 상호 배타 처리
-        if (pin == pinLeftB) { _lbPwm = pwm; if (pwm > 0) _lfPwm = 0; }
-        else if (pin == pinLeftF) { _lfPwm = pwm; if (pwm > 0) _lbPwm = 0; }
-        else if (pin == pinRightF) { _rfPwm = pwm; if (pwm > 0) _rbPwm = 0; }
-        else if (pin == pinRightB) { _rbPwm = pwm; if (pwm > 0) _rfPwm = 0; }
-        else { return; }
-        
-        // 모터 값 계산 (Forward - Backward)
-        leftMotor = Mathf.Clamp((_lfPwm - _lbPwm) / 255f, -1f, 1f);
-        rightMotor = Mathf.Clamp((_rfPwm - _rbPwm) / 255f, -1f, 1f);
-    }
-
-    public void MoveForward(float speed01)
-    {
-        float s = Mathf.Clamp01(speed01);
-        leftMotor = rightMotor = s;
-    }
-
-    public void TurnLeft(float speed01)
-    {
-        float s = Mathf.Clamp01(speed01);
-        leftMotor = -s; rightMotor = s;
-    }
-
-    public void TurnRight(float speed01)
-    {
-        float s = Mathf.Clamp01(speed01);
-        leftMotor = s; rightMotor = -s;
-    }
-
-    public void Stop()
-    {
-        leftMotor = rightMotor = 0f;
-    }
-
-    bool SampleSensor(int index)
-    {
-        if (sensors == null || index >= sensors.Length || sensors[index] == null)
-            return whiteMeansTrue;
-        var sensor = sensors[index];
-        Vector3 origin = sensor.transform.position;
-        Vector3 dir = -sensor.transform.up;
-        if (!Physics.Raycast(origin, dir, out RaycastHit hit, rayDistance))
-            return whiteMeansTrue;
-        var rend = hit.collider ? hit.collider.GetComponent<Renderer>() : null;
-        var mat = rend ? rend.sharedMaterial : null;
-        var tex = mat ? mat.mainTexture as Texture2D : null;
-        if (tex == null) return whiteMeansTrue;
-        var uv = hit.textureCoord;
-        uv = Vector2.Scale(uv, mat.mainTextureScale) + mat.mainTextureOffset;
-        uv.x -= Mathf.Floor(uv.x); uv.y -= Mathf.Floor(uv.y);
-        float gray = tex.GetPixelBilinear(uv.x, uv.y).grayscale;
-        bool isBlack = gray <= blackThreshold;
-        return whiteMeansTrue ? !isBlack : isBlack;
     }
 
     void ApplyWheelVisualRotation(float left, float right)
