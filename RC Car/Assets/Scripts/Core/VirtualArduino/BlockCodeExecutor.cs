@@ -175,12 +175,54 @@ public class BlockCodeExecutor : MonoBehaviour
                 }
                 break;
                 
+            case "if":
+                ExecuteIfBlock(node, false);
+                break;
+                
+            case "ifElse":
+                ExecuteIfBlock(node, true);
+                break;
+                
             default:
                 Debug.Log($"<color=gray>[3] ExecuteNode: Unknown type '{node.type}'</color>");
                 break;
-            // case "digitalRead": ...
-            // case "if": ...
-            // case "forever": ...
+        }
+    }
+    
+    /// <summary>
+    /// If/IfElse 블록 실행
+    /// </summary>
+    void ExecuteIfBlock(BlockNode node, bool hasElse)
+    {
+        // conditionPin으로 digitalRead 수행
+        bool condition = false;
+        if (arduino != null)
+        {
+            condition = arduino.DigitalRead(node.conditionPin);
+            Debug.Log($"<color=magenta>[3] ExecuteNode: {node.type} conditionPin={node.conditionPin} → {condition}</color>");
+        }
+        
+        if (condition)
+        {
+            // then body 실행
+            if (node.body != null)
+            {
+                foreach (var childNode in node.body)
+                {
+                    ExecuteNode(childNode);
+                }
+            }
+        }
+        else if (hasElse)
+        {
+            // else body 실행
+            if (node.elseBody != null)
+            {
+                foreach (var childNode in node.elseBody)
+                {
+                    ExecuteNode(childNode);
+                }
+            }
         }
     }
     
@@ -461,6 +503,7 @@ public class BlockCodeExecutor : MonoBehaviour
         public string valueVar;
         public string functionName;
         public string conditionVar;
+        public int conditionPin;      // if/ifElse용 조건 핀
         public string setVarName;
         public float setVarValue;
         public List<BlockNode> body;

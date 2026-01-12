@@ -58,20 +58,17 @@ public static class BE2XmlToRuntimeJson
             Debug.Log($"  - {v.name} = {v.value}");
         }
         
-        // 3단계: PWM 블록 처리
-        var pwmBlocks = new List<PwmNode>();
+        // 3단계: Loop 블록 처리 (Forever 내부 블록들을 순서대로)
+        var loopBlocks = new List<LoopBlockNode>();
         foreach (var block in allBlocks)
         {
-            ProcessPWM(block, pwmBlocks);
+            ProcessLoopBlocks(block, loopBlocks);
         }
         
-        foreach (var p in pwmBlocks)
-        {
-            Debug.Log($"  - pin={p.pin}, value={p.value}, valueVar={p.valueVar}");
-        }
+        Debug.Log($"[BE2XmlToRuntimeJson] Loop blocks: {loopBlocks.Count}");
 
         // JSON 빌드
-        var json = BuildJson(initBlocks, pwmBlocks);
+        var json = BuildJson(initBlocks, loopBlocks);
         File.WriteAllText(jsonPath, json);
         
         Debug.Log($"[BE2XmlToRuntimeJson] Exported to: {jsonPath}");
@@ -148,86 +145,167 @@ public static class BE2XmlToRuntimeJson
         }
     }
     
-    /// <summary>
-    /// PWM 블록 처리
-    /// </summary>
-    static void ProcessPWM(XElement block, List<PwmNode> pwmBlocks)
+    // ============================================================
+    // Loop 블록 처리 (모든 블록을 재귀적으로 순회)
+    // ============================================================
+    
+    static void ProcessLoopBlocks(XElement block, List<LoopBlockNode> loopBlocks)
     {
-        var name = block.Element("blockName")?.Value?.Trim();
-        
-        if (name == "Block Cst Block_pWM")
+        // 현재 블록 처리 시도
+        var node = ParseBlockToLoopNode(block);
+        if (node != null)
         {
-            // 모든 Input 찾기 (직접 자식만)
-            var allInputs = block.Element("headerInputs")?.Elements("Input").ToList() 
-                           ?? block.Descendants("Input").ToList();
-            
-            int pin = 0;
-            float value = 0;
-            string valueVar = null;
-            
-            // 두 번째 Input (인덱스 1): 핀 번호
-            if (allInputs.Count >= 2)
+            loopBlocks.Add(node);
+            // If 블록 내부는 ParseBlockToLoopNode에서 이미 처리하므로 여기서는 스킵
+            // (중복 방지)
+        }
+        else
+        {
+            // 현재 블록이 Loop 노드가 아닌 경우 (변수 정의, 트리거 등)
+            // 내부 섹션 재귀 처리
+            var sections = block.Element("sections")?.Elements("Section");
+            if (sections != null)
             {
-                var pinInput = allInputs[1];
-                var pinVarName = pinInput.Descendants("varName").FirstOrDefault()?.Value;
-                if (!string.IsNullOrEmpty(pinVarName))
+                foreach (var section in sections)
                 {
-                    pin = ResolveInt(pinVarName);
-                }
-                else
-                {
-                    var pinValue = pinInput.Element("value")?.Value;
-                    pin = ResolveInt(pinValue);
-                }
-            }
-            
-            // 세 번째 Input (인덱스 2): 값
-            if (allInputs.Count >= 3)
-            {
-                var valueInput = allInputs[2];
-                
-                // value 요소에서 직접 값 가져오기
-                var directValue = valueInput.Element("value")?.Value;
-                if (!string.IsNullOrEmpty(directValue))
-                {
-                    value = ResolveFloat(directValue);
-                }
-                else
-                {
-                    // operation 블록에서 변수 참조 확인
-                    var opBlock = valueInput.Element("operation")?.Element("Block");
-                    if (opBlock != null)
+                    var childBlocks = section.Element("childBlocks")?.Elements("Block");
+                    if (childBlocks != null)
                     {
-                        valueVar = opBlock.Element("varName")?.Value;
+                        foreach (var child in childBlocks)
+                        {
+                            ProcessLoopBlocks(child, loopBlocks);
+                        }
                     }
                 }
             }
-            
-            pwmBlocks.Add(new PwmNode { pin = pin, value = value, valueVar = valueVar });
         }
         
-        // 재귀 처리: OuterArea
+        // OuterArea 재귀 처리 (다음 블록으로 이동)
         var outerChildBlocks = block.Element("OuterArea")?.Element("childBlocks")?.Elements("Block");
         if (outerChildBlocks != null)
         {
             foreach (var child in outerChildBlocks)
-                ProcessPWM(child, pwmBlocks);
+                ProcessLoopBlocks(child, loopBlocks);
+        }
+    }
+    
+    /// <summary>
+    /// 단일 블록을 LoopBlockNode로 변환
+    /// </summary>
+    static LoopBlockNode ParseBlockToLoopNode(XElement block)
+    {
+        var name = block.Element("blockName")?.Value?.Trim();
+        
+        // PWM 블록
+        if (name == "Block Cst Block_pWM")
+        {
+            return ParsePwmBlock(block);
         }
         
-        // 재귀 처리: sections
-        var sections = block.Element("sections")?.Elements("Section");
-        if (sections != null)
+        // If 블록
+        if (name == "Block Cst If" || name == "Block Ins If")
         {
-            foreach (var section in sections)
+            return ParseIfBlock(block, "if");
+        }
+        
+        // IfElse 블록
+        if (name == "Block Cst IfElse" || name == "Block Ins IfElse")
+        {
+            return ParseIfBlock(block, "ifElse");
+        }
+        
+        return null;
+    }
+    
+    static LoopBlockNode ParsePwmBlock(XElement block)
+    {
+        var node = new LoopBlockNode { type = "analogWrite" };
+        
+        var allInputs = block.Element("headerInputs")?.Elements("Input").ToList() 
+                       ?? block.Descendants("Input").ToList();
+        
+        // 핀 번호 (인덱스 1)
+        if (allInputs.Count >= 2)
+        {
+            var pinInput = allInputs[1];
+            var pinVarName = pinInput.Descendants("varName").FirstOrDefault()?.Value;
+            if (!string.IsNullOrEmpty(pinVarName))
+                node.pin = ResolveInt(pinVarName);
+            else
+                node.pin = ResolveInt(pinInput.Element("value")?.Value);
+        }
+        
+        // 값 (인덱스 2)
+        if (allInputs.Count >= 3)
+        {
+            var valueInput = allInputs[2];
+            var directValue = valueInput.Element("value")?.Value;
+            if (!string.IsNullOrEmpty(directValue))
+                node.value = ResolveFloat(directValue);
+            else
             {
-                var childBlocks = section.Element("childBlocks")?.Elements("Block");
-                if (childBlocks != null)
+                var opBlock = valueInput.Element("operation")?.Element("Block");
+                if (opBlock != null)
+                    node.valueVar = opBlock.Element("varName")?.Value;
+            }
+        }
+        
+        return node;
+    }
+    
+    static LoopBlockNode ParseIfBlock(XElement block, string type)
+    {
+        var node = new LoopBlockNode { type = type };
+        
+        // 조건 추출 (digitalRead 핀)
+        var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
+        if (headerInputs != null && headerInputs.Count > 0)
+        {
+            var opBlock = headerInputs[0].Element("operation")?.Element("Block");
+            if (opBlock != null)
+            {
+                var opName = opBlock.Element("blockName")?.Value?.Trim();
+                if (opName != null && opName.Contains("digitalRead"))
                 {
-                    foreach (var child in childBlocks)
-                        ProcessPWM(child, pwmBlocks);
+                    var pinVarName = opBlock.Descendants("varName").FirstOrDefault()?.Value;
+                    node.conditionPin = ResolveInt(pinVarName);
                 }
             }
         }
+        
+        // 본문 처리 (sections)
+        var sections = block.Element("sections")?.Elements("Section").ToList();
+        if (sections != null)
+        {
+            // then body (첫 번째 섹션)
+            if (sections.Count > 0)
+            {
+                node.body = ParseSectionBlocks(sections[0]);
+            }
+            
+            // else body (두 번째 섹션) - ifElse만
+            if (type == "ifElse" && sections.Count > 1)
+            {
+                node.elseBody = ParseSectionBlocks(sections[1]);
+            }
+        }
+        
+        return node;
+    }
+    
+    static List<LoopBlockNode> ParseSectionBlocks(XElement section)
+    {
+        var result = new List<LoopBlockNode>();
+        var childBlocks = section.Element("childBlocks")?.Elements("Block");
+        if (childBlocks == null) return result;
+        
+        foreach (var child in childBlocks)
+        {
+            var node = ParseBlockToLoopNode(child);
+            if (node != null)
+                result.Add(node);
+        }
+        return result;
     }
     
     // ===== 헬퍼 함수 =====
@@ -250,7 +328,7 @@ public static class BE2XmlToRuntimeJson
     
     // ===== JSON Building =====
     
-    static string BuildJson(List<VariableNode> variables, List<PwmNode> pwmBlocks)
+    static string BuildJson(List<VariableNode> variables, List<LoopBlockNode> loopBlocks)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("{");
@@ -266,21 +344,13 @@ public static class BE2XmlToRuntimeJson
         }
         sb.AppendLine("  ],");
         
-        // loop 배열 (PWM 등 실행 블록)
+        // loop 배열 (순서대로)
         sb.AppendLine("  \"loop\": [");
-        for (int i = 0; i < pwmBlocks.Count; i++)
+        for (int i = 0; i < loopBlocks.Count; i++)
         {
-            var p = pwmBlocks[i];
-            var parts = new List<string>();
-            parts.Add($"\"type\": \"analogWrite\"");
-            parts.Add($"\"pin\": {p.pin}");
-            if (!string.IsNullOrEmpty(p.valueVar))
-                parts.Add($"\"valueVar\": \"{EscapeJson(p.valueVar)}\"");
-            else
-                parts.Add($"\"value\": {p.value}");
-            
-            sb.Append($"    {{ {string.Join(", ", parts)} }}");
-            if (i < pwmBlocks.Count - 1) sb.Append(",");
+            sb.Append("    ");
+            sb.Append(LoopBlockNodeToJson(loopBlocks[i]));
+            if (i < loopBlocks.Count - 1) sb.Append(",");
             sb.AppendLine();
         }
         sb.AppendLine("  ],");
@@ -292,11 +362,58 @@ public static class BE2XmlToRuntimeJson
         return sb.ToString();
     }
     
+    static string LoopBlockNodeToJson(LoopBlockNode node)
+    {
+        var parts = new List<string>();
+        parts.Add($"\"type\": \"{node.type}\"");
+        
+        switch (node.type)
+        {
+            case "analogWrite":
+                parts.Add($"\"pin\": {node.pin}");
+                if (!string.IsNullOrEmpty(node.valueVar))
+                    parts.Add($"\"valueVar\": \"{EscapeJson(node.valueVar)}\"");
+                else
+                    parts.Add($"\"value\": {node.value}");
+                break;
+                
+            case "if":
+            case "ifElse":
+                parts.Add($"\"conditionPin\": {node.conditionPin}");
+                
+                // body
+                var bodyParts = new List<string>();
+                if (node.body != null)
+                {
+                    foreach (var b in node.body)
+                        bodyParts.Add(LoopBlockNodeToJson(b));
+                }
+                parts.Add($"\"body\": [{string.Join(", ", bodyParts)}]");
+                
+                // elseBody (ifElse만)
+                if (node.type == "ifElse")
+                {
+                    var elseParts = new List<string>();
+                    if (node.elseBody != null)
+                    {
+                        foreach (var b in node.elseBody)
+                            elseParts.Add(LoopBlockNodeToJson(b));
+                    }
+                    parts.Add($"\"elseBody\": [{string.Join(", ", elseParts)}]");
+                }
+                break;
+        }
+        
+        return $"{{ {string.Join(", ", parts)} }}";
+    }
+    
     static string EscapeJson(string s)
     {
         if (string.IsNullOrEmpty(s)) return "";
         return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }
+    
+    // ===== Data Classes =====
     
     class VariableNode
     {
@@ -304,11 +421,19 @@ public static class BE2XmlToRuntimeJson
         public float value;
     }
     
-    class PwmNode
+    class LoopBlockNode
     {
+        public string type;        // "analogWrite", "if", "ifElse"
+        
+        // For analogWrite
         public int pin;
         public float value;
         public string valueVar;
+        
+        // For if/ifElse
+        public int conditionPin;
+        public List<LoopBlockNode> body;
+        public List<LoopBlockNode> elseBody;
     }
 }
 
