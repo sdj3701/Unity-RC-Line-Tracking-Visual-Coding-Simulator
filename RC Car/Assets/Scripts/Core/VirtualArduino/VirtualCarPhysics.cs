@@ -38,6 +38,10 @@ public class VirtualCarPhysics : MonoBehaviour
         rb = GetComponent<Rigidbody>();
     }
     
+    [Header("Block Code Executor")]
+    [Tooltip("블록 코드 실행기 (자동 탐색 가능)")]
+    public BlockCodeExecutor blockCodeExecutor;
+    
     void Start()
     {
         // VirtualMotorDriver 자동 탐색
@@ -48,10 +52,16 @@ public class VirtualCarPhysics : MonoBehaviour
         if (motorDriver == null)
             motorDriver = FindObjectOfType<VirtualMotorDriver>();
         
+        // BlockCodeExecutor 자동 탐색
+        if (blockCodeExecutor == null)
+            blockCodeExecutor = FindObjectOfType<BlockCodeExecutor>();
+        
         if (motorDriver == null)
             Debug.LogWarning("[VirtualCarPhysics] VirtualMotorDriver not found!");
+        if (blockCodeExecutor == null)
+            Debug.LogWarning("[VirtualCarPhysics] BlockCodeExecutor not found!");
         else
-            Debug.Log("[VirtualCarPhysics] Initialized with VirtualMotorDriver.");
+            Debug.Log("[VirtualCarPhysics] Initialized with VirtualMotorDriver and BlockCodeExecutor.");
     }
     
     // ============================================================
@@ -99,10 +109,28 @@ public class VirtualCarPhysics : MonoBehaviour
     
     void FixedUpdate()
     {
-        if (!isRunning || motorDriver == null) return;
+        if (!isRunning) return;
+        
+        // 블록 코드 실행 (모터 값 업데이트)
+        if (blockCodeExecutor != null && blockCodeExecutor.IsLoaded)
+        {
+            blockCodeExecutor.Tick();
+        }
+        else
+        {
+            Debug.LogWarning("<color=red>[Physics] BlockCodeExecutor not loaded!</color>");
+        }
+        
+        if (motorDriver == null)
+        {
+            Debug.LogWarning("<color=red>[Physics] MotorDriver is NULL!</color>");
+            return;
+        }
         
         float leftMotor = motorDriver.LeftMotorSpeed;
         float rightMotor = motorDriver.RightMotorSpeed;
+        
+        Debug.Log($"<color=magenta>[5] VirtualCarPhysics: L={leftMotor:F2}, R={rightMotor:F2}</color>");
         
         // 바퀴 시각적 회전
         ApplyWheelVisualRotation(leftMotor, rightMotor);

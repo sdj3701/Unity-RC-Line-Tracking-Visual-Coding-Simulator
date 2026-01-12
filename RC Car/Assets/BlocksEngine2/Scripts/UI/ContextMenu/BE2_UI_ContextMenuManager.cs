@@ -10,6 +10,11 @@ namespace MG_BlocksEngine2.UI
     {
         I_BE2_UI_ContextMenu[] _contextMenuArray;
         I_BE2_UI_ContextMenu currentContextMenu;
+        /// <summary>
+        /// 코드 생성 완료 시 발생하는 이벤트
+        /// BlockCodeExecutor, VirtualArduinoMicro 등에서 구독하여 재로드
+        /// </summary>
+        public static event System.Action OnCodeGenerated;
 
         // v2.6.2 - bugfix: fixed changes on BE2 Inspector paths not perssiting 
         // UI ContextMenuManager instance changed to property to avoid null exception
@@ -134,11 +139,7 @@ namespace MG_BlocksEngine2.UI
             CloseContextMenu();
         }
         
-        /// <summary>
-        /// 코드 생성 완료 시 발생하는 이벤트
-        /// BlockCodeExecutor, VirtualArduinoMicro 등에서 구독하여 재로드
-        /// </summary>
-        public static event System.Action OnCodeGenerated;
+
 
         // XML Code Generated 코드 임포트
         public void XMLCodeGenerated()

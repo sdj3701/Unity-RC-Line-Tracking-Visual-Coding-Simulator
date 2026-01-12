@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using MG_BlocksEngine2.UI;
 
 /// <summary>
 /// 가상 아두이노 마이크로 시뮬레이터
@@ -27,9 +28,11 @@ public class VirtualArduinoMicro : MonoBehaviour, IRuntimeIO
     [Tooltip("오른쪽 모터 후진 기본 핀")]
     public int defaultRightMotorBPin = 11;
     
-    [Header("Connected Peripherals")]
+    [Header("Connected Components")]
     [Tooltip("연결된 가상 주변장치들")]
     public List<MonoBehaviour> peripheralComponents = new List<MonoBehaviour>();
+    [Tooltip("블록 코드 실행기 (자동 탐색 가능)")]
+    public BlockCodeExecutor blockCodeExecutor;
     
     // 핀 상태 저장
     bool[] digitalPins;
@@ -55,8 +58,84 @@ public class VirtualArduinoMicro : MonoBehaviour, IRuntimeIO
         // 주변장치 수집
         CollectPeripherals();
         
-        // 기본 핀 매핑 설정
-        SetupDefaultPinMapping();
+        // BlockCodeExecutor 찾기
+        if (blockCodeExecutor == null)
+            blockCodeExecutor = FindObjectOfType<BlockCodeExecutor>();
+    }
+    
+    void OnEnable()
+    {
+        // 코드 생성 이벤트 구독
+        BE2_UI_ContextMenuManager.OnCodeGenerated += OnCodeGeneratedHandler;
+    }
+    
+    void OnDisable()
+    {
+        // 코드 생성 이벤트 구독 해제
+        BE2_UI_ContextMenuManager.OnCodeGenerated -= OnCodeGeneratedHandler;
+    }
+    
+    void OnCodeGeneratedHandler()
+    {
+        Debug.Log("[VirtualArduinoMicro] OnCodeGenerated event received. Updating pin mapping...");
+        UpdatePinMappingFromVariables();
+    }
+    
+    /// <summary>
+    /// BlockCodeExecutor의 변수에서 핀 매핑 업데이트
+    /// </summary>
+    public void UpdatePinMappingFromVariables()
+    {
+        if (blockCodeExecutor == null)
+        {
+            Debug.LogWarning("[VirtualArduinoMicro] BlockCodeExecutor not found!");
+            SetupDefaultPinMapping();
+            return;
+        }
+        
+        pinToFunction.Clear();
+        
+        // 변수에서 핀 매핑 읽기
+        var variables = blockCodeExecutor.Variables;
+        
+        // 센서 핀
+        if (variables.TryGetValue("pin_sensor_left", out float leftSensor))
+            pinToFunction[(int)leftSensor] = "leftSensor";
+        else
+            pinToFunction[defaultLeftSensorPin] = "leftSensor";
+            
+        if (variables.TryGetValue("pin_sensor_right", out float rightSensor))
+            pinToFunction[(int)rightSensor] = "rightSensor";
+        else
+            pinToFunction[defaultRightSensorPin] = "rightSensor";
+        
+        // 모터 핀 (왼쪽)
+        if (variables.TryGetValue("pin_wheel_left_forward", out float leftF))
+            pinToFunction[(int)leftF] = "leftMotorF";
+        else
+            pinToFunction[defaultLeftMotorFPin] = "leftMotorF";
+            
+        if (variables.TryGetValue("pin_wheel_left_back", out float leftB))
+            pinToFunction[(int)leftB] = "leftMotorB";
+        else
+            pinToFunction[defaultLeftMotorBPin] = "leftMotorB";
+        
+        // 모터 핀 (오른쪽)
+        if (variables.TryGetValue("pin_wheel_right_forward", out float rightF))
+            pinToFunction[(int)rightF] = "rightMotorF";
+        else
+            pinToFunction[defaultRightMotorFPin] = "rightMotorF";
+            
+        if (variables.TryGetValue("pin_wheel_right_back", out float rightB))
+            pinToFunction[(int)rightB] = "rightMotorB";
+        else
+            pinToFunction[defaultRightMotorBPin] = "rightMotorB";
+        
+        Debug.Log($"[VirtualArduinoMicro] Pin mapping updated from variables:");
+        foreach (var kvp in pinToFunction)
+        {
+            Debug.Log($"  Pin {kvp.Key} → {kvp.Value}");
+        }
     }
     
     void CollectPeripherals()
@@ -200,8 +279,17 @@ public class VirtualArduinoMicro : MonoBehaviour, IRuntimeIO
         {
             if (functionToPeripheral.TryGetValue(function, out var peripheral))
             {
+                Debug.Log($"<color=green>[4] VirtualArduinoMicro.AnalogWrite: pin={pin} → {function}, value={value}</color>");
                 peripheral.OnFunctionWrite(function, value);
             }
+            else
+            {
+                Debug.LogWarning($"<color=red>[4] AnalogWrite: No peripheral for function '{function}'</color>");
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"<color=red>[4] AnalogWrite: No function mapped to pin {pin}</color>");
         }
     }
     

@@ -243,9 +243,6 @@ namespace MG_BlocksEngine2.Serializer
         {
             string[] xmlBlocks = xmlString.Split('#');
 
-            // === 1차 순회: 모든 변수를 먼저 등록 (Dropdown 초기화 문제 방지) ===
-            // 참고: 변수 블록은 자식 블록으로 중첩되어 있을 수 있으므로 재귀적으로 검색
-            Debug.Log("[1차 순회] 변수 등록 시작...");
             int varCount = 0;
             foreach (string xmlBlock in xmlBlocks)
             {
@@ -255,7 +252,6 @@ namespace MG_BlocksEngine2.Serializer
                     RegisterVariablesRecursive(serializableBlock, ref varCount);
                 }
             }
-            Debug.Log($"[1차 순회] 변수 등록 완료. 총 {varCount}개 변수 등록됨.");
 
             // === 2차 순회: 블록 생성 ===
             foreach (string xmlBlock in xmlBlocks)
@@ -296,7 +292,6 @@ namespace MG_BlocksEngine2.Serializer
             // 현재 블록이 변수 블록인지 확인
             if (!string.IsNullOrEmpty(serializableBlock.varManagerName))
             {
-                Debug.Log($"[1차 순회] 변수 블록 발견: {serializableBlock.blockName}, varName: {serializableBlock.varName}");
                 
                 System.Type varManagerType = System.Type.GetType(serializableBlock.varManagerName);
                 if (varManagerType != null)
@@ -304,7 +299,6 @@ namespace MG_BlocksEngine2.Serializer
                     I_BE2_VariablesManager varManager = MonoBehaviour.FindObjectOfType(varManagerType) as I_BE2_VariablesManager;
                     if (varManager != null)
                     {
-                        Debug.Log($"[1차 순회] CreateAndAddVarToPanel 호출: {serializableBlock.varName}");
                         varManager.CreateAndAddVarToPanel(serializableBlock.varName);
                         varCount++;
                     }

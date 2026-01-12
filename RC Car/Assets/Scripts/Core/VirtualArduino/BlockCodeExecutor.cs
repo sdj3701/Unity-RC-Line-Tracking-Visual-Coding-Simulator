@@ -60,6 +60,12 @@ public class BlockCodeExecutor : MonoBehaviour
     // 공개 API
     // ============================================================
     
+    [Header("Connected Components")]
+    [Tooltip("가상 아두이노 마이크로 (자동 탐색 가능)")]
+    public VirtualArduinoMicro arduino;
+    
+    bool hasRunInit = false;
+    
     /// <summary>
     /// JSON 파일에서 프로그램 로드
     /// </summary>
@@ -81,12 +87,94 @@ public class BlockCodeExecutor : MonoBehaviour
             // 초기화 블록에서 변수 수집
             CollectVariablesFromInit();
             
+            // Arduino 자동 탐색
+            if (arduino == null)
+                arduino = FindObjectOfType<VirtualArduinoMicro>();
+            
             isLoaded = true;
-            LogDebug($"Program loaded. Variables: {variables.Count}");
+            hasRunInit = false;
+            LogDebug($"Program loaded. Variables: {variables.Count}, Loop blocks: {program?.loop?.Count ?? 0}");
         }
         catch (Exception ex)
         {
             Debug.LogError($"[BlockCodeExecutor] Failed to load program: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// 매 프레임 실행 (FixedUpdate에서 호출)
+    /// </summary>
+    public void Tick()
+    {
+        if (!isLoaded || program == null) return;
+        
+        // init 블록 한 번만 실행
+        if (!hasRunInit && program.init != null)
+        {
+            Debug.Log("<color=orange>[1] BlockCodeExecutor.Tick() - Running INIT blocks</color>");
+            foreach (var node in program.init)
+            {
+                ExecuteNode(node);
+            }
+            hasRunInit = true;
+        }
+        
+        // loop 블록 매번 실행
+        if (program.loop != null && program.loop.Count > 0)
+        {
+            Debug.Log($"<color=yellow>[2] BlockCodeExecutor.Tick() - Running LOOP ({program.loop.Count} blocks)</color>");
+            foreach (var node in program.loop)
+            {
+                ExecuteNode(node);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 단일 블록 노드 실행
+    /// </summary>
+    void ExecuteNode(BlockNode node)
+    {
+        if (node == null) return;
+        
+        switch (node.type)
+        {
+            case "setVariable":
+                if (!string.IsNullOrEmpty(node.setVarName))
+                {
+                    variables[node.setVarName] = node.setVarValue;
+                    Debug.Log($"<color=lime>[3] ExecuteNode: setVariable {node.setVarName} = {node.setVarValue}</color>");
+                }
+                break;
+                
+            case "analogWrite":
+                if (arduino != null)
+                {
+                    // 값이 변수 참조인 경우
+                    float value = node.value;
+                    if (!string.IsNullOrEmpty(node.valueVar))
+                    {
+                        value = GetVariable(node.valueVar, 0f);
+                        Debug.Log($"<color=cyan>[3] ExecuteNode: analogWrite pin={node.pin}, valueVar={node.valueVar} → {value}</color>");
+                    }
+                    else
+                    {
+                        Debug.Log($"<color=cyan>[3] ExecuteNode: analogWrite pin={node.pin}, value={value}</color>");
+                    }
+                    arduino.AnalogWrite(node.pin, value);
+                }
+                else
+                {
+                    Debug.LogWarning("<color=red>[3] ExecuteNode: arduino is NULL!</color>");
+                }
+                break;
+                
+            default:
+                Debug.Log($"<color=gray>[3] ExecuteNode: Unknown type '{node.type}'</color>");
+                break;
+            // case "digitalRead": ...
+            // case "if": ...
+            // case "forever": ...
         }
     }
     
@@ -133,6 +221,7 @@ public class BlockCodeExecutor : MonoBehaviour
     {
         ClearVariables();
         isLoaded = false;
+        hasRunInit = false;
         program = null;
         LoadProgram();
     }
