@@ -122,6 +122,9 @@ namespace MG_BlocksEngine2.UI
                 // JSON 생성 (XML을 직접 전달하여 중복 생성 방지)
                 BE2XmlToRuntimeJson.Export(xmlContent);
                 Debug.Log("[CodeGenerated] JSON also generated and saved.");
+                
+                // 이벤트 발생: BlockCodeExecutor 등에서 구독하여 재로드
+                OnCodeGenerated?.Invoke();
             }
             catch (System.Exception ex)
             {
@@ -130,6 +133,12 @@ namespace MG_BlocksEngine2.UI
 
             CloseContextMenu();
         }
+        
+        /// <summary>
+        /// 코드 생성 완료 시 발생하는 이벤트
+        /// BlockCodeExecutor, VirtualArduinoMicro 등에서 구독하여 재로드
+        /// </summary>
+        public static event System.Action OnCodeGenerated;
 
         // XML Code Generated 코드 임포트
         public void XMLCodeGenerated()

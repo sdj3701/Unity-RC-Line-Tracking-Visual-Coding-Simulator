@@ -20,12 +20,8 @@ public static class BE2XmlToRuntimeJson
         
         // 초기화
         variables.Clear();
-        
-        Debug.Log($"[BE2XmlToRuntimeJson] Starting export...");
-        Debug.Log($"[BE2XmlToRuntimeJson] XML length: {xmlText.Length}");
-        
+                
         var chunks = xmlText.Split(new[] { "#" }, StringSplitOptions.RemoveEmptyEntries);
-        Debug.Log($"[BE2XmlToRuntimeJson] Found {chunks.Length} chunks");
 
         var allBlocks = new List<XElement>();
         
@@ -38,7 +34,6 @@ public static class BE2XmlToRuntimeJson
             try 
             { 
                 doc = XDocument.Parse(chunk.Trim()); 
-                Debug.Log($"[BE2XmlToRuntimeJson] Parsed block: {doc.Root?.Element("blockName")?.Value}");
             }
             catch (Exception ex)
             { 
@@ -49,9 +44,7 @@ public static class BE2XmlToRuntimeJson
 
             allBlocks.Add(doc.Root);
         }
-        
-        Debug.Log($"[BE2XmlToRuntimeJson] Total parsed blocks: {allBlocks.Count}");
-        
+                
         // 2단계: 변수 정의 처리 (SetVariable 블록들)
         var initBlocks = new List<VariableNode>();
         
@@ -60,14 +53,25 @@ public static class BE2XmlToRuntimeJson
             ProcessVariableDefinitions(block, initBlocks);
         }
         
-        Debug.Log($"[BE2XmlToRuntimeJson] Variables found: {initBlocks.Count}");
         foreach (var v in initBlocks)
         {
             Debug.Log($"  - {v.name} = {v.value}");
         }
+        
+        // 3단계: PWM 블록 처리
+        var pwmBlocks = new List<PwmNode>();
+        foreach (var block in allBlocks)
+        {
+            ProcessPWM(block, pwmBlocks);
+        }
+        
+        foreach (var p in pwmBlocks)
+        {
+            Debug.Log($"  - pin={p.pin}, value={p.value}, valueVar={p.valueVar}");
+        }
 
-        // JSON 빌드 (변수만)
-        var json = BuildJsonVariablesOnly(initBlocks);
+        // JSON 빌드
+        var json = BuildJson(initBlocks, pwmBlocks);
         File.WriteAllText(jsonPath, json);
         
         Debug.Log($"[BE2XmlToRuntimeJson] Exported to: {jsonPath}");
@@ -80,20 +84,16 @@ public static class BE2XmlToRuntimeJson
     static void ProcessVariableDefinitions(XElement block, List<VariableNode> initBlocks)
     {
         var name = block.Element("blockName")?.Value?.Trim();
-        Debug.Log($"[BE2XmlToRuntimeJson] Processing block: {name}");
         
         if (name == "Block Ins SetVariable")
         {
             var inputs = block.Descendants("Input").ToList();
-            Debug.Log($"[BE2XmlToRuntimeJson] SetVariable has {inputs.Count} inputs");
             
             if (inputs.Count >= 2)
             {
                 string varName = inputs[0].Element("value")?.Value;
                 string valStr = inputs[1].Element("value")?.Value;
-                
-                Debug.Log($"[BE2XmlToRuntimeJson] SetVariable: varName={varName}, valStr={valStr}");
-                
+                                
                 if (!string.IsNullOrEmpty(varName))
                 {
                     float.TryParse(valStr, out var v);
@@ -109,9 +109,7 @@ public static class BE2XmlToRuntimeJson
                 {
                     string varName = headerInputs[0].Element("value")?.Value;
                     string valStr = headerInputs[1].Element("value")?.Value;
-                    
-                    Debug.Log($"[BE2XmlToRuntimeJson] SetVariable (headerInputs): varName={varName}, valStr={valStr}");
-                    
+                                        
                     if (!string.IsNullOrEmpty(varName))
                     {
                         float.TryParse(valStr, out var v);
@@ -150,14 +148,114 @@ public static class BE2XmlToRuntimeJson
         }
     }
     
-    // ===== JSON Building (변수만) =====
+    /// <summary>
+    /// PWM 블록 처리
+    /// </summary>
+    static void ProcessPWM(XElement block, List<PwmNode> pwmBlocks)
+    {
+        var name = block.Element("blockName")?.Value?.Trim();
+        
+        if (name == "Block Cst Block_pWM")
+        {
+            // 모든 Input 찾기 (직접 자식만)
+            var allInputs = block.Element("headerInputs")?.Elements("Input").ToList() 
+                           ?? block.Descendants("Input").ToList();
+            
+            int pin = 0;
+            float value = 0;
+            string valueVar = null;
+            
+            // 두 번째 Input (인덱스 1): 핀 번호
+            if (allInputs.Count >= 2)
+            {
+                var pinInput = allInputs[1];
+                var pinVarName = pinInput.Descendants("varName").FirstOrDefault()?.Value;
+                if (!string.IsNullOrEmpty(pinVarName))
+                {
+                    pin = ResolveInt(pinVarName);
+                }
+                else
+                {
+                    var pinValue = pinInput.Element("value")?.Value;
+                    pin = ResolveInt(pinValue);
+                }
+            }
+            
+            // 세 번째 Input (인덱스 2): 값
+            if (allInputs.Count >= 3)
+            {
+                var valueInput = allInputs[2];
+                
+                // value 요소에서 직접 값 가져오기
+                var directValue = valueInput.Element("value")?.Value;
+                if (!string.IsNullOrEmpty(directValue))
+                {
+                    value = ResolveFloat(directValue);
+                }
+                else
+                {
+                    // operation 블록에서 변수 참조 확인
+                    var opBlock = valueInput.Element("operation")?.Element("Block");
+                    if (opBlock != null)
+                    {
+                        valueVar = opBlock.Element("varName")?.Value;
+                    }
+                }
+            }
+            
+            pwmBlocks.Add(new PwmNode { pin = pin, value = value, valueVar = valueVar });
+        }
+        
+        // 재귀 처리: OuterArea
+        var outerChildBlocks = block.Element("OuterArea")?.Element("childBlocks")?.Elements("Block");
+        if (outerChildBlocks != null)
+        {
+            foreach (var child in outerChildBlocks)
+                ProcessPWM(child, pwmBlocks);
+        }
+        
+        // 재귀 처리: sections
+        var sections = block.Element("sections")?.Elements("Section");
+        if (sections != null)
+        {
+            foreach (var section in sections)
+            {
+                var childBlocks = section.Element("childBlocks")?.Elements("Block");
+                if (childBlocks != null)
+                {
+                    foreach (var child in childBlocks)
+                        ProcessPWM(child, pwmBlocks);
+                }
+            }
+        }
+    }
     
-    static string BuildJsonVariablesOnly(List<VariableNode> variables)
+    // ===== 헬퍼 함수 =====
+    
+    static int ResolveInt(string token)
+    {
+        if (string.IsNullOrEmpty(token)) return 0;
+        if (variables.TryGetValue(token, out var v)) return Mathf.RoundToInt(v);
+        int.TryParse(token, out var i);
+        return i;
+    }
+    
+    static float ResolveFloat(string token)
+    {
+        if (string.IsNullOrEmpty(token)) return 0f;
+        if (variables.TryGetValue(token, out var v)) return v;
+        float.TryParse(token, out var f);
+        return f;
+    }
+    
+    // ===== JSON Building =====
+    
+    static string BuildJson(List<VariableNode> variables, List<PwmNode> pwmBlocks)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("{");
         
-        // init 배열 (변수 설정만)
+        // init 배열 (변수 설정)
         sb.AppendLine("  \"init\": [");
         for (int i = 0; i < variables.Count; i++)
         {
@@ -168,8 +266,26 @@ public static class BE2XmlToRuntimeJson
         }
         sb.AppendLine("  ],");
         
-        // 빈 배열들 (나중에 채울 예정)
-        sb.AppendLine("  \"loop\": [],");
+        // loop 배열 (PWM 등 실행 블록)
+        sb.AppendLine("  \"loop\": [");
+        for (int i = 0; i < pwmBlocks.Count; i++)
+        {
+            var p = pwmBlocks[i];
+            var parts = new List<string>();
+            parts.Add($"\"type\": \"analogWrite\"");
+            parts.Add($"\"pin\": {p.pin}");
+            if (!string.IsNullOrEmpty(p.valueVar))
+                parts.Add($"\"valueVar\": \"{EscapeJson(p.valueVar)}\"");
+            else
+                parts.Add($"\"value\": {p.value}");
+            
+            sb.Append($"    {{ {string.Join(", ", parts)} }}");
+            if (i < pwmBlocks.Count - 1) sb.Append(",");
+            sb.AppendLine();
+        }
+        sb.AppendLine("  ],");
+        
+        // functions 배열 (빈 배열)
         sb.AppendLine("  \"functions\": []");
         
         sb.Append("}");
@@ -186,6 +302,13 @@ public static class BE2XmlToRuntimeJson
     {
         public string name;
         public float value;
+    }
+    
+    class PwmNode
+    {
+        public int pin;
+        public float value;
+        public string valueVar;
     }
 }
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using MG_BlocksEngine2.UI;
 
 /// <summary>
 /// 블록 코드 실행기
@@ -32,6 +33,28 @@ public class BlockCodeExecutor : MonoBehaviour
     /// 현재 변수 목록 (읽기 전용)
     /// </summary>
     public IReadOnlyDictionary<string, float> Variables => variables;
+    
+    // ============================================================
+    // Unity 이벤트
+    // ============================================================
+    
+    void OnEnable()
+    {
+        // 코드 생성 이벤트 구독
+        BE2_UI_ContextMenuManager.OnCodeGenerated += OnCodeGeneratedHandler;
+    }
+    
+    void OnDisable()
+    {
+        // 코드 생성 이벤트 구독 해제
+        BE2_UI_ContextMenuManager.OnCodeGenerated -= OnCodeGeneratedHandler;
+    }
+    
+    void OnCodeGeneratedHandler()
+    {
+        LogDebug("OnCodeGenerated event received. Reloading program...");
+        ReloadProgram();
+    }
     
     // ============================================================
     // 공개 API
