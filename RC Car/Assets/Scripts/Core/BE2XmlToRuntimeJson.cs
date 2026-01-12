@@ -60,13 +60,13 @@ public static class BE2XmlToRuntimeJson
             allBlocks.Add(doc.Root);
         }
         
-        // 2단계: 변수 정의 먼저 처리 (SetVariable 블록들)
+        // 2단계: 변수 정의 먼저 처리 (SetVariable 블록들) - 값 수집용
         foreach (var block in allBlocks)
         {
             ProcessVariableDefinitions(block);
         }
         
-        // 3단계: 함수 정의 먼저 수집 (DefineFunction 블록들)
+        // 3단계: 함수 정의 수집 (DefineFunction 블록들)
         foreach (var block in allBlocks)
         {
             var name = block.Element("blockName")?.Value?.Trim();
@@ -76,44 +76,55 @@ public static class BE2XmlToRuntimeJson
             }
         }
         
-        // 4단계: Entry Point 블록 찾기 (Forever 블록 또는 실행 가능한 블록들)
-        var roots = new List<RuntimeBlockNode>();
+        // ============================================================
+        // mBlock 스타일: init (초기화) / loop (반복) 분리
+        // ============================================================
+        var initBlocks = new List<RuntimeBlockNode>();  // 초기화 블록 (한 번만 실행)
+        var loopBlocks = new List<RuntimeBlockNode>();  // 반복 블록 (매 프레임)
         
         foreach (var block in allBlocks)
         {
             var name = block.Element("blockName")?.Value?.Trim();
             
-            // 함수 정의는 roots에 포함하지 않음 (호출될 때만 실행)
+            // 함수 정의는 별도 처리
             if (name == "Block Ins DefineFunction") continue;
             
-            // SetVariable은 이미 처리했으므로 건너뜀 (단, OuterArea 연결은 처리해야 함)
-            // Forever/Loop 블록을 찾아서 entry point로 처리
-            // BE2에서 Forever는 "Block Ins Forever" 또는 "Block Cst Loop"로 표현됨
-            if (name == "Block Ins Forever" || name == "Block Cst Loop")
+            // SetVariable 블록 → init에 추가 + OuterArea 체인 처리
+            if (name == "Block Ins SetVariable")
             {
                 var node = ProcessBlock(block);
-                if (node != null) roots.Add(node);
+                if (node != null) initBlocks.Add(node);
+                ProcessOuterAreaChain(block, initBlocks);
+            }
+            // Forever/Loop 블록 → loop에 추가
+            else if (name == "Block Ins Forever" || name == "Block Cst Loop")
+            {
+                var node = ProcessBlock(block);
+                if (node != null) loopBlocks.Add(node);
+            }
+            // 기타 실행 가능한 블록 → loop에 추가
+            // PWM, FunctionBlock, If, IfElse, Wait, MoveForward, TurnDirection, Stop 등
+            else if (name == "Block Ins FunctionBlock" ||
+                     name == "Block Cst Block_pWM" ||
+                     name == "Block Ins If" ||
+                     name == "Block Ins IfElse" ||
+                     name == "Block Ins Wait" ||
+                     name == "Block Ins MoveForward" ||
+                     name == "Block Ins TurnDirection" ||
+                     name == "Block Ins Stop" ||
+                     name == "Block Ins Repeat")
+            {
+                var node = ProcessBlock(block);
+                if (node != null) loopBlocks.Add(node);
+                ProcessOuterAreaChain(block, loopBlocks);  // OuterArea 체인도 처리
             }
         }
         
-        // Forever 블록이 없으면 다른 실행 가능한 블록들을 찾음
-        if (roots.Count == 0)
-        {
-            foreach (var block in allBlocks)
-            {
-                var name = block.Element("blockName")?.Value?.Trim();
-                if (name == "Block Ins DefineFunction") continue;
-                if (name == "Block Ins SetVariable") continue;
-                
-                var node = ProcessBlock(block);
-                if (node != null) roots.Add(node);
-            }
-        }
-        
-        // 5단계: 함수 정의를 roots에 추가 (RuntimeBlocksRunner에서 functionCall 시 찾을 수 있도록)
+        // 함수 정의를 별도 리스트로
+        var funcDefs = new List<RuntimeBlockNode>();
         foreach (var funcDef in functionDefinitions)
         {
-            roots.Insert(0, new RuntimeBlockNode
+            funcDefs.Add(new RuntimeBlockNode
             {
                 type = "functionDefine",
                 functionName = funcDef.Key,
@@ -121,9 +132,27 @@ public static class BE2XmlToRuntimeJson
             });
         }
 
-        var program = new RuntimeBlockProgram { roots = roots.ToArray() };
-        var json = BuildJson(program);
+        // JSON 빌드 (mBlock 스타일: functions, init, loop 분리)
+        var json = BuildJsonMBlock(funcDefs, initBlocks, loopBlocks);
         File.WriteAllText(jsonPath, json);
+        
+        Debug.Log($"[BE2XmlToRuntimeJson] Exported: {funcDefs.Count} functions, {initBlocks.Count} init blocks, {loopBlocks.Count} loop blocks");
+    }
+    
+    /// <summary>
+    /// OuterArea로 연결된 블록 체인을 재귀적으로 처리
+    /// </summary>
+    static void ProcessOuterAreaChain(XElement block, List<RuntimeBlockNode> list)
+    {
+        var outerChildBlocks = block.Element("OuterArea")?.Element("childBlocks")?.Elements("Block");
+        if (outerChildBlocks == null) return;
+        
+        foreach (var child in outerChildBlocks)
+        {
+            var node = ProcessBlock(child);
+            if (node != null) list.Add(node);
+            ProcessOuterAreaChain(child, list);  // 재귀 처리
+        }
     }
     
     /// <summary>
@@ -198,8 +227,28 @@ public static class BE2XmlToRuntimeJson
         
         var name = block.Element("blockName")?.Value?.Trim();
         if (string.IsNullOrEmpty(name)) return null;
+        
+        // SetVariable 블록
+        if (name == "Block Ins SetVariable")
+        {
+            var inputs = block.Descendants("Input").ToList();
+            if (inputs.Count >= 2)
+            {
+                string varName = inputs[0].Element("value")?.Value;
+                string valStr = inputs[1].Element("value")?.Value;
+                float varValue = ResolveFloat(valStr);
                 
-        // Forever/Loop 블록 (BE2에서 "Block Ins Forever" 또는 "Block Cst Loop"로 표현됨)
+                return new RuntimeBlockNode
+                {
+                    type = "setVariable",
+                    setVarName = varName,
+                    setVarValue = varValue
+                };
+            }
+            return null;
+        }
+                
+        // Forever/Loop 블록
         if (name == "Block Ins Forever" || name == "Block Cst Loop")
         {
             var bodyNodes = ProcessChildBlocks(block);
@@ -543,6 +592,33 @@ public static class BE2XmlToRuntimeJson
     
     // ===== JSON Building (Pretty Print) =====
     
+    /// <summary>
+    /// mBlock 스타일 JSON 빌드 (functions, init, loop 분리)
+    /// </summary>
+    static string BuildJsonMBlock(List<RuntimeBlockNode> functions, List<RuntimeBlockNode> init, List<RuntimeBlockNode> loop)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("{");
+        
+        // functions
+        sb.Append("  \"functions\": ");
+        sb.Append(ToJsonArray(functions.ToArray(), 1));
+        sb.AppendLine(",");
+        
+        // init
+        sb.Append("  \"init\": ");
+        sb.Append(ToJsonArray(init.ToArray(), 1));
+        sb.AppendLine(",");
+        
+        // loop
+        sb.Append("  \"loop\": ");
+        sb.Append(ToJsonArray(loop.ToArray(), 1));
+        sb.AppendLine();
+        
+        sb.Append("}");
+        return sb.ToString();
+    }
+    
     static string BuildJson(RuntimeBlockProgram program)
     {
         var sb = new System.Text.StringBuilder();
@@ -629,6 +705,22 @@ public static class BE2XmlToRuntimeJson
             sb.Append($"\"functionName\": \"{EscapeJson(node.functionName)}\"");
         }
         
+        // setVarName (for setVariable)
+        if (!string.IsNullOrEmpty(node.setVarName))
+        {
+            sb.AppendLine(",");
+            sb.Append(innerIndent);
+            sb.Append($"\"setVarName\": \"{EscapeJson(node.setVarName)}\"");
+        }
+        
+        // setVarValue (for setVariable)
+        if (node.setVarValue != 0 || node.type == "setVariable")
+        {
+            sb.AppendLine(",");
+            sb.Append(innerIndent);
+            sb.Append($"\"setVarValue\": {node.setVarValue}");
+        }
+
         // conditionVar
         if (!string.IsNullOrEmpty(node.conditionVar))
         {

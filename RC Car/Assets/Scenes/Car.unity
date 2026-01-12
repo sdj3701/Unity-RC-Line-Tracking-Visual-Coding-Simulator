@@ -170,6 +170,7 @@ GameObject:
   - component: {fileID: 223824178}
   - component: {fileID: 223824176}
   - component: {fileID: 223824177}
+  - component: {fileID: 223824179}
   m_Layer: 0
   m_Name: Car
   m_TagString: Untagged
@@ -257,8 +258,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3e14a96f59fabba42a307ea758b28ade, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  pinLeft: 3
-  pinRight: 4
   sensorObjects:
   - {fileID: 1105718450}
   - {fileID: 461777627}
@@ -279,10 +278,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6a4ab685bcd4bc142bed6cd233d673ea, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  pinLeftForward: 9
-  pinLeftBackward: 6
-  pinRightForward: 10
-  pinRightBackward: 11
   leftMotorSpeed: 0
   rightMotorSpeed: 0
 --- !u!114 &223824178
@@ -298,7 +293,27 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   totalPins: 20
+  defaultLeftSensorPin: 3
+  defaultRightSensorPin: 4
+  defaultLeftMotorFPin: 9
+  defaultLeftMotorBPin: 6
+  defaultRightMotorFPin: 10
+  defaultRightMotorBPin: 11
   peripheralComponents: []
+--- !u!114 &223824179
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 223824168}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1a427eefaba376d47873f3e5093878d9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  runtimeJsonFile: BlocksRuntime.json
+  showDebugLogs: 1
 --- !u!1 &278407762
 GameObject:
   m_ObjectHideFlags: 0
