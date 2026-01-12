@@ -38,6 +38,12 @@ public class BlockCodeExecutor : MonoBehaviour
     // Unity 이벤트
     // ============================================================
     
+    void Start()
+    {
+        // 씬 시작 시 자동으로 JSON 로드
+        LoadProgram();
+    }
+    
     void OnEnable()
     {
         // 코드 생성 이벤트 구독

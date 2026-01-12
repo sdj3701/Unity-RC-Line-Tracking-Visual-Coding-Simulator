@@ -259,9 +259,9 @@ MonoBehaviour:
   defaultLeftSensorPin: 3
   defaultRightSensorPin: 4
   defaultLeftMotorFPin: 9
-  defaultLeftMotorBPin: 6
-  defaultRightMotorFPin: 10
-  defaultRightMotorBPin: 11
+  defaultLeftMotorBPin: 11
+  defaultRightMotorFPin: 6
+  defaultRightMotorBPin: 10
   peripheralComponents: []
   blockCodeExecutor: {fileID: 223824179}
 --- !u!114 &223824179

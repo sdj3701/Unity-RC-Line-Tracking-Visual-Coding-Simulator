@@ -22,11 +22,11 @@ public class VirtualArduinoMicro : MonoBehaviour, IRuntimeIO
     [Tooltip("왼쪽 모터 전진 기본 핀")]
     public int defaultLeftMotorFPin = 9;
     [Tooltip("왼쪽 모터 후진 기본 핀")]
-    public int defaultLeftMotorBPin = 6;
+    public int defaultLeftMotorBPin = 11;
     [Tooltip("오른쪽 모터 전진 기본 핀")]
-    public int defaultRightMotorFPin = 10;
+    public int defaultRightMotorFPin = 6;
     [Tooltip("오른쪽 모터 후진 기본 핀")]
-    public int defaultRightMotorBPin = 11;
+    public int defaultRightMotorBPin = 10;
     
     [Header("Connected Components")]
     [Tooltip("연결된 가상 주변장치들")]
@@ -61,6 +61,12 @@ public class VirtualArduinoMicro : MonoBehaviour, IRuntimeIO
         // BlockCodeExecutor 찾기
         if (blockCodeExecutor == null)
             blockCodeExecutor = FindObjectOfType<BlockCodeExecutor>();
+    }
+    
+    void Start()
+    {
+        // 씬 시작 시 핀 매핑 설정 (변수가 있으면 변수 사용, 없으면 기본값)
+        UpdatePinMappingFromVariables();
     }
     
     void OnEnable()
