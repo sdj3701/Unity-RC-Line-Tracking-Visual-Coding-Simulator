@@ -11,36 +11,21 @@ using UnityEngine;
 
 public static class BE2XmlToRuntimeJson
 {
-    // 함수 정의를 저장하는 딕셔너리 (functionName -> body nodes)
-    private static Dictionary<string, List<RuntimeBlockNode>> functionDefinitions = new Dictionary<string, List<RuntimeBlockNode>>(StringComparer.OrdinalIgnoreCase);
-    
     // 변수 값을 저장하는 딕셔너리
     private static Dictionary<string, float> variables = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-
-#if UNITY_EDITOR
-    [MenuItem("Tools/Blocks/Export BlocksRuntime.json")]
-    public static void Export()
-    {
-        var xmlPath = "Assets/Generated/BlocksGenerated.be2";
-        if (!File.Exists(xmlPath))
-        {
-            Debug.LogWarning($"XML file not found: {xmlPath}");
-            return;
-        }
-        var text = File.ReadAllText(xmlPath);
-        Export(text);
-    }
-#endif
 
     public static void Export(string xmlText)
     {
         var jsonPath = Path.Combine(Application.persistentDataPath, "BlocksRuntime.json");
         
         // 초기화
-        functionDefinitions.Clear();
         variables.Clear();
         
+        Debug.Log($"[BE2XmlToRuntimeJson] Starting export...");
+        Debug.Log($"[BE2XmlToRuntimeJson] XML length: {xmlText.Length}");
+        
         var chunks = xmlText.Split(new[] { "#" }, StringSplitOptions.RemoveEmptyEntries);
+        Debug.Log($"[BE2XmlToRuntimeJson] Found {chunks.Length} chunks");
 
         var allBlocks = new List<XElement>();
         
@@ -50,128 +35,89 @@ public static class BE2XmlToRuntimeJson
             if (string.IsNullOrWhiteSpace(chunk)) continue;
             
             XDocument doc;
-            try { doc = XDocument.Parse(chunk.Trim()); }
+            try 
+            { 
+                doc = XDocument.Parse(chunk.Trim()); 
+                Debug.Log($"[BE2XmlToRuntimeJson] Parsed block: {doc.Root?.Element("blockName")?.Value}");
+            }
             catch (Exception ex)
             { 
                 Debug.LogWarning($"[BE2XmlToRuntimeJson] Failed to parse chunk: {ex.Message}"); 
+                Debug.LogWarning($"[BE2XmlToRuntimeJson] Chunk content: {chunk.Substring(0, Math.Min(200, chunk.Length))}...");
                 continue; 
             }
 
             allBlocks.Add(doc.Root);
         }
         
-        // 2단계: 변수 정의 먼저 처리 (SetVariable 블록들) - 값 수집용
-        foreach (var block in allBlocks)
-        {
-            ProcessVariableDefinitions(block);
-        }
+        Debug.Log($"[BE2XmlToRuntimeJson] Total parsed blocks: {allBlocks.Count}");
         
-        // 3단계: 함수 정의 수집 (DefineFunction 블록들)
-        foreach (var block in allBlocks)
-        {
-            var name = block.Element("blockName")?.Value?.Trim();
-            if (name == "Block Ins DefineFunction")
-            {
-                ProcessFunctionDefinition(block);
-            }
-        }
-        
-        // ============================================================
-        // mBlock 스타일: init (초기화) / loop (반복) 분리
-        // ============================================================
-        var initBlocks = new List<RuntimeBlockNode>();  // 초기화 블록 (한 번만 실행)
-        var loopBlocks = new List<RuntimeBlockNode>();  // 반복 블록 (매 프레임)
+        // 2단계: 변수 정의 처리 (SetVariable 블록들)
+        var initBlocks = new List<VariableNode>();
         
         foreach (var block in allBlocks)
         {
-            var name = block.Element("blockName")?.Value?.Trim();
-            
-            // 함수 정의는 별도 처리
-            if (name == "Block Ins DefineFunction") continue;
-            
-            // SetVariable 블록 → init에 추가 + OuterArea 체인 처리
-            if (name == "Block Ins SetVariable")
-            {
-                var node = ProcessBlock(block);
-                if (node != null) initBlocks.Add(node);
-                ProcessOuterAreaChain(block, initBlocks);
-            }
-            // Forever/Loop 블록 → loop에 추가
-            else if (name == "Block Ins Forever" || name == "Block Cst Loop")
-            {
-                var node = ProcessBlock(block);
-                if (node != null) loopBlocks.Add(node);
-            }
-            // 기타 실행 가능한 블록 → loop에 추가
-            // PWM, FunctionBlock, If, IfElse, Wait, MoveForward, TurnDirection, Stop 등
-            else if (name == "Block Ins FunctionBlock" ||
-                     name == "Block Cst Block_pWM" ||
-                     name == "Block Ins If" ||
-                     name == "Block Ins IfElse" ||
-                     name == "Block Ins Wait" ||
-                     name == "Block Ins MoveForward" ||
-                     name == "Block Ins TurnDirection" ||
-                     name == "Block Ins Stop" ||
-                     name == "Block Ins Repeat")
-            {
-                var node = ProcessBlock(block);
-                if (node != null) loopBlocks.Add(node);
-                ProcessOuterAreaChain(block, loopBlocks);  // OuterArea 체인도 처리
-            }
+            ProcessVariableDefinitions(block, initBlocks);
         }
         
-        // 함수 정의를 별도 리스트로
-        var funcDefs = new List<RuntimeBlockNode>();
-        foreach (var funcDef in functionDefinitions)
+        Debug.Log($"[BE2XmlToRuntimeJson] Variables found: {initBlocks.Count}");
+        foreach (var v in initBlocks)
         {
-            funcDefs.Add(new RuntimeBlockNode
-            {
-                type = "functionDefine",
-                functionName = funcDef.Key,
-                body = funcDef.Value.ToArray()
-            });
+            Debug.Log($"  - {v.name} = {v.value}");
         }
 
-        // JSON 빌드 (mBlock 스타일: functions, init, loop 분리)
-        var json = BuildJsonMBlock(funcDefs, initBlocks, loopBlocks);
+        // JSON 빌드 (변수만)
+        var json = BuildJsonVariablesOnly(initBlocks);
         File.WriteAllText(jsonPath, json);
         
-        Debug.Log($"[BE2XmlToRuntimeJson] Exported: {funcDefs.Count} functions, {initBlocks.Count} init blocks, {loopBlocks.Count} loop blocks");
+        Debug.Log($"[BE2XmlToRuntimeJson] Exported to: {jsonPath}");
+        Debug.Log($"[BE2XmlToRuntimeJson] JSON content:\n{json}");
     }
     
     /// <summary>
-    /// OuterArea로 연결된 블록 체인을 재귀적으로 처리
+    /// 블록과 그 하위 OuterArea의 모든 SetVariable 블록을 처리하여 변수 리스트에 저장
     /// </summary>
-    static void ProcessOuterAreaChain(XElement block, List<RuntimeBlockNode> list)
-    {
-        var outerChildBlocks = block.Element("OuterArea")?.Element("childBlocks")?.Elements("Block");
-        if (outerChildBlocks == null) return;
-        
-        foreach (var child in outerChildBlocks)
-        {
-            var node = ProcessBlock(child);
-            if (node != null) list.Add(node);
-            ProcessOuterAreaChain(child, list);  // 재귀 처리
-        }
-    }
-    
-    /// <summary>
-    /// 블록과 그 하위 OuterArea의 모든 SetVariable 블록을 처리하여 변수 사전에 저장
-    /// </summary>
-    static void ProcessVariableDefinitions(XElement block)
+    static void ProcessVariableDefinitions(XElement block, List<VariableNode> initBlocks)
     {
         var name = block.Element("blockName")?.Value?.Trim();
+        Debug.Log($"[BE2XmlToRuntimeJson] Processing block: {name}");
         
         if (name == "Block Ins SetVariable")
         {
             var inputs = block.Descendants("Input").ToList();
+            Debug.Log($"[BE2XmlToRuntimeJson] SetVariable has {inputs.Count} inputs");
+            
             if (inputs.Count >= 2)
             {
                 string varName = inputs[0].Element("value")?.Value;
                 string valStr = inputs[1].Element("value")?.Value;
-                if (!string.IsNullOrEmpty(varName) && float.TryParse(valStr, out var v))
+                
+                Debug.Log($"[BE2XmlToRuntimeJson] SetVariable: varName={varName}, valStr={valStr}");
+                
+                if (!string.IsNullOrEmpty(varName))
                 {
+                    float.TryParse(valStr, out var v);
                     variables[varName] = v;
+                    initBlocks.Add(new VariableNode { name = varName, value = v });
+                }
+            }
+            else
+            {
+                // 다른 방식으로 시도 - headerInputs 확인
+                var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
+                if (headerInputs != null && headerInputs.Count >= 2)
+                {
+                    string varName = headerInputs[0].Element("value")?.Value;
+                    string valStr = headerInputs[1].Element("value")?.Value;
+                    
+                    Debug.Log($"[BE2XmlToRuntimeJson] SetVariable (headerInputs): varName={varName}, valStr={valStr}");
+                    
+                    if (!string.IsNullOrEmpty(varName))
+                    {
+                        float.TryParse(valStr, out var v);
+                        variables[varName] = v;
+                        initBlocks.Add(new VariableNode { name = varName, value = v });
+                    }
                 }
             }
         }
@@ -182,22 +128,11 @@ public static class BE2XmlToRuntimeJson
         {
             foreach (var child in outerChildBlocks)
             {
-                ProcessVariableDefinitions(child);
+                ProcessVariableDefinitions(child, initBlocks);
             }
         }
-    }
-    
-    /// <summary>
-    /// 함수 정의 블록을 처리하여 함수 사전에 저장
-    /// </summary>
-    static void ProcessFunctionDefinition(XElement block)
-    {
-        var defineID = block.Element("defineID")?.Value?.Trim();
-        if (string.IsNullOrEmpty(defineID)) return;
         
-        var bodyNodes = new List<RuntimeBlockNode>();
-        
-        // sections > Section > childBlocks 처리
+        // sections의 childBlocks도 재귀적으로 처리
         var sections = block.Element("sections")?.Elements("Section");
         if (sections != null)
         {
@@ -208,547 +143,35 @@ public static class BE2XmlToRuntimeJson
                 {
                     foreach (var child in childBlocks)
                     {
-                        var node = ProcessBlock(child);
-                        if (node != null) bodyNodes.Add(node);
+                        ProcessVariableDefinitions(child, initBlocks);
                     }
                 }
             }
         }
-        
-        functionDefinitions[defineID] = bodyNodes;
     }
     
-    /// <summary>
-    /// 블록을 RuntimeBlockNode로 변환
-    /// </summary>
-    static RuntimeBlockNode ProcessBlock(XElement block)
-    {
-        if (block == null) return null;
-        
-        var name = block.Element("blockName")?.Value?.Trim();
-        if (string.IsNullOrEmpty(name)) return null;
-        
-        // SetVariable 블록
-        if (name == "Block Ins SetVariable")
-        {
-            var inputs = block.Descendants("Input").ToList();
-            if (inputs.Count >= 2)
-            {
-                string varName = inputs[0].Element("value")?.Value;
-                string valStr = inputs[1].Element("value")?.Value;
-                float varValue = ResolveFloat(valStr);
-                
-                return new RuntimeBlockNode
-                {
-                    type = "setVariable",
-                    setVarName = varName,
-                    setVarValue = varValue
-                };
-            }
-            return null;
-        }
-                
-        // Forever/Loop 블록
-        if (name == "Block Ins Forever" || name == "Block Cst Loop")
-        {
-            var bodyNodes = ProcessChildBlocks(block);
-            return new RuntimeBlockNode
-            {
-                type = "forever",
-                body = bodyNodes.ToArray()
-            };
-        }
-        
-        // If 블록
-        if (name == "Block Ins If")
-        {
-            var condition = ExtractCondition(block);
-            var bodyNodes = ProcessChildBlocks(block);
-            return new RuntimeBlockNode
-            {
-                type = "if",
-                pin = condition.pin,
-                conditionVar = condition.varName,
-                body = bodyNodes.ToArray()
-            };
-        }
-        
-        // IfElse 블록
-        if (name == "Block Ins IfElse")
-        {
-            var condition = ExtractCondition(block);
-            var sections = block.Element("sections")?.Elements("Section").ToList();
-            
-            var bodyNodes = new List<RuntimeBlockNode>();
-            var elseBodyNodes = new List<RuntimeBlockNode>();
-            
-            if (sections != null && sections.Count > 0)
-            {
-                // 첫 번째 섹션은 if body
-                var ifChildBlocks = sections[0].Element("childBlocks")?.Elements("Block");
-                if (ifChildBlocks != null)
-                {
-                    foreach (var child in ifChildBlocks)
-                    {
-                        var node = ProcessBlock(child);
-                        if (node != null) bodyNodes.Add(node);
-                    }
-                }
-                
-                // 두 번째 섹션은 else body
-                if (sections.Count > 1)
-                {
-                    var elseChildBlocks = sections[1].Element("childBlocks")?.Elements("Block");
-                    if (elseChildBlocks != null)
-                    {
-                        foreach (var child in elseChildBlocks)
-                        {
-                            var node = ProcessBlock(child);
-                            if (node != null) elseBodyNodes.Add(node);
-                        }
-                    }
-                }
-            }
-            
-            return new RuntimeBlockNode
-            {
-                type = "ifElse",
-                pin = condition.pin,
-                conditionVar = condition.varName,
-                body = bodyNodes.ToArray(),
-                elseBody = elseBodyNodes.ToArray()
-            };
-        }
-        
-        // Repeat 블록
-        if (name == "Block Ins Repeat")
-        {
-            var input = block.Descendants("Input").FirstOrDefault();
-            float repeatCount = ResolveFloat(ExtractValue(input));
-            var bodyNodes = ProcessChildBlocks(block);
-            
-            return new RuntimeBlockNode
-            {
-                type = "repeat",
-                number = repeatCount,
-                body = bodyNodes.ToArray()
-            };
-        }
-        
-        // PWM 블록 (analogWrite)
-        if (name == "Block Cst Block_pWM")
-        {
-            var inputs = block.Descendants("Input")
-                              .Where(i => (i.Element("isOperation")?.Value ?? "") == "true")
-                              .ToList();
-            
-            string pinToken = inputs.ElementAtOrDefault(0)?.Descendants("varName").FirstOrDefault()?.Value;
-            
-            // value 추출 - FunctionLocalVariable인지 확인
-            var valueInput = inputs.ElementAtOrDefault(1);
-            string valueVar = null;
-            float val = 0;
-            
-            if (valueInput != null)
-            {
-                var opBlock = valueInput.Element("operation")?.Element("Block");
-                if (opBlock != null)
-                {
-                    var opBlockName = opBlock.Element("blockName")?.Value?.Trim();
-                    
-                    // FunctionLocalVariable인 경우 - 런타임에 해석할 변수 이름 저장
-                    if (opBlockName == "Block Op FunctionLocalVariable")
-                    {
-                        valueVar = opBlock.Element("varName")?.Value;
-                        Debug.Log($"[BE2XmlToRuntimeJson] PWM uses local variable: {valueVar}");
-                    }
-                    else
-                    {
-                        // 일반 변수인 경우
-                        string valueToken = opBlock.Element("varName")?.Value;
-                        val = ResolveFloat(valueToken);
-                    }
-                }
-                else
-                {
-                    // 직접 값인 경우
-                    val = ResolveFloat(valueInput.Element("value")?.Value);
-                }
-            }
-
-            int pin = ResolveInt(pinToken);
-
-            return new RuntimeBlockNode
-            {
-                type = "analogWrite",
-                pin = pin,
-                value = val,
-                valueVar = valueVar
-            };
-        }
-        
-        // Digital Read 블록
-        if (name == "Block Cst Block_Read")
-        {
-            var inputs = block.Descendants("Input")
-                              .Where(i => (i.Element("isOperation")?.Value ?? "") == "true")
-                              .ToList();
-            
-            string pinToken = inputs.ElementAtOrDefault(0)?.Descendants("varName").FirstOrDefault()?.Value;
-            int pin = ResolveInt(pinToken);
-            
-            return new RuntimeBlockNode
-            {
-                type = "digitalRead",
-                pin = pin
-            };
-        }
-        
-        // 함수 호출 블록
-        if (name == "Block Ins FunctionBlock")
-        {
-            var defineID = block.Element("defineID")?.Value?.Trim();
-            
-            // 함수 인자 추출
-            var inputs = block.Descendants("Input")
-                              .Where(i => (i.Element("isOperation")?.Value ?? "") == "true")
-                              .ToList();
-            
-            float arg = 0;
-            if (inputs.Count > 0)
-            {
-                string argToken = inputs[0].Descendants("varName").FirstOrDefault()?.Value
-                                  ?? inputs[0].Element("value")?.Value;
-                arg = ResolveFloat(argToken);
-            }
-            
-            return new RuntimeBlockNode
-            {
-                type = "functionCall",
-                functionName = defineID,
-                number = arg
-            };
-        }
-        
-        // Wait 블록
-        if (name == "Block Ins Wait")
-        {
-            var input = block.Descendants("Input").FirstOrDefault();
-            float seconds = ResolveFloat(ExtractValue(input));
-            
-            return new RuntimeBlockNode
-            {
-                type = "wait",
-                number = seconds
-            };
-        }
-        
-        // MoveForward 블록
-        if (name == "Block Ins MoveForward")
-        {
-            var input = block.Descendants("Input").FirstOrDefault();
-            float speed = ResolveFloat(ExtractValue(input));
-            if (speed == 0) speed = 1f;
-            
-            return new RuntimeBlockNode
-            {
-                type = "forward",
-                number = speed
-            };
-        }
-        
-        // TurnDirection 블록
-        if (name == "Block Ins TurnDirection")
-        {
-            var input = block.Descendants("Input").FirstOrDefault();
-            string dir = ExtractValue(input);
-            
-            string nodeType = (dir?.ToLower() == "left") ? "turnLeft" : "turnRight";
-            
-            return new RuntimeBlockNode
-            {
-                type = nodeType,
-                number = 90f
-            };
-        }
-        
-        // Stop 블록
-        if (name == "Block Ins Stop")
-        {
-            return new RuntimeBlockNode
-            {
-                type = "stop"
-            };
-        }
-        
-        Debug.LogWarning($"[BE2XmlToRuntimeJson] Unhandled block type: {name}");
-        return null;
-    }
+    // ===== JSON Building (변수만) =====
     
-    /// <summary>
-    /// 블록의 sections > Section > childBlocks 내 모든 자식 블록 처리
-    /// </summary>
-    static List<RuntimeBlockNode> ProcessChildBlocks(XElement block)
-    {
-        var result = new List<RuntimeBlockNode>();
-        
-        var sections = block.Element("sections")?.Elements("Section");
-        if (sections != null)
-        {
-            foreach (var section in sections)
-            {
-                var childBlocks = section.Element("childBlocks")?.Elements("Block");
-                if (childBlocks != null)
-                {
-                    foreach (var child in childBlocks)
-                    {
-                        var node = ProcessBlock(child);
-                        if (node != null) result.Add(node);
-                    }
-                }
-            }
-        }
-        
-        return result;
-    }
-    
-    /// <summary>
-    /// If 조건 추출 (Block_Read 또는 Variable)
-    /// </summary>
-    static (int pin, string varName) ExtractCondition(XElement block)
-    {
-        // sections > Section > inputs > Input > operation > Block 에서 조건 추출
-        var input = block.Element("sections")?.Element("Section")?.Element("inputs")?.Element("Input");
-        
-        if (input != null && input.Element("isOperation")?.Value == "true")
-        {
-            var opBlock = input.Element("operation")?.Element("Block");
-            if (opBlock != null)
-            {
-                var opBlockName = opBlock.Element("blockName")?.Value?.Trim();
-                
-                // Block_Read인 경우 - 센서 읽기
-                if (opBlockName == "Block Cst Block_Read")
-                {
-                    var innerInput = opBlock.Descendants("Input")
-                                            .FirstOrDefault(i => i.Element("isOperation")?.Value == "true");
-                    if (innerInput != null)
-                    {
-                        var varName = innerInput.Descendants("varName").FirstOrDefault()?.Value;
-                        int pin = ResolveInt(varName);
-                        return (pin, varName);
-                    }
-                }
-                
-                // Variable인 경우
-                var directVarName = opBlock.Element("varName")?.Value;
-                return (ResolveInt(directVarName), directVarName);
-            }
-        }
-        
-        return (0, null);
-    }
-    
-    static string ExtractValue(XElement inputElement)
-    {
-        if (inputElement == null) return null;
-        
-        if (inputElement.Element("isOperation")?.Value == "true")
-        {
-            var opBlock = inputElement.Element("operation")?.Element("Block");
-            if (opBlock != null)
-            {
-                // 먼저 varName 확인
-                var varName = opBlock.Element("varName")?.Value;
-                if (!string.IsNullOrEmpty(varName)) return varName;
-                
-                // FunctionLocalVariable인 경우
-                var blockName = opBlock.Element("blockName")?.Value?.Trim();
-                if (blockName == "Block Op FunctionLocalVariable")
-                {
-                    return opBlock.Element("varName")?.Value;
-                }
-            }
-        }
-        
-        return inputElement.Element("value")?.Value;
-    }
-
-    static int ResolveInt(string token)
-    {
-        if (string.IsNullOrEmpty(token)) return 0;
-        if (variables.TryGetValue(token, out var v)) return Mathf.RoundToInt(v);
-        int.TryParse(token, out var i);
-        return i;
-    }
-
-    static float ResolveFloat(string token)
-    {
-        if (string.IsNullOrEmpty(token)) return 0f;
-        if (variables.TryGetValue(token, out var v)) return v;
-        float.TryParse(token, out var f);
-        return f;
-    }
-    
-    // ===== JSON Building (Pretty Print) =====
-    
-    /// <summary>
-    /// mBlock 스타일 JSON 빌드 (functions, init, loop 분리)
-    /// </summary>
-    static string BuildJsonMBlock(List<RuntimeBlockNode> functions, List<RuntimeBlockNode> init, List<RuntimeBlockNode> loop)
+    static string BuildJsonVariablesOnly(List<VariableNode> variables)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("{");
         
-        // functions
-        sb.Append("  \"functions\": ");
-        sb.Append(ToJsonArray(functions.ToArray(), 1));
-        sb.AppendLine(",");
-        
-        // init
-        sb.Append("  \"init\": ");
-        sb.Append(ToJsonArray(init.ToArray(), 1));
-        sb.AppendLine(",");
-        
-        // loop
-        sb.Append("  \"loop\": ");
-        sb.Append(ToJsonArray(loop.ToArray(), 1));
-        sb.AppendLine();
-        
-        sb.Append("}");
-        return sb.ToString();
-    }
-    
-    static string BuildJson(RuntimeBlockProgram program)
-    {
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("{");
-        sb.Append("  \"roots\": ");
-        sb.Append(ToJsonArray(program.roots, 1));
-        sb.AppendLine();
-        sb.Append("}");
-        return sb.ToString();
-    }
-
-    static string ToJsonArray(RuntimeBlockNode[] nodes, int indent)
-    {
-        if (nodes == null || nodes.Length == 0) return "[]";
-        
-        var sb = new System.Text.StringBuilder();
-        string indentStr = new string(' ', indent * 2);
-        string innerIndent = new string(' ', (indent + 1) * 2);
-        
-        sb.AppendLine("[");
-        for (int i = 0; i < nodes.Length; i++)
+        // init 배열 (변수 설정만)
+        sb.AppendLine("  \"init\": [");
+        for (int i = 0; i < variables.Count; i++)
         {
-            sb.Append(innerIndent);
-            sb.Append(ToJsonObject(nodes[i], indent + 1));
-            if (i < nodes.Length - 1) sb.Append(",");
+            var v = variables[i];
+            sb.Append($"    {{ \"type\": \"setVariable\", \"setVarName\": \"{EscapeJson(v.name)}\", \"setVarValue\": {v.value} }}");
+            if (i < variables.Count - 1) sb.Append(",");
             sb.AppendLine();
         }
-        sb.Append(indentStr);
-        sb.Append("]");
-        return sb.ToString();
-    }
-
-    static string ToJsonObject(RuntimeBlockNode node, int indent)
-    {
-        if (node == null) return "null";
+        sb.AppendLine("  ],");
         
-        var sb = new System.Text.StringBuilder();
-        string indentStr = new string(' ', indent * 2);
-        string innerIndent = new string(' ', (indent + 1) * 2);
+        // 빈 배열들 (나중에 채울 예정)
+        sb.AppendLine("  \"loop\": [],");
+        sb.AppendLine("  \"functions\": []");
         
-        sb.AppendLine("{");
-        
-        // type
-        sb.Append(innerIndent);
-        sb.Append($"\"type\": \"{EscapeJson(node.type)}\"");
-        
-        // number (0이 아닌 경우만)
-        if (node.number != 0)
-        {
-            sb.AppendLine(",");
-            sb.Append(innerIndent);
-            sb.Append($"\"number\": {node.number}");
-        }
-        
-        // pin (0이 아닌 경우만)
-        if (node.pin != 0)
-        {
-            sb.AppendLine(",");
-            sb.Append(innerIndent);
-            sb.Append($"\"pin\": {node.pin}");
-        }
-        
-        // value (0이 아닌 경우만)
-        if (node.value != 0)
-        {
-            sb.AppendLine(",");
-            sb.Append(innerIndent);
-            sb.Append($"\"value\": {node.value}");
-        }
-        
-        // valueVar (변수 참조)
-        if (!string.IsNullOrEmpty(node.valueVar))
-        {
-            sb.AppendLine(",");
-            sb.Append(innerIndent);
-            sb.Append($"\"valueVar\": \"{EscapeJson(node.valueVar)}\"");
-        }
-        
-        // functionName
-        if (!string.IsNullOrEmpty(node.functionName))
-        {
-            sb.AppendLine(",");
-            sb.Append(innerIndent);
-            sb.Append($"\"functionName\": \"{EscapeJson(node.functionName)}\"");
-        }
-        
-        // setVarName (for setVariable)
-        if (!string.IsNullOrEmpty(node.setVarName))
-        {
-            sb.AppendLine(",");
-            sb.Append(innerIndent);
-            sb.Append($"\"setVarName\": \"{EscapeJson(node.setVarName)}\"");
-        }
-        
-        // setVarValue (for setVariable)
-        if (node.setVarValue != 0 || node.type == "setVariable")
-        {
-            sb.AppendLine(",");
-            sb.Append(innerIndent);
-            sb.Append($"\"setVarValue\": {node.setVarValue}");
-        }
-
-        // conditionVar
-        if (!string.IsNullOrEmpty(node.conditionVar))
-        {
-            sb.AppendLine(",");
-            sb.Append(innerIndent);
-            sb.Append($"\"conditionVar\": \"{EscapeJson(node.conditionVar)}\"");
-        }
-
-        // body
-        if (node.body != null && node.body.Length > 0)
-        {
-            sb.AppendLine(",");
-            sb.Append(innerIndent);
-            sb.Append("\"body\": ");
-            sb.Append(ToJsonArray(node.body, indent + 1));
-        }
-
-        // elseBody
-        if (node.elseBody != null && node.elseBody.Length > 0)
-        {
-            sb.AppendLine(",");
-            sb.Append(innerIndent);
-            sb.Append("\"elseBody\": ");
-            sb.Append(ToJsonArray(node.elseBody, indent + 1));
-        }
-        
-        sb.AppendLine();
-        sb.Append(indentStr);
         sb.Append("}");
         return sb.ToString();
     }
@@ -758,4 +181,28 @@ public static class BE2XmlToRuntimeJson
         if (string.IsNullOrEmpty(s)) return "";
         return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }
+    
+    class VariableNode
+    {
+        public string name;
+        public float value;
+    }
 }
+
+/* ============================================================
+ * 주석 처리된 기능들 (나중에 복원 예정)
+ * ============================================================
+ * 
+ * - 함수 정의 처리 (DefineFunction)
+ * - Forever/Loop 블록
+ * - If/IfElse 블록
+ * - Repeat 블록  
+ * - PWM/analogWrite 블록
+ * - Digital Read 블록
+ * - 함수 호출 블록
+ * - Wait 블록
+ * - MoveForward 블록
+ * - TurnDirection 블록
+ * - Stop 블록
+ * 
+ * ============================================================ */
