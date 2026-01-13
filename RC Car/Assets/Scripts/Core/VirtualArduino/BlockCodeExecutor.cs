@@ -194,19 +194,17 @@ public class BlockCodeExecutor : MonoBehaviour
     /// </summary>
     void ExecuteIfBlock(BlockNode node, bool hasElse)
     {
-        // conditionPin으로 digitalRead 수행
-        bool condition = false;
-        if (arduino != null)
-        {
-            condition = arduino.DigitalRead(node.conditionPin);
-            Debug.Log($"<color=magenta>[3] ExecuteNode: {node.type} conditionPin={node.conditionPin} → {condition}</color>");
-        }
+        // conditionValue를 Boolean으로 변환
+        bool condition = ConvertToBoolean(node.conditionValue);
+        
+        Debug.Log($"<color=magenta>[3] ExecuteNode: {node.type} conditionValue={node.conditionValue} → {condition}</color>");
         
         if (condition)
         {
             // then body 실행
             if (node.body != null)
             {
+                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: Executing body ({node.body.Count} blocks)</color>");
                 foreach (var childNode in node.body)
                 {
                     ExecuteNode(childNode);
@@ -218,12 +216,50 @@ public class BlockCodeExecutor : MonoBehaviour
             // else body 실행
             if (node.elseBody != null)
             {
+                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: Executing elseBody ({node.elseBody.Count} blocks)</color>");
                 foreach (var childNode in node.elseBody)
                 {
                     ExecuteNode(childNode);
                 }
             }
         }
+        else
+        {
+            Debug.Log($"<color=gray>[3] ExecuteIfBlock: Condition is false, skipping body</color>");
+        }
+    }
+    
+    /// <summary>
+    /// 값을 Boolean으로 변환
+    /// int/float: 0보다 크면 true, 아니면 false
+    /// </summary>
+    bool ConvertToBoolean(float value)
+    {
+        return value > 0;
+    }
+    
+    /// <summary>
+    /// 문자열을 Boolean으로 변환
+    /// "true" -> true, 그 외 -> false
+    /// 숫자 문자열이면 숫자로 변환 후 > 0 판단
+    /// </summary>
+    bool ConvertToBoolean(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return false;
+        
+        // "true"/"false" 문자열 판단
+        if (value.Equals("true", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (value.Equals("false", StringComparison.OrdinalIgnoreCase))
+            return false;
+        
+        // 숫자로 변환 시도
+        if (float.TryParse(value, out float numValue))
+            return numValue > 0;
+        
+        // 그 외의 문자열은 false
+        return false;
     }
     
     /// <summary>
@@ -358,6 +394,13 @@ public class BlockCodeExecutor : MonoBehaviour
                     case "valueVar": node.valueVar = ParseString(json, ref idx); break;
                     case "functionName": node.functionName = ParseString(json, ref idx); break;
                     case "conditionVar": node.conditionVar = ParseString(json, ref idx); break;
+                    case "conditionPin": node.conditionPin = (int)ParseFloat(json, ref idx); break;
+                    case "conditionValue": node.conditionValue = ParseFloat(json, ref idx); break;
+                    case "args":
+                        // args 배열 파싱 (스킵)
+                        while (idx < json.Length && json[idx] != '[') idx++;
+                        if (idx < json.Length) SkipValue(json, ref idx);
+                        break;
                     case "body":
                         while (idx < json.Length && json[idx] != '[') idx++;
                         if (idx < json.Length) node.body = ParseNodeArray(json, ref idx);
@@ -504,6 +547,7 @@ public class BlockCodeExecutor : MonoBehaviour
         public string functionName;
         public string conditionVar;
         public int conditionPin;      // if/ifElse용 조건 핀
+        public float conditionValue;  // if/ifElse용 조건 값 (숫자)
         public string setVarName;
         public float setVarValue;
         public List<BlockNode> body;
