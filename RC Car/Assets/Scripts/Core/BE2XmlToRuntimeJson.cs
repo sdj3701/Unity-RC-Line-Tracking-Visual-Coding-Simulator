@@ -23,9 +23,9 @@ public static class BE2XmlToRuntimeJson
                 
         var chunks = xmlText.Split(new[] { "#" }, StringSplitOptions.RemoveEmptyEntries);
 
-        var allBlocks = new List<XElement>();
+        // WhenPlayClicked 블록이 포함된 청크만 찾기
+        XElement mainTriggerBlock = null;
         
-        // 1단계: 모든 청크를 파싱하여 블록 리스트 구성
         foreach (var chunk in chunks)
         {
             if (string.IsNullOrWhiteSpace(chunk)) continue;
@@ -42,28 +42,38 @@ public static class BE2XmlToRuntimeJson
                 continue; 
             }
 
-            allBlocks.Add(doc.Root);
+            var blockName = doc.Root?.Element("blockName")?.Value?.Trim();
+            
+            // WhenPlayClicked 블록 찾기
+            if (blockName == "Block Ins WhenPlayClicked" || blockName == "Block Cst WhenPlayClicked")
+            {
+                mainTriggerBlock = doc.Root;
+                Debug.Log($"[BE2XmlToRuntimeJson] Found main trigger block: {blockName}");
+                break;
+            }
+        }
+        
+        if (mainTriggerBlock == null)
+        {
+            Debug.LogWarning("[BE2XmlToRuntimeJson] WhenPlayClicked block not found! No blocks will be exported.");
+            // 빈 JSON 생성
+            var emptyJson = BuildJson(new List<VariableNode>(), new List<LoopBlockNode>());
+            File.WriteAllText(jsonPath, emptyJson);
+            return;
         }
                 
-        // 2단계: 변수 정의 처리 (SetVariable 블록들)
+        // 2단계: WhenPlayClicked과 연결된 변수 정의 처리 (SetVariable 블록들)
         var initBlocks = new List<VariableNode>();
-        
-        foreach (var block in allBlocks)
-        {
-            ProcessVariableDefinitions(block, initBlocks);
-        }
+        ProcessVariableDefinitions(mainTriggerBlock, initBlocks);
         
         foreach (var v in initBlocks)
         {
             Debug.Log($"  - {v.name} = {v.value}");
         }
         
-        // 3단계: Loop 블록 처리 (Forever 내부 블록들을 순서대로)
+        // 3단계: WhenPlayClicked과 연결된 Loop 블록 처리
         var loopBlocks = new List<LoopBlockNode>();
-        foreach (var block in allBlocks)
-        {
-            ProcessLoopBlocks(block, loopBlocks);
-        }
+        ProcessLoopBlocks(mainTriggerBlock, loopBlocks);
         
         Debug.Log($"[BE2XmlToRuntimeJson] Loop blocks: {loopBlocks.Count}");
 
