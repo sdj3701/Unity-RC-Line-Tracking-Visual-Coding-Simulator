@@ -257,7 +257,7 @@ public static class BE2XmlToRuntimeJson
     {
         var node = new LoopBlockNode { type = type };
         
-        // 조건 추출 (digitalRead 핀)
+        // 1. headerInputs에서 conditionPin 추출 (digitalRead 블록)
         var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
         if (headerInputs != null && headerInputs.Count > 0)
         {
@@ -267,20 +267,58 @@ public static class BE2XmlToRuntimeJson
                 var opName = opBlock.Element("blockName")?.Value?.Trim();
                 if (opName != null && opName.Contains("digitalRead"))
                 {
-                    var pinVarName = opBlock.Descendants("varName").FirstOrDefault()?.Value;
-                    node.conditionPin = ResolveInt(pinVarName);
+                    // digitalRead 블록에서 핀 추출
+                    var pinVarName = opBlock.Element("varName")?.Value;
+                    if (!string.IsNullOrEmpty(pinVarName))
+                    {
+                        node.conditionPin = ResolveInt(pinVarName);
+                    }
+                    else
+                    {
+                        // 내부 inputs에서 핀 값 추출
+                        var innerInputs = opBlock.Descendants("Input").ToList();
+                        if (innerInputs.Count > 0)
+                        {
+                            var innerOpBlock = innerInputs[0].Element("operation")?.Element("Block");
+                            if (innerOpBlock != null)
+                            {
+                                var innerVarName = innerOpBlock.Element("varName")?.Value;
+                                node.conditionPin = ResolveInt(innerVarName);
+                            }
+                            else
+                            {
+                                node.conditionPin = ResolveInt(innerInputs[0].Element("value")?.Value);
+                            }
+                        }
+                    }
                 }
             }
         }
         
-        // 본문 처리 (sections)
+        // 2. sections 처리 - body와 conditionValue 추출
         var sections = block.Element("sections")?.Elements("Section").ToList();
         if (sections != null)
         {
             // then body (첫 번째 섹션)
             if (sections.Count > 0)
             {
-                node.body = ParseSectionBlocks(sections[0]);
+                var firstSection = sections[0];
+                
+                // childBlocks에서 body 추출
+                node.body = ParseSectionBlocks(firstSection);
+                
+                // inputs에서 conditionValue 추출 (childBlocks 이후에 있는 값)
+                var sectionInputs = firstSection.Element("inputs")?.Elements("Input").ToList();
+                if (sectionInputs != null && sectionInputs.Count > 0)
+                {
+                    var lastInput = sectionInputs[sectionInputs.Count - 1];
+                    var valueStr = lastInput.Element("value")?.Value;
+                    if (!string.IsNullOrEmpty(valueStr))
+                    {
+                        node.conditionValue = ResolveInt(valueStr);
+                        Debug.Log($"[ParseIfBlock] conditionValue extracted: {node.conditionValue}");
+                    }
+                }
             }
             
             // else body (두 번째 섹션) - ifElse만
@@ -380,6 +418,7 @@ public static class BE2XmlToRuntimeJson
             case "if":
             case "ifElse":
                 parts.Add($"\"conditionPin\": {node.conditionPin}");
+                parts.Add($"\"conditionValue\": {node.conditionValue}");
                 
                 // body
                 var bodyParts = new List<string>();
@@ -432,6 +471,7 @@ public static class BE2XmlToRuntimeJson
         
         // For if/ifElse
         public int conditionPin;
+        public int conditionValue;  // Section의 inputs에서 추출한 조건 값
         public List<LoopBlockNode> body;
         public List<LoopBlockNode> elseBody;
     }

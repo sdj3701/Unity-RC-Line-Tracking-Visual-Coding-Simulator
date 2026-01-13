@@ -6,7 +6,7 @@ using MG_BlocksEngine2.UI;
 /// 가상 아두이노 마이크로 시뮬레이터
 /// 동적 핀 매핑을 지원하여 블록에서 설정한 핀 번호가 올바른 기능과 연결됩니다.
 /// </summary>
-public class VirtualArduinoMicro : MonoBehaviour, IRuntimeIO
+public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
 {
     public enum PinMode { Input, Output, InputPullup }
     
@@ -299,111 +299,111 @@ public class VirtualArduinoMicro : MonoBehaviour, IRuntimeIO
         }
     }
     
-    // ============================================================
-    // 고수준 명령 (블록 코딩용)
-    // ============================================================
+    // // ============================================================
+    // // 고수준 명령 (블록 코딩용)
+    // // ============================================================
     
-    public void MoveForward(float speed01)
-    {
-        foreach (var peripheral in peripherals)
-        {
-            if (peripheral is VirtualMotorDriver motor)
-            {
-                motor.SetMotorSpeed(speed01, speed01);
-                return;
-            }
-        }
-    }
+    // public void MoveForward(float speed01)
+    // {
+    //     foreach (var peripheral in peripherals)
+    //     {
+    //         if (peripheral is VirtualMotorDriver motor)
+    //         {
+    //             motor.SetMotorSpeed(speed01, speed01);
+    //             return;
+    //         }
+    //     }
+    // }
     
-    public void TurnLeft(float speed01)
-    {
-        foreach (var peripheral in peripherals)
-        {
-            if (peripheral is VirtualMotorDriver motor)
-            {
-                motor.SetMotorSpeed(-speed01, speed01);
-                return;
-            }
-        }
-    }
+    // public void TurnLeft(float speed01)
+    // {
+    //     foreach (var peripheral in peripherals)
+    //     {
+    //         if (peripheral is VirtualMotorDriver motor)
+    //         {
+    //             motor.SetMotorSpeed(-speed01, speed01);
+    //             return;
+    //         }
+    //     }
+    // }
     
-    public void TurnRight(float speed01)
-    {
-        foreach (var peripheral in peripherals)
-        {
-            if (peripheral is VirtualMotorDriver motor)
-            {
-                motor.SetMotorSpeed(speed01, -speed01);
-                return;
-            }
-        }
-    }
+    // public void TurnRight(float speed01)
+    // {
+    //     foreach (var peripheral in peripherals)
+    //     {
+    //         if (peripheral is VirtualMotorDriver motor)
+    //         {
+    //             motor.SetMotorSpeed(speed01, -speed01);
+    //             return;
+    //         }
+    //     }
+    // }
     
-    public void Stop()
-    {
-        foreach (var peripheral in peripherals)
-        {
-            if (peripheral is VirtualMotorDriver motor)
-            {
-                motor.SetMotorSpeed(0f, 0f);
-                return;
-            }
-        }
-    }
+    // public void Stop()
+    // {
+    //     foreach (var peripheral in peripherals)
+    //     {
+    //         if (peripheral is VirtualMotorDriver motor)
+    //         {
+    //             motor.SetMotorSpeed(0f, 0f);
+    //             return;
+    //         }
+    //     }
+    // }
     
-    // ============================================================
-    // Arduino 스타일 API (필요시 확장용)
-    // ============================================================
+    // // ============================================================
+    // // Arduino 스타일 API (필요시 확장용)
+    // // ============================================================
     
-    public void SetPinMode(int pin, PinMode mode)
-    {
-        if (pin >= 0 && pin < totalPins)
-            pinModes[pin] = mode;
-    }
+    // public void SetPinMode(int pin, PinMode mode)
+    // {
+    //     if (pin >= 0 && pin < totalPins)
+    //         pinModes[pin] = mode;
+    // }
     
-    public void DigitalWrite(int pin, bool value)
-    {
-        if (pin >= 0 && pin < totalPins)
-        {
-            digitalPins[pin] = value;
+    // public void DigitalWrite(int pin, bool value)
+    // {
+    //     if (pin >= 0 && pin < totalPins)
+    //     {
+    //         digitalPins[pin] = value;
             
-            if (pinToFunction.TryGetValue(pin, out string function))
-            {
-                if (functionToPeripheral.TryGetValue(function, out var peripheral))
-                {
-                    peripheral.OnFunctionWrite(function, value ? 255f : 0f);
-                }
-            }
-        }
-    }
+    //         if (pinToFunction.TryGetValue(pin, out string function))
+    //         {
+    //             if (functionToPeripheral.TryGetValue(function, out var peripheral))
+    //             {
+    //                 peripheral.OnFunctionWrite(function, value ? 255f : 0f);
+    //             }
+    //         }
+    //     }
+    // }
     
-    public float AnalogRead(int pin)
-    {
-        if (pin < 0 || pin >= totalPins) return 0f;
+    // public float AnalogRead(int pin)
+    // {
+    //     if (pin < 0 || pin >= totalPins) return 0f;
         
-        if (pinToFunction.TryGetValue(pin, out string function))
-        {
-            if (functionToPeripheral.TryGetValue(function, out var peripheral))
-            {
-                return peripheral.OnFunctionAnalogRead(function);
-            }
-        }
+    //     if (pinToFunction.TryGetValue(pin, out string function))
+    //     {
+    //         if (functionToPeripheral.TryGetValue(function, out var peripheral))
+    //         {
+    //             return peripheral.OnFunctionAnalogRead(function);
+    //         }
+    //     }
         
-        return analogPins[pin];
-    }
+    //     return analogPins[pin];
+    // }
     
-    // ============================================================
-    // 디버그
-    // ============================================================
+    // // ============================================================
+    // // 디버그
+    // // ============================================================
     
-    public string GetPinMappingDebugInfo()
-    {
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Pin → Function Mapping:");
-        foreach (var kvp in pinToFunction)
-        {
-            sb.AppendLine($"  Pin {kvp.Key} → {kvp.Value}");
-        }
-        return sb.ToString();
-    }
+    // public string GetPinMappingDebugInfo()
+    // {
+    //     var sb = new System.Text.StringBuilder();
+    //     sb.AppendLine("Pin → Function Mapping:");
+    //     foreach (var kvp in pinToFunction)
+    //     {
+    //         sb.AppendLine($"  Pin {kvp.Key} → {kvp.Value}");
+    //     }
+    //     return sb.ToString();
+    // }
 }
