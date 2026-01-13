@@ -13,6 +13,12 @@ public static class BE2XmlToRuntimeJson
 {
     // 변수 값을 저장하는 딕셔너리
     private static Dictionary<string, float> variables = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+    
+    // 함수 정의를 저장하는 딕셔너리 (함수 이름 → 함수 XElement)
+    private static Dictionary<string, XElement> functionDefinitions = new Dictionary<string, XElement>(StringComparer.OrdinalIgnoreCase);
+    
+    // 실제로 호출된 함수 이름들
+    private static HashSet<string> calledFunctionNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     public static void Export(string xmlText)
     {
@@ -20,10 +26,14 @@ public static class BE2XmlToRuntimeJson
         
         // 초기화
         variables.Clear();
+        functionDefinitions.Clear();
+        calledFunctionNames.Clear();
                 
         var chunks = xmlText.Split(new[] { "#" }, StringSplitOptions.RemoveEmptyEntries);
 
-        // WhenPlayClicked 블록이 포함된 청크만 찾기
+        // ============================================================
+        // 1단계: 모든 청크를 파싱하여 함수 정의 수집 및 WhenPlayClicked 찾기
+        // ============================================================
         XElement mainTriggerBlock = null;
         
         foreach (var chunk in chunks)
@@ -44,12 +54,57 @@ public static class BE2XmlToRuntimeJson
 
             var blockName = doc.Root?.Element("blockName")?.Value?.Trim();
             
+            // 디버그: 모든 블록 이름 출력
+            Debug.Log($"[BE2XmlToRuntimeJson] Found block: {blockName}");
+            
+            // 함수 정의 블록 수집 (여러 가능한 이름 패턴)
+            bool isFunctionDefinition = 
+                blockName == "Block Ins DefineFunction" || blockName == "Block Cst DefineFunction" ||
+                blockName == "Block Ins Function" || blockName == "Block Cst Function" ||
+                blockName == "Block Ins NewFunction" || blockName == "Block Cst NewFunction" ||
+                blockName == "Block Ins FunctionDef" || blockName == "Block Cst FunctionDef" ||
+                (blockName != null && blockName.Contains("DefineFunction")) ||
+                (blockName != null && blockName.Contains("NewFunction"));
+            
+            // 추가 확인: 블록에 defineID가 있고 FunctionBlock이 아닌 경우도 함수 정의일 수 있음
+            if (!isFunctionDefinition && blockName != "Block Ins FunctionBlock" && blockName != "Block Cst FunctionBlock")
+            {
+                var hasDefineID = !string.IsNullOrEmpty(doc.Root?.Element("defineID")?.Value?.Trim());
+                var hasSections = doc.Root?.Element("sections") != null;
+                // defineID가 있고 sections가 있으면서 WhenPlayClicked이 아닌 경우, 함수 정의일 가능성 확인
+                if (hasDefineID && hasSections && 
+                    blockName != "Block Ins WhenPlayClicked" && blockName != "Block Cst WhenPlayClicked")
+                {
+                    var defineID = doc.Root?.Element("defineID")?.Value?.Trim();
+                    Debug.Log($"[BE2XmlToRuntimeJson] Block '{blockName}' has defineID='{defineID}', checking if it's a function definition...");
+                    
+                    // defineID가 있는 블록을 함수 정의 후보로 처리
+                    if (!string.IsNullOrEmpty(defineID) && !IsNumericOnly(defineID))
+                    {
+                        functionDefinitions[defineID] = doc.Root;
+                        Debug.Log($"[BE2XmlToRuntimeJson] Found function definition from defineID: {defineID}");
+                    }
+                }
+            }
+            
+            if (isFunctionDefinition)
+            {
+                var funcName = ExtractFunctionName(doc.Root);
+                if (!string.IsNullOrEmpty(funcName))
+                {
+                    functionDefinitions[funcName] = doc.Root;
+                    Debug.Log($"[BE2XmlToRuntimeJson] Found function definition: {funcName}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[BE2XmlToRuntimeJson] Function definition block found but no name extracted!");
+                }
+            }
             // WhenPlayClicked 블록 찾기
-            if (blockName == "Block Ins WhenPlayClicked" || blockName == "Block Cst WhenPlayClicked")
+            else if (blockName == "Block Ins WhenPlayClicked" || blockName == "Block Cst WhenPlayClicked")
             {
                 mainTriggerBlock = doc.Root;
                 Debug.Log($"[BE2XmlToRuntimeJson] Found main trigger block: {blockName}");
-                break;
             }
         }
         
@@ -57,12 +112,16 @@ public static class BE2XmlToRuntimeJson
         {
             Debug.LogWarning("[BE2XmlToRuntimeJson] WhenPlayClicked block not found! No blocks will be exported.");
             // 빈 JSON 생성
-            var emptyJson = BuildJson(new List<VariableNode>(), new List<LoopBlockNode>());
+            var emptyJson = BuildJson(new List<VariableNode>(), new List<LoopBlockNode>(), new List<FunctionNode>());
             File.WriteAllText(jsonPath, emptyJson);
             return;
         }
+        
+        Debug.Log($"[BE2XmlToRuntimeJson] Total function definitions found: {functionDefinitions.Count}");
                 
-        // 2단계: WhenPlayClicked과 연결된 변수 정의 처리 (SetVariable 블록들)
+        // ============================================================
+        // 2단계: WhenPlayClicked과 연결된 변수 정의 처리
+        // ============================================================
         var initBlocks = new List<VariableNode>();
         ProcessVariableDefinitions(mainTriggerBlock, initBlocks);
         
@@ -71,18 +130,196 @@ public static class BE2XmlToRuntimeJson
             Debug.Log($"  - {v.name} = {v.value}");
         }
         
-        // 3단계: WhenPlayClicked과 연결된 Loop 블록 처리
+        // ============================================================
+        // 3단계: WhenPlayClicked과 연결된 Loop 블록 처리 (함수 호출 추적 포함)
+        // ============================================================
         var loopBlocks = new List<LoopBlockNode>();
         ProcessLoopBlocks(mainTriggerBlock, loopBlocks);
         
         Debug.Log($"[BE2XmlToRuntimeJson] Loop blocks: {loopBlocks.Count}");
+        Debug.Log($"[BE2XmlToRuntimeJson] Called functions: {string.Join(", ", calledFunctionNames)}");
+        
+        // ============================================================
+        // 4단계: 호출된 함수만 파싱하여 functions 배열 구성
+        // ============================================================
+        var functionNodes = new List<FunctionNode>();
+        foreach (var funcName in calledFunctionNames)
+        {
+            if (functionDefinitions.TryGetValue(funcName, out var funcBlock))
+            {
+                var funcNode = ParseFunctionDefinition(funcName, funcBlock);
+                if (funcNode != null)
+                {
+                    functionNodes.Add(funcNode);
+                    Debug.Log($"[BE2XmlToRuntimeJson] Added function to JSON: {funcName}");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"[BE2XmlToRuntimeJson] Function '{funcName}' was called but not defined!");
+            }
+        }
 
         // JSON 빌드
-        var json = BuildJson(initBlocks, loopBlocks);
+        var json = BuildJson(initBlocks, loopBlocks, functionNodes);
         File.WriteAllText(jsonPath, json);
         
         Debug.Log($"[BE2XmlToRuntimeJson] Exported to: {jsonPath}");
         Debug.Log($"[BE2XmlToRuntimeJson] JSON content:\n{json}");
+    }
+    
+    /// <summary>
+    /// 함수 정의 블록에서 함수 이름 추출
+    /// </summary>
+    static string ExtractFunctionName(XElement funcBlock)
+    {
+        // 디버그: 블록 내용 출력
+        Debug.Log($"[ExtractFunctionName] Block XML: {funcBlock.ToString().Substring(0, Math.Min(600, funcBlock.ToString().Length))}...");
+        
+        // 1. defineID에서 함수 이름 찾기 (가장 신뢰할 수 있음)
+        var defineId = funcBlock.Element("defineID")?.Value?.Trim();
+        if (!string.IsNullOrEmpty(defineId) && !IsNumericOnly(defineId))
+        {
+            Debug.Log($"[ExtractFunctionName] Found name from defineID: {defineId}");
+            return defineId;
+        }
+        
+        // 2. sections 내부의 inputs에서 defineID 찾기
+        var sections = funcBlock.Element("sections")?.Elements("Section");
+        if (sections != null)
+        {
+            foreach (var section in sections)
+            {
+                var inputs = section.Element("inputs")?.Elements("Input");
+                if (inputs != null)
+                {
+                    foreach (var input in inputs)
+                    {
+                        var inputDefineId = input.Element("defineID")?.Value?.Trim();
+                        if (!string.IsNullOrEmpty(inputDefineId) && !IsNumericOnly(inputDefineId))
+                        {
+                            Debug.Log($"[ExtractFunctionName] Found name from section defineID: {inputDefineId}");
+                            return inputDefineId;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 3. headerInputs에서 함수 이름 찾기 (숫자가 아닌 값)
+        var headerInputs = funcBlock.Element("headerInputs")?.Elements("Input").ToList();
+        if (headerInputs != null && headerInputs.Count > 0)
+        {
+            foreach (var input in headerInputs)
+            {
+                // defineID 먼저 확인
+                var inputDefineId = input.Element("defineID")?.Value?.Trim();
+                if (!string.IsNullOrEmpty(inputDefineId) && !IsNumericOnly(inputDefineId))
+                {
+                    Debug.Log($"[ExtractFunctionName] Found name from headerInput defineID: {inputDefineId}");
+                    return inputDefineId;
+                }
+                
+                // value 확인 (숫자만 있는 값은 스킵)
+                var nameValue = input.Element("value")?.Value?.Trim();
+                if (!string.IsNullOrEmpty(nameValue) && !IsNumericOnly(nameValue))
+                {
+                    Debug.Log($"[ExtractFunctionName] Found name from headerInput value: {nameValue}");
+                    return nameValue;
+                }
+            }
+        }
+        
+        // 4. 모든 Descendants에서 defineID 찾기 (숫자가 아닌 값)
+        var allDefineIds = funcBlock.Descendants("defineID");
+        foreach (var did in allDefineIds)
+        {
+            var val = did.Value?.Trim();
+            if (!string.IsNullOrEmpty(val) && !IsNumericOnly(val))
+            {
+                Debug.Log($"[ExtractFunctionName] Found name from descendants defineID: {val}");
+                return val;
+            }
+        }
+        
+        Debug.LogWarning($"[ExtractFunctionName] Could not extract function name!");
+        return null;
+    }
+    
+    /// <summary>
+    /// 함수 정의 블록을 FunctionNode로 파싱
+    /// </summary>
+    static FunctionNode ParseFunctionDefinition(string name, XElement funcBlock)
+    {
+        var funcNode = new FunctionNode { name = name, body = new List<LoopBlockNode>() };
+        
+        // sections 내부의 블록들 파싱
+        var sections = funcBlock.Element("sections")?.Elements("Section");
+        if (sections != null)
+        {
+            foreach (var section in sections)
+            {
+                var childBlocks = section.Element("childBlocks")?.Elements("Block");
+                if (childBlocks != null)
+                {
+                    foreach (var child in childBlocks)
+                    {
+                        ProcessLoopBlocksRecursive(child, funcNode.body);
+                    }
+                }
+            }
+        }
+        
+        // OuterArea 처리 (함수 본문에 연결된 블록들)
+        var outerChildBlocks = funcBlock.Element("OuterArea")?.Element("childBlocks")?.Elements("Block");
+        if (outerChildBlocks != null)
+        {
+            foreach (var child in outerChildBlocks)
+            {
+                ProcessLoopBlocksRecursive(child, funcNode.body);
+            }
+        }
+        
+        return funcNode;
+    }
+    
+    /// <summary>
+    /// 재귀적으로 블록을 처리하여 리스트에 추가 (함수 본문 파싱용)
+    /// </summary>
+    static void ProcessLoopBlocksRecursive(XElement block, List<LoopBlockNode> loopBlocks)
+    {
+        var node = ParseBlockToLoopNode(block);
+        if (node != null)
+        {
+            loopBlocks.Add(node);
+        }
+        else
+        {
+            // 현재 블록이 Loop 노드가 아닌 경우 내부 섹션 처리
+            var sections = block.Element("sections")?.Elements("Section");
+            if (sections != null)
+            {
+                foreach (var section in sections)
+                {
+                    var childBlocks = section.Element("childBlocks")?.Elements("Block");
+                    if (childBlocks != null)
+                    {
+                        foreach (var child in childBlocks)
+                        {
+                            ProcessLoopBlocksRecursive(child, loopBlocks);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // OuterArea 재귀 처리
+        var outerChildBlocks = block.Element("OuterArea")?.Element("childBlocks")?.Elements("Block");
+        if (outerChildBlocks != null)
+        {
+            foreach (var child in outerChildBlocks)
+                ProcessLoopBlocksRecursive(child, loopBlocks);
+        }
     }
     
     /// <summary>
@@ -224,7 +461,121 @@ public static class BE2XmlToRuntimeJson
             return ParseIfBlock(block, "ifElse");
         }
         
+        // 함수 호출 블록
+        if (name == "Block Ins CallFunction" || name == "Block Cst CallFunction" ||
+            name == "Block Ins FunctionBlock" || name == "Block Cst FunctionBlock")
+        {
+            return ParseCallFunctionBlock(block);
+        }
+        
         return null;
+    }
+    
+    /// <summary>
+    /// 함수 호출 블록 파싱
+    /// </summary>
+    static LoopBlockNode ParseCallFunctionBlock(XElement block)
+    {
+        var node = new LoopBlockNode { type = "callFunction" };
+        node.args = new List<float>();  // 미리 초기화
+        
+        // 디버그: 블록 내용 출력
+        Debug.Log($"[ParseCallFunctionBlock] Block XML: {block.ToString().Substring(0, Math.Min(800, block.ToString().Length))}...");
+        
+        // 1. 먼저 defineID 찾기 (가장 신뢰할 수 있는 함수 이름 소스)
+        var defineId = block.Descendants("defineID").FirstOrDefault()?.Value?.Trim();
+        if (!string.IsNullOrEmpty(defineId) && !IsNumericOnly(defineId))
+        {
+            node.functionName = defineId;
+            calledFunctionNames.Add(defineId);
+            Debug.Log($"[ParseCallFunctionBlock] Found function call from defineID: {defineId}");
+        }
+        
+        // 2. headerInputs에서 함수 이름 찾기 (defineID를 못 찾은 경우)
+        if (string.IsNullOrEmpty(node.functionName))
+        {
+            var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
+            if (headerInputs != null && headerInputs.Count > 0)
+            {
+                foreach (var input in headerInputs)
+                {
+                    // defineID 먼저 확인
+                    var inputDefineId = input.Element("defineID")?.Value?.Trim();
+                    if (!string.IsNullOrEmpty(inputDefineId) && !IsNumericOnly(inputDefineId))
+                    {
+                        node.functionName = inputDefineId;
+                        calledFunctionNames.Add(inputDefineId);
+                        Debug.Log($"[ParseCallFunctionBlock] Found function call from headerInput defineID: {inputDefineId}");
+                        break;
+                    }
+                    
+                    // value 확인 (숫자만 있는 값은 스킵)
+                    var funcName = input.Element("value")?.Value?.Trim();
+                    if (!string.IsNullOrEmpty(funcName) && !IsNumericOnly(funcName))
+                    {
+                        node.functionName = funcName;
+                        calledFunctionNames.Add(funcName);
+                        Debug.Log($"[ParseCallFunctionBlock] Found function call from headerInputs value: {funcName}");
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if (string.IsNullOrEmpty(node.functionName))
+        {
+            Debug.LogWarning($"[ParseCallFunctionBlock] Could not extract function name from block!");
+        }
+        
+        // 3. 함수 인자(arguments) 추출 - sections 내부의 inputs에서
+        var argSections = block.Element("sections")?.Elements("Section");
+        if (argSections != null)
+        {
+            foreach (var section in argSections)
+            {
+                var inputs = section.Element("inputs")?.Elements("Input");
+                if (inputs != null)
+                {
+                    foreach (var input in inputs)
+                    {
+                        var valStr = input.Element("value")?.Value?.Trim();
+                        if (!string.IsNullOrEmpty(valStr))
+                        {
+                            if (float.TryParse(valStr, out float argValue))
+                            {
+                                node.args.Add(argValue);
+                                Debug.Log($"[ParseCallFunctionBlock] Added argument: {argValue}");
+                            }
+                            else
+                            {
+                                // 변수 이름일 수 있음 - 변수 값을 해석
+                                var resolvedValue = ResolveFloat(valStr);
+                                node.args.Add(resolvedValue);
+                                Debug.Log($"[ParseCallFunctionBlock] Added argument (resolved): {valStr} -> {resolvedValue}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Debug.Log($"[ParseCallFunctionBlock] Function '{node.functionName}' has {node.args.Count} arguments");
+        
+        return node;
+    }
+    
+    /// <summary>
+    /// 문자열이 숫자로만 구성되어 있는지 확인 (함수 이름이 아닌 값을 필터링)
+    /// </summary>
+    static bool IsNumericOnly(string str)
+    {
+        if (string.IsNullOrEmpty(str)) return false;
+        foreach (char c in str)
+        {
+            if (!char.IsDigit(c) && c != '.' && c != '-')
+                return false;
+        }
+        return true;
     }
     
     static LoopBlockNode ParsePwmBlock(XElement block)
@@ -345,14 +696,33 @@ public static class BE2XmlToRuntimeJson
     {
         var result = new List<LoopBlockNode>();
         var childBlocks = section.Element("childBlocks")?.Elements("Block");
-        if (childBlocks == null) return result;
+        
+        Debug.Log($"[ParseSectionBlocks] Section has childBlocks: {childBlocks != null}");
+        
+        if (childBlocks == null) 
+        {
+            Debug.Log($"[ParseSectionBlocks] No childBlocks found in section");
+            return result;
+        }
         
         foreach (var child in childBlocks)
         {
+            var blockName = child.Element("blockName")?.Value?.Trim();
+            Debug.Log($"[ParseSectionBlocks] Processing child block: {blockName}");
+            
             var node = ParseBlockToLoopNode(child);
             if (node != null)
+            {
                 result.Add(node);
+                Debug.Log($"[ParseSectionBlocks] Added node of type: {node.type}");
+            }
+            else
+            {
+                Debug.LogWarning($"[ParseSectionBlocks] Block '{blockName}' returned null - not recognized");
+            }
         }
+        
+        Debug.Log($"[ParseSectionBlocks] Total blocks parsed: {result.Count}");
         return result;
     }
     
@@ -376,7 +746,7 @@ public static class BE2XmlToRuntimeJson
     
     // ===== JSON Building =====
     
-    static string BuildJson(List<VariableNode> variables, List<LoopBlockNode> loopBlocks)
+    static string BuildJson(List<VariableNode> variables, List<LoopBlockNode> loopBlocks, List<FunctionNode> functions)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("{");
@@ -403,11 +773,31 @@ public static class BE2XmlToRuntimeJson
         }
         sb.AppendLine("  ],");
         
-        // functions 배열 (빈 배열)
-        sb.AppendLine("  \"functions\": []");
+        // functions 배열 (호출된 함수만)
+        sb.AppendLine("  \"functions\": [");
+        for (int i = 0; i < functions.Count; i++)
+        {
+            sb.Append("    ");
+            sb.Append(FunctionNodeToJson(functions[i]));
+            if (i < functions.Count - 1) sb.Append(",");
+            sb.AppendLine();
+        }
+        sb.AppendLine("  ]");
         
         sb.Append("}");
         return sb.ToString();
+    }
+    
+    static string FunctionNodeToJson(FunctionNode func)
+    {
+        var bodyParts = new List<string>();
+        if (func.body != null)
+        {
+            foreach (var b in func.body)
+                bodyParts.Add(LoopBlockNodeToJson(b));
+        }
+        
+        return $"{{ \"name\": \"{EscapeJson(func.name)}\", \"body\": [{string.Join(", ", bodyParts)}] }}";
     }
     
     static string LoopBlockNodeToJson(LoopBlockNode node)
@@ -423,6 +813,16 @@ public static class BE2XmlToRuntimeJson
                     parts.Add($"\"valueVar\": \"{EscapeJson(node.valueVar)}\"");
                 else
                     parts.Add($"\"value\": {node.value}");
+                break;
+            
+            case "callFunction":
+                parts.Add($"\"functionName\": \"{EscapeJson(node.functionName)}\"");
+                // 함수 인자(args) 출력
+                if (node.args != null && node.args.Count > 0)
+                {
+                    var argsStr = string.Join(", ", node.args);
+                    parts.Add($"\"args\": [{argsStr}]");
+                }
                 break;
                 
             case "if":
@@ -472,7 +872,7 @@ public static class BE2XmlToRuntimeJson
     
     class LoopBlockNode
     {
-        public string type;        // "analogWrite", "if", "ifElse"
+        public string type;        // "analogWrite", "if", "ifElse", "callFunction"
         
         // For analogWrite
         public int pin;
@@ -484,6 +884,16 @@ public static class BE2XmlToRuntimeJson
         public int conditionValue;  // Section의 inputs에서 추출한 조건 값
         public List<LoopBlockNode> body;
         public List<LoopBlockNode> elseBody;
+        
+        // For callFunction
+        public string functionName;
+        public List<float> args;  // 함수 호출 시 전달하는 인자들
+    }
+    
+    class FunctionNode
+    {
+        public string name;
+        public List<LoopBlockNode> body;
     }
 }
 
