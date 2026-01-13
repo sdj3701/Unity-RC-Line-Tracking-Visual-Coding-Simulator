@@ -251,14 +251,76 @@ public static class BE2XmlToRuntimeJson
     /// </summary>
     static FunctionNode ParseFunctionDefinition(string name, XElement funcBlock)
     {
-        var funcNode = new FunctionNode { name = name, body = new List<LoopBlockNode>() };
+        var funcNode = new FunctionNode 
+        { 
+            name = name, 
+            body = new List<LoopBlockNode>(),
+            parameters = new List<string>()
+        };
         
-        // sections 내부의 블록들 파싱
+        // defineItems에서 파라미터 이름 추출 (type="variable"인 Item)
+        var defineItems = funcBlock.Element("defineItems")?.Elements("Item");
+        if (defineItems != null)
+        {
+            foreach (var item in defineItems)
+            {
+                var itemType = item.Element("type")?.Value?.Trim();
+                var itemValue = item.Element("value")?.Value?.Trim();
+                
+                // type이 "variable"인 경우 파라미터로 추가
+                if (itemType == "variable" && !string.IsNullOrEmpty(itemValue))
+                {
+                    funcNode.parameters.Add(itemValue);
+                    Debug.Log($"[ParseFunctionDefinition] Found parameter from defineItems: {itemValue}");
+                }
+            }
+        }
+        
+        // headerInputs에서 파라미터 이름 추출 (defineItems에서 못 찾은 경우)
+        if (funcNode.parameters.Count == 0)
+        {
+            var headerInputs = funcBlock.Element("headerInputs")?.Elements("Input").ToList();
+            if (headerInputs != null)
+            {
+                foreach (var input in headerInputs)
+                {
+                    // value에서 파라미터 이름 추출 (숫자가 아닌 값)
+                    var paramName = input.Element("value")?.Value?.Trim();
+                    if (!string.IsNullOrEmpty(paramName) && !IsNumericOnly(paramName) && paramName != name)
+                    {
+                        funcNode.parameters.Add(paramName);
+                        Debug.Log($"[ParseFunctionDefinition] Found parameter: {paramName}");
+                    }
+                }
+            }
+        }
+        
+        // sections 내부의 inputs에서 파라미터 이름 추출
         var sections = funcBlock.Element("sections")?.Elements("Section");
         if (sections != null)
         {
             foreach (var section in sections)
             {
+                // 파라미터 이름 추출
+                var inputs = section.Element("inputs")?.Elements("Input");
+                if (inputs != null)
+                {
+                    foreach (var input in inputs)
+                    {
+                        var paramName = input.Element("value")?.Value?.Trim();
+                        if (!string.IsNullOrEmpty(paramName) && !IsNumericOnly(paramName) && paramName != name)
+                        {
+                            // 중복 방지
+                            if (!funcNode.parameters.Contains(paramName))
+                            {
+                                funcNode.parameters.Add(paramName);
+                                Debug.Log($"[ParseFunctionDefinition] Found parameter from section: {paramName}");
+                            }
+                        }
+                    }
+                }
+                
+                // 블록들 파싱
                 var childBlocks = section.Element("childBlocks")?.Elements("Block");
                 if (childBlocks != null)
                 {
@@ -279,6 +341,8 @@ public static class BE2XmlToRuntimeJson
                 ProcessLoopBlocksRecursive(child, funcNode.body);
             }
         }
+        
+        Debug.Log($"[ParseFunctionDefinition] Function '{name}' has {funcNode.parameters.Count} parameters: [{string.Join(", ", funcNode.parameters)}]");
         
         return funcNode;
     }
@@ -790,14 +854,32 @@ public static class BE2XmlToRuntimeJson
     
     static string FunctionNodeToJson(FunctionNode func)
     {
+        var parts = new List<string>();
+        
+        // name
+        parts.Add($"\"name\": \"{EscapeJson(func.name)}\"");
+        
+        // params (파라미터 이름 목록)
+        if (func.parameters != null && func.parameters.Count > 0)
+        {
+            var paramStrings = func.parameters.Select(p => $"\"{EscapeJson(p)}\"");
+            parts.Add($"\"params\": [{string.Join(", ", paramStrings)}]");
+        }
+        else
+        {
+            parts.Add("\"params\": []");
+        }
+        
+        // body
         var bodyParts = new List<string>();
         if (func.body != null)
         {
             foreach (var b in func.body)
                 bodyParts.Add(LoopBlockNodeToJson(b));
         }
+        parts.Add($"\"body\": [{string.Join(", ", bodyParts)}]");
         
-        return $"{{ \"name\": \"{EscapeJson(func.name)}\", \"body\": [{string.Join(", ", bodyParts)}] }}";
+        return $"{{ {string.Join(", ", parts)} }}";
     }
     
     static string LoopBlockNodeToJson(LoopBlockNode node)
@@ -893,6 +975,7 @@ public static class BE2XmlToRuntimeJson
     class FunctionNode
     {
         public string name;
+        public List<string> parameters;  // 함수 파라미터 이름 목록
         public List<LoopBlockNode> body;
     }
 }

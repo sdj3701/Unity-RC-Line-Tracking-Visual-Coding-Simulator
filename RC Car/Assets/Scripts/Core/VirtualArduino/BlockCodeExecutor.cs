@@ -183,9 +183,80 @@ public class BlockCodeExecutor : MonoBehaviour
                 ExecuteIfBlock(node, true);
                 break;
                 
+            case "callFunction":
+                ExecuteFunction(node);
+                break;
+                
             default:
                 Debug.Log($"<color=gray>[3] ExecuteNode: Unknown type '{node.type}'</color>");
                 break;
+        }
+    }
+    
+    /// <summary>
+    /// 함수 호출 실행
+    /// </summary>
+    void ExecuteFunction(BlockNode callNode)
+    {
+        if (string.IsNullOrEmpty(callNode.functionName))
+        {
+            Debug.LogWarning("<color=red>[3] ExecuteFunction: functionName is empty!</color>");
+            return;
+        }
+        
+        // functions 배열에서 해당 함수 찾기
+        BlockNode funcDef = null;
+        if (program.functions != null)
+        {
+            foreach (var func in program.functions)
+            {
+                if (func.name == callNode.functionName)
+                {
+                    funcDef = func;
+                    break;
+                }
+            }
+        }
+        
+        if (funcDef == null)
+        {
+            Debug.LogWarning($"<color=red>[3] ExecuteFunction: Function '{callNode.functionName}' not found!</color>");
+            return;
+        }
+        
+        Debug.Log($"<color=yellow>[3] ExecuteFunction: Calling '{callNode.functionName}' with {callNode.args?.Count ?? 0} args, {funcDef.parameters?.Count ?? 0} params</color>");
+        
+        // args를 params 이름으로 매핑
+        // params: ["s"], args: [150] → variables["s"] = 150
+        if (callNode.args != null && funcDef.parameters != null)
+        {
+            int count = Math.Min(callNode.args.Count, funcDef.parameters.Count);
+            for (int i = 0; i < count; i++)
+            {
+                string paramName = funcDef.parameters[i];
+                float argValue = callNode.args[i];
+                variables[paramName] = argValue;
+                Debug.Log($"<color=yellow>[3] ExecuteFunction: Set {paramName} = {argValue}</color>");
+            }
+        }
+        
+        // args가 더 많은 경우 arg0, arg1...으로 저장 (fallback)
+        if (callNode.args != null)
+        {
+            for (int i = 0; i < callNode.args.Count; i++)
+            {
+                variables[$"arg{i}"] = callNode.args[i];
+            }
+        }
+        
+        // 함수 body 실행
+        if (funcDef.body != null)
+        {
+            Debug.Log($"<color=yellow>[3] ExecuteFunction: Executing body ({funcDef.body.Count} blocks)</color>");
+            foreach (var childNode in funcDef.body)
+            {
+                ExecuteNode(childNode);
+            }
         }
     }
     
@@ -396,10 +467,16 @@ public class BlockCodeExecutor : MonoBehaviour
                     case "conditionVar": node.conditionVar = ParseString(json, ref idx); break;
                     case "conditionPin": node.conditionPin = (int)ParseFloat(json, ref idx); break;
                     case "conditionValue": node.conditionValue = ParseFloat(json, ref idx); break;
+                    case "name": node.name = ParseString(json, ref idx); break;
                     case "args":
-                        // args 배열 파싱 (스킵)
+                        // args 배열 파싱
                         while (idx < json.Length && json[idx] != '[') idx++;
-                        if (idx < json.Length) SkipValue(json, ref idx);
+                        if (idx < json.Length) node.args = ParseFloatArray(json, ref idx);
+                        break;
+                    case "params":
+                        // params 배열 파싱 (파라미터 이름 목록)
+                        while (idx < json.Length && json[idx] != '[') idx++;
+                        if (idx < json.Length) node.parameters = ParseStringArray(json, ref idx);
                         break;
                     case "body":
                         while (idx < json.Length && json[idx] != '[') idx++;
@@ -448,6 +525,48 @@ public class BlockCodeExecutor : MonoBehaviour
         string numStr = json.Substring(start, idx - start);
         float.TryParse(numStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float result);
         return result;
+    }
+    
+    List<float> ParseFloatArray(string json, ref int idx)
+    {
+        var list = new List<float>();
+        idx++; // skip '['
+        
+        while (idx < json.Length)
+        {
+            char c = json[idx];
+            if (c == ']') { idx++; break; }
+            if (char.IsDigit(c) || c == '-' || c == '.')
+            {
+                list.Add(ParseFloat(json, ref idx));
+            }
+            else
+            {
+                idx++;
+            }
+        }
+        return list;
+    }
+    
+    List<string> ParseStringArray(string json, ref int idx)
+    {
+        var list = new List<string>();
+        idx++; // skip '['
+        
+        while (idx < json.Length)
+        {
+            char c = json[idx];
+            if (c == ']') { idx++; break; }
+            if (c == '"')
+            {
+                list.Add(ParseString(json, ref idx));
+            }
+            else
+            {
+                idx++;
+            }
+        }
+        return list;
     }
     
     void SkipValue(string json, ref int idx)
@@ -540,11 +659,14 @@ public class BlockCodeExecutor : MonoBehaviour
     class BlockNode
     {
         public string type;
+        public string name;           // 함수 정의에서 함수 이름
+        public List<string> parameters;  // 함수 파라미터 이름 목록
         public float number;
         public int pin;
         public float value;
         public string valueVar;
-        public string functionName;
+        public string functionName;   // 함수 호출에서 호출할 함수 이름
+        public List<float> args;      // 함수 호출 시 전달할 인자들
         public string conditionVar;
         public int conditionPin;      // if/ifElse용 조건 핀
         public float conditionValue;  // if/ifElse용 조건 값 (숫자)
