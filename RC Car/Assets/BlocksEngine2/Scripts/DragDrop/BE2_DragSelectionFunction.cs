@@ -84,33 +84,7 @@ namespace MG_BlocksEngine2.DragDrop
             functionBlockInstruction = instantiatedBlockGO.GetComponent<BE2_Ins_FunctionBlock>();
             functionBlockInstruction.Initialize(defineFunctionInstruction);
 
-            I_BE2_BlockLayout instantiatedLayout = instantiatedBlockGO.GetComponent<I_BE2_BlockLayout>();
-
-            int i = 0;
-            foreach (I_BE2_BlockSectionHeaderItem item in defineFunctionInstruction.Block.Layout.SectionsArray[0].Header.ItemsArray)
-            {
-                if (i == 0)
-                {
-                    i++;
-                    continue;
-                }
-
-                if (item is BE2_BlockSectionHeader_Label)
-                {
-                    GameObject label = Instantiate(BE2_Inspector.Instance.LabelTextTemplate, Vector3.zero, Quaternion.identity,
-                                                    instantiatedLayout.SectionsArray[0].Header.RectTransform);
-                    label.GetComponent<TMP_Text>().text = item.Transform.GetComponent<TMP_Text>().text;
-                }
-                else if (item is BE2_BlockSectionHeader_LocalVariable)
-                {
-                    GameObject input = Instantiate(BE2_Inspector.Instance.InputFieldTemplate, Vector3.zero, Quaternion.identity,
-                                                    instantiatedLayout.SectionsArray[0].Header.RectTransform);
-                    input.GetComponent<TMP_InputField>().text = "";//item.Transform.GetComponent<TMP_InputField>().text;
-                }
-
-                i++;
-            }
-
+            // RebuildHeaderItems()가 Initialize 안에서 이미 호출되므로 중복 생성 코드 제거
 
             instantiatedBlock.Drag.Transform.SetParent(_dragDropManager.DraggedObjectsTransform, true);
 
