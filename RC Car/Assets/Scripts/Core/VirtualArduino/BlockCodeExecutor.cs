@@ -187,6 +187,10 @@ public class BlockCodeExecutor : MonoBehaviour
                 ExecuteFunction(node);
                 break;
                 
+            case "analogRead":
+                ExecuteAnalogRead(node);
+                break;
+                
             default:
                 Debug.Log($"<color=gray>[3] ExecuteNode: Unknown type '{node.type}'</color>");
                 break;
@@ -265,10 +269,34 @@ public class BlockCodeExecutor : MonoBehaviour
     /// </summary>
     void ExecuteIfBlock(BlockNode node, bool hasElse)
     {
-        // conditionValue를 Boolean으로 변환
-        bool condition = ConvertToBoolean(node.conditionValue);
+        bool condition;
         
-        Debug.Log($"<color=magenta>[3] ExecuteNode: {node.type} conditionValue={node.conditionValue} → {condition}</color>");
+        // conditionSensorFunction이 있으면 센서 값을 읽어서 조건 판단
+        if (!string.IsNullOrEmpty(node.conditionSensorFunction))
+        {
+            if (arduino == null)
+            {
+                Debug.LogWarning("<color=red>[3] ExecuteIfBlock: arduino is NULL for sensor condition!</color>");
+                condition = false;
+            }
+            else
+            {
+                // 센서 값 읽기 (VirtualLineSensor.OnFunctionAnalogRead 호출)
+                float sensorValue = arduino.FunctionAnalogRead(node.conditionSensorFunction);
+                
+                // 센서 값과 conditionValue 비교
+                // sensorValue == conditionValue이면 true (예: 센서 1이고 conditionValue 1이면 true)
+                condition = Mathf.Approximately(sensorValue, node.conditionValue);
+                    
+                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} sensor={node.conditionSensorFunction}, sensorValue={sensorValue}, conditionValue={node.conditionValue} → {condition}</color>");
+            }
+        }
+        else
+        {
+            // 기존 로직: conditionValue를 Boolean으로 변환
+            condition = ConvertToBoolean(node.conditionValue);
+            Debug.Log($"<color=magenta>[3] ExecuteNode: {node.type} conditionValue={node.conditionValue} → {condition}</color>");
+        }
         
         if (condition)
         {
@@ -307,6 +335,36 @@ public class BlockCodeExecutor : MonoBehaviour
     bool ConvertToBoolean(float value)
     {
         return value > 0;
+    }
+    
+    /// <summary>
+    /// AnalogRead 블록 실행 (센서 읽기)
+    /// VirtualLineSensor.OnFunctionAnalogRead를 호출합니다.
+    /// </summary>
+    void ExecuteAnalogRead(BlockNode node)
+    {
+        if (arduino == null)
+        {
+            Debug.LogWarning("<color=red>[3] ExecuteAnalogRead: arduino is NULL!</color>");
+            return;
+        }
+        
+        if (string.IsNullOrEmpty(node.sensorFunction))
+        {
+            Debug.LogWarning("<color=red>[3] ExecuteAnalogRead: sensorFunction is empty!</color>");
+            return;
+        }
+        
+        // VirtualArduinoMicro.FunctionAnalogRead를 호출하여 센서 값 읽기
+        float sensorValue = arduino.FunctionAnalogRead(node.sensorFunction);
+        Debug.Log($"<color=cyan>[3] ExecuteAnalogRead: {node.sensorFunction} → {sensorValue}</color>");
+        
+        // targetVar가 있으면 변수에 저장
+        if (!string.IsNullOrEmpty(node.targetVar))
+        {
+            variables[node.targetVar] = sensorValue;
+            Debug.Log($"<color=cyan>[3] ExecuteAnalogRead: Stored in variable '{node.targetVar}' = {sensorValue}</color>");
+        }
     }
     
     /// <summary>
@@ -467,6 +525,9 @@ public class BlockCodeExecutor : MonoBehaviour
                     case "conditionVar": node.conditionVar = ParseString(json, ref idx); break;
                     case "conditionPin": node.conditionPin = (int)ParseFloat(json, ref idx); break;
                     case "conditionValue": node.conditionValue = ParseFloat(json, ref idx); break;
+                    case "conditionSensorFunction": node.conditionSensorFunction = ParseString(json, ref idx); break;
+                    case "sensorFunction": node.sensorFunction = ParseString(json, ref idx); break;
+                    case "targetVar": node.targetVar = ParseString(json, ref idx); break;
                     case "name": node.name = ParseString(json, ref idx); break;
                     case "args":
                         // args 배열 파싱
@@ -669,7 +730,10 @@ public class BlockCodeExecutor : MonoBehaviour
         public List<float> args;      // 함수 호출 시 전달할 인자들
         public string conditionVar;
         public int conditionPin;      // if/ifElse용 조건 핀
+        public string conditionSensorFunction; // if/ifElse용 센서 기반 조건 (예: "leftSensor")
         public float conditionValue;  // if/ifElse용 조건 값 (숫자)
+        public string sensorFunction; // analogRead용 센서 기능 이름
+        public string targetVar;      // analogRead 결과를 저장할 변수 이름
         public string setVarName;
         public float setVarValue;
         public List<BlockNode> body;

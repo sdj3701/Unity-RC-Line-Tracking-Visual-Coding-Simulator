@@ -299,6 +299,60 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
         }
     }
     
+    /// <summary>
+    /// 센서 기능 이름으로 AnalogRead 수행
+    /// VirtualLineSensor.OnFunctionAnalogRead를 호출합니다.
+    /// </summary>
+    /// <param name="sensorFunction">센서 기능 이름 (예: "leftSensor", "rightSensor")</param>
+    /// <returns>센서 읽기 값 (0 또는 1)</returns>
+    public float FunctionAnalogRead(string sensorFunction)
+    {
+        if (string.IsNullOrEmpty(sensorFunction))
+        {
+            Debug.LogWarning("[VirtualArduinoMicro] FunctionAnalogRead: sensorFunction is empty!");
+            return 0f;
+        }
+        
+        if (functionToPeripheral.TryGetValue(sensorFunction, out var peripheral))
+        {
+            var result = peripheral.OnFunctionAnalogRead(sensorFunction);
+            Debug.Log($"<color=cyan>[4] VirtualArduinoMicro.FunctionAnalogRead: {sensorFunction} → {result}</color>");
+            return result;
+        }
+        else
+        {
+            Debug.LogWarning($"<color=red>[4] FunctionAnalogRead: No peripheral for function '{sensorFunction}'</color>");
+            return 0f;
+        }
+    }
+    
+    /// <summary>
+    /// 센서 기능 이름으로 DigitalRead 수행
+    /// VirtualLineSensor.OnFunctionRead를 호출합니다.
+    /// </summary>
+    /// <param name="sensorFunction">센서 기능 이름 (예: "leftSensor", "rightSensor")</param>
+    /// <returns>true/false</returns>
+    public bool FunctionDigitalRead(string sensorFunction)
+    {
+        if (string.IsNullOrEmpty(sensorFunction))
+        {
+            Debug.LogWarning("[VirtualArduinoMicro] FunctionDigitalRead: sensorFunction is empty!");
+            return false;
+        }
+        
+        if (functionToPeripheral.TryGetValue(sensorFunction, out var peripheral))
+        {
+            var result = peripheral.OnFunctionRead(sensorFunction);
+            Debug.Log($"<color=cyan>[4] VirtualArduinoMicro.FunctionDigitalRead: {sensorFunction} → {result}</color>");
+            return result;
+        }
+        else
+        {
+            Debug.LogWarning($"<color=red>[4] FunctionDigitalRead: No peripheral for function '{sensorFunction}'</color>");
+            return false;
+        }
+    }
+    
     // // ============================================================
     // // 고수준 명령 (블록 코딩용)
     // // ============================================================

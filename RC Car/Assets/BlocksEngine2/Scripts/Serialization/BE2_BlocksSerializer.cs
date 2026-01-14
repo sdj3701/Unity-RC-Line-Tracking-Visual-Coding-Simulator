@@ -255,7 +255,6 @@ namespace MG_BlocksEngine2.Serializer
             }
 
             // === 2차 순회: DefineFunction 블록만 먼저 생성 ===
-            Debug.Log("[XMLToBlocksCode] === DefineFunction 블록 생성 시작 ===");
             foreach (string xmlBlock in xmlBlocks)
             {
                 BE2_SerializableBlock serializableBlock = XMLToSerializable(xmlBlock);
@@ -272,7 +271,6 @@ namespace MG_BlocksEngine2.Serializer
                     BE2_Ins_DefineFunction define = envBlock.Instruction as BE2_Ins_DefineFunction;
                     if (define != null && define.defineID == serializableBlock.defineID)
                     {
-                        Debug.Log($"[XMLToBlocksCode] DefineFunction '{serializableBlock.defineID}' 이미 있음, 스킵");
                         alreadyExists = true;
                         break;
                     }
@@ -280,14 +278,11 @@ namespace MG_BlocksEngine2.Serializer
                 
                 if (!alreadyExists)
                 {
-                    Debug.Log($"[XMLToBlocksCode] DefineFunction 생성: {serializableBlock.defineID}");
                     SerializableToBlock(serializableBlock, targetProgrammingEnv);
                 }
             }
-            Debug.Log("[XMLToBlocksCode] === DefineFunction 블록 생성 완료 ===");
             
             // === 3차 순회: 나머지 블록 생성 (DefineFunction 제외) ===
-            Debug.Log("[XMLToBlocksCode] === 일반 블록 생성 시작 ===");
             foreach (string xmlBlock in xmlBlocks)
             {
                 BE2_SerializableBlock serializableBlock = XMLToSerializable(xmlBlock);
@@ -296,10 +291,8 @@ namespace MG_BlocksEngine2.Serializer
                 // DefineFunction 블록은 이미 처리됨, 스킵
                 if (serializableBlock.blockName == "Block Ins DefineFunction") continue;
                 
-                Debug.Log($"[XMLToBlocksCode] 블록 생성: {serializableBlock.blockName}");
                 SerializableToBlock(serializableBlock, targetProgrammingEnv);
             }
-            Debug.Log("[XMLToBlocksCode] === 일반 블록 생성 완료 ===");
         }
 
         // 재귀적으로 모든 중첩 블록에서 변수를 찾아 등록하는 헬퍼 함수
@@ -580,7 +573,6 @@ namespace MG_BlocksEngine2.Serializer
             BE2_Ins_DefineFunction defineFunctionInstruction = block.Instruction as BE2_Ins_DefineFunction;
             if (defineFunctionInstruction != null && !string.IsNullOrEmpty(serializableBlock.defineID))
             {
-                Debug.Log($"[SerializableToBlock] DefineFunction defineID 설정: {serializableBlock.defineID}");
                 defineFunctionInstruction.defineID = serializableBlock.defineID;
                 
                 // DefineFunction 헤더 아이템(label, variable) 복원
@@ -600,7 +592,6 @@ namespace MG_BlocksEngine2.Serializer
                                 Quaternion.identity,
                                 headerTransform);
                             labelDefine.GetComponentInChildren<TMP_Text>().text = item.value;
-                            Debug.Log($"[SerializableToBlock] DefineFunction label 추가: {item.value}");
                         }
                         else if (item.type == "variable")
                         {
@@ -619,13 +610,11 @@ namespace MG_BlocksEngine2.Serializer
                             }
                             
                             inputDefine.GetComponentInChildren<TMP_Text>().text = variableName;
-                            Debug.Log($"[SerializableToBlock] DefineFunction variable 추가: {variableName}");
                         }
                     }
                     
                     // Selection Function 블록 생성 (함수 블록 패널에 추가)
                     BE2_FunctionBlocksManager.Instance.CreateSelectionFunction(serializableBlock.defineItems, defineFunctionInstruction);
-                    Debug.Log($"[SerializableToBlock] DefineFunction SelectionFunction 생성 완료");
                 }
             }
 
@@ -637,7 +626,6 @@ namespace MG_BlocksEngine2.Serializer
             BE2_Ins_FunctionBlock functionBlockInstruction = block.Instruction as BE2_Ins_FunctionBlock;
             if (functionBlockInstruction != null && !string.IsNullOrEmpty(serializableBlock.defineID))
             {
-                Debug.Log($"[SerializableToBlock] FunctionBlock 발견, defineID={serializableBlock.defineID}, 지연 초기화 코루틴 시작");
                 // 지연 초기화 코루틴 시작 (DefineFunction이 먼저 로드될 때까지 대기) - serializableBlock도 전달
                 string defineID = serializableBlock.defineID;
                 BE2_ExecutionManager.Instance.StartCoroutine(C_DelayedFunctionBlockInit(functionBlockInstruction, defineID, programmingEnv, serializableBlock));
@@ -664,14 +652,11 @@ namespace MG_BlocksEngine2.Serializer
         static IEnumerator C_DelayedFunctionBlockInit(BE2_Ins_FunctionBlock functionBlockInstruction, string defineID, I_BE2_ProgrammingEnv programmingEnv, BE2_SerializableBlock serializableBlock)
         {
             // 모든 블록 역직렬화가 완료될 때까지 대기
-            Debug.Log($"[C_DelayedFunctionBlockInit] 대기 시작: counterForEndOfDeserialization={counterForEndOfDeserialization}");
             yield return new WaitUntil(() => counterForEndOfDeserialization == 0);
             yield return new WaitForEndOfFrame();
-            Debug.Log($"[C_DelayedFunctionBlockInit] 대기 완료, DefineFunction '{defineID}' 검색 시작");
             
             // DefineFunction 찾기
             programmingEnv.UpdateBlocksList();
-            Debug.Log($"[C_DelayedFunctionBlockInit] BlocksList 개수: {programmingEnv.BlocksList.Count}");
             
             // BlocksList 내용 출력
             foreach (I_BE2_Block envBlock in programmingEnv.BlocksList)
@@ -700,7 +685,6 @@ namespace MG_BlocksEngine2.Serializer
             
             if (defineInstruction != null)
             {
-                Debug.Log($"[C_DelayedFunctionBlockInit] FunctionBlock '{defineID}' 초기화 시작");
                 
                 // serializableBlock에서 저장된 input 값 추출
                 List<string> savedInputValues = new List<string>();
@@ -709,14 +693,12 @@ namespace MG_BlocksEngine2.Serializer
                     foreach (var input in serializableBlock.sections[0].inputs)
                     {
                         savedInputValues.Add(input.value ?? "");
-                        Debug.Log($"[C_DelayedFunctionBlockInit] 저장된 input 값: {input.value}");
                     }
                 }
                 
                 functionBlockInstruction.Initialize(defineInstruction, savedInputValues);
                 yield return new WaitForEndOfFrame();
                 functionBlockInstruction.RebuildFunctionInstance();
-                Debug.Log($"[C_DelayedFunctionBlockInit] FunctionBlock '{defineID}' 초기화 완료");
             }
             else
             {

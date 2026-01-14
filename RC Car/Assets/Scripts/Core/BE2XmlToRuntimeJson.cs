@@ -22,6 +22,9 @@ public static class BE2XmlToRuntimeJson
 
     public static void Export(string xmlText)
     {
+        Debug.Log($"[BE2XmlToRuntimeJson] ========== Export START ==========");
+        Debug.Log($"[BE2XmlToRuntimeJson] XML length: {xmlText?.Length ?? 0}");
+        
         var jsonPath = Path.Combine(Application.persistentDataPath, "BlocksRuntime.json");
         
         // 초기화
@@ -30,6 +33,7 @@ public static class BE2XmlToRuntimeJson
         calledFunctionNames.Clear();
                 
         var chunks = xmlText.Split(new[] { "#" }, StringSplitOptions.RemoveEmptyEntries);
+        Debug.Log($"[BE2XmlToRuntimeJson] Total chunks: {chunks.Length}");
 
         // ============================================================
         // 1단계: 모든 청크를 파싱하여 함수 정의 수집 및 WhenPlayClicked 찾기
@@ -76,13 +80,11 @@ public static class BE2XmlToRuntimeJson
                     blockName != "Block Ins WhenPlayClicked" && blockName != "Block Cst WhenPlayClicked")
                 {
                     var defineID = doc.Root?.Element("defineID")?.Value?.Trim();
-                    Debug.Log($"[BE2XmlToRuntimeJson] Block '{blockName}' has defineID='{defineID}', checking if it's a function definition...");
                     
                     // defineID가 있는 블록을 함수 정의 후보로 처리
                     if (!string.IsNullOrEmpty(defineID) && !IsNumericOnly(defineID))
                     {
                         functionDefinitions[defineID] = doc.Root;
-                        Debug.Log($"[BE2XmlToRuntimeJson] Found function definition from defineID: {defineID}");
                     }
                 }
             }
@@ -93,7 +95,6 @@ public static class BE2XmlToRuntimeJson
                 if (!string.IsNullOrEmpty(funcName))
                 {
                     functionDefinitions[funcName] = doc.Root;
-                    Debug.Log($"[BE2XmlToRuntimeJson] Found function definition: {funcName}");
                 }
                 else
                 {
@@ -104,20 +105,17 @@ public static class BE2XmlToRuntimeJson
             else if (blockName == "Block Ins WhenPlayClicked" || blockName == "Block Cst WhenPlayClicked")
             {
                 mainTriggerBlock = doc.Root;
-                Debug.Log($"[BE2XmlToRuntimeJson] Found main trigger block: {blockName}");
             }
         }
         
         if (mainTriggerBlock == null)
         {
-            Debug.LogWarning("[BE2XmlToRuntimeJson] WhenPlayClicked block not found! No blocks will be exported.");
             // 빈 JSON 생성
             var emptyJson = BuildJson(new List<VariableNode>(), new List<LoopBlockNode>(), new List<FunctionNode>());
             File.WriteAllText(jsonPath, emptyJson);
             return;
         }
         
-        Debug.Log($"[BE2XmlToRuntimeJson] Total function definitions found: {functionDefinitions.Count}");
                 
         // ============================================================
         // 2단계: WhenPlayClicked과 연결된 변수 정의 처리
@@ -135,10 +133,7 @@ public static class BE2XmlToRuntimeJson
         // ============================================================
         var loopBlocks = new List<LoopBlockNode>();
         ProcessLoopBlocks(mainTriggerBlock, loopBlocks);
-        
-        Debug.Log($"[BE2XmlToRuntimeJson] Loop blocks: {loopBlocks.Count}");
-        Debug.Log($"[BE2XmlToRuntimeJson] Called functions: {string.Join(", ", calledFunctionNames)}");
-        
+                
         // ============================================================
         // 4단계: 호출된 함수만 파싱하여 functions 배열 구성
         // ============================================================
@@ -151,7 +146,6 @@ public static class BE2XmlToRuntimeJson
                 if (funcNode != null)
                 {
                     functionNodes.Add(funcNode);
-                    Debug.Log($"[BE2XmlToRuntimeJson] Added function to JSON: {funcName}");
                 }
             }
             else
@@ -163,9 +157,6 @@ public static class BE2XmlToRuntimeJson
         // JSON 빌드
         var json = BuildJson(initBlocks, loopBlocks, functionNodes);
         File.WriteAllText(jsonPath, json);
-        
-        Debug.Log($"[BE2XmlToRuntimeJson] Exported to: {jsonPath}");
-        Debug.Log($"[BE2XmlToRuntimeJson] JSON content:\n{json}");
     }
     
     /// <summary>
@@ -173,14 +164,11 @@ public static class BE2XmlToRuntimeJson
     /// </summary>
     static string ExtractFunctionName(XElement funcBlock)
     {
-        // 디버그: 블록 내용 출력
-        Debug.Log($"[ExtractFunctionName] Block XML: {funcBlock.ToString().Substring(0, Math.Min(600, funcBlock.ToString().Length))}...");
         
         // 1. defineID에서 함수 이름 찾기 (가장 신뢰할 수 있음)
         var defineId = funcBlock.Element("defineID")?.Value?.Trim();
         if (!string.IsNullOrEmpty(defineId) && !IsNumericOnly(defineId))
         {
-            Debug.Log($"[ExtractFunctionName] Found name from defineID: {defineId}");
             return defineId;
         }
         
@@ -198,7 +186,6 @@ public static class BE2XmlToRuntimeJson
                         var inputDefineId = input.Element("defineID")?.Value?.Trim();
                         if (!string.IsNullOrEmpty(inputDefineId) && !IsNumericOnly(inputDefineId))
                         {
-                            Debug.Log($"[ExtractFunctionName] Found name from section defineID: {inputDefineId}");
                             return inputDefineId;
                         }
                     }
@@ -216,7 +203,6 @@ public static class BE2XmlToRuntimeJson
                 var inputDefineId = input.Element("defineID")?.Value?.Trim();
                 if (!string.IsNullOrEmpty(inputDefineId) && !IsNumericOnly(inputDefineId))
                 {
-                    Debug.Log($"[ExtractFunctionName] Found name from headerInput defineID: {inputDefineId}");
                     return inputDefineId;
                 }
                 
@@ -224,7 +210,6 @@ public static class BE2XmlToRuntimeJson
                 var nameValue = input.Element("value")?.Value?.Trim();
                 if (!string.IsNullOrEmpty(nameValue) && !IsNumericOnly(nameValue))
                 {
-                    Debug.Log($"[ExtractFunctionName] Found name from headerInput value: {nameValue}");
                     return nameValue;
                 }
             }
@@ -237,12 +222,9 @@ public static class BE2XmlToRuntimeJson
             var val = did.Value?.Trim();
             if (!string.IsNullOrEmpty(val) && !IsNumericOnly(val))
             {
-                Debug.Log($"[ExtractFunctionName] Found name from descendants defineID: {val}");
                 return val;
             }
         }
-        
-        Debug.LogWarning($"[ExtractFunctionName] Could not extract function name!");
         return null;
     }
     
@@ -271,7 +253,6 @@ public static class BE2XmlToRuntimeJson
                 if (itemType == "variable" && !string.IsNullOrEmpty(itemValue))
                 {
                     funcNode.parameters.Add(itemValue);
-                    Debug.Log($"[ParseFunctionDefinition] Found parameter from defineItems: {itemValue}");
                 }
             }
         }
@@ -289,7 +270,6 @@ public static class BE2XmlToRuntimeJson
                     if (!string.IsNullOrEmpty(paramName) && !IsNumericOnly(paramName) && paramName != name)
                     {
                         funcNode.parameters.Add(paramName);
-                        Debug.Log($"[ParseFunctionDefinition] Found parameter: {paramName}");
                     }
                 }
             }
@@ -314,7 +294,6 @@ public static class BE2XmlToRuntimeJson
                             if (!funcNode.parameters.Contains(paramName))
                             {
                                 funcNode.parameters.Add(paramName);
-                                Debug.Log($"[ParseFunctionDefinition] Found parameter from section: {paramName}");
                             }
                         }
                     }
@@ -340,10 +319,7 @@ public static class BE2XmlToRuntimeJson
             {
                 ProcessLoopBlocksRecursive(child, funcNode.body);
             }
-        }
-        
-        Debug.Log($"[ParseFunctionDefinition] Function '{name}' has {funcNode.parameters.Count} parameters: [{string.Join(", ", funcNode.parameters)}]");
-        
+        }      
         return funcNode;
     }
     
@@ -506,6 +482,7 @@ public static class BE2XmlToRuntimeJson
     static LoopBlockNode ParseBlockToLoopNode(XElement block)
     {
         var name = block.Element("blockName")?.Value?.Trim();
+        Debug.Log($"[ParseBlockToLoopNode] Processing block: {name}");
         
         // PWM 블록
         if (name == "Block Cst Block_pWM")
@@ -532,7 +509,40 @@ public static class BE2XmlToRuntimeJson
             return ParseCallFunctionBlock(block);
         }
         
+        // Block_Read 블록 (센서 읽기)
+        if (name == "Block Cst Block_Read" || name == "Block Ins Block_Read")
+        {
+            return ParseBlockReadBlock(block);
+        }
+        
         return null;
+    }
+    
+    /// <summary>
+    /// Block_Read 블록 파싱 (센서 기능 읽기)
+    /// </summary>
+    static LoopBlockNode ParseBlockReadBlock(XElement block)
+    {
+        var node = new LoopBlockNode { type = "analogRead" };
+        
+        // headerInputs에서 센서 함수 이름 추출
+        var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
+        if (headerInputs != null && headerInputs.Count > 0)
+        {
+            // 첫 번째 입력: 센서 함수 이름 (예: "leftSensor", "rightSensor")
+            var funcNameInput = headerInputs[0];
+            node.sensorFunction = funcNameInput.Element("value")?.Value?.Trim();
+            
+            Debug.Log($"[ParseBlockReadBlock] Found sensor function: {node.sensorFunction}");
+        }
+        
+        // 변수에 저장할 이름 (있다면)
+        if (headerInputs != null && headerInputs.Count > 1)
+        {
+            node.targetVar = headerInputs[1].Element("value")?.Value?.Trim();
+        }
+        
+        return node;
     }
     
     /// <summary>
@@ -544,7 +554,6 @@ public static class BE2XmlToRuntimeJson
         node.args = new List<float>();  // 미리 초기화
         
         // 디버그: 블록 내용 출력
-        Debug.Log($"[ParseCallFunctionBlock] Block XML: {block.ToString().Substring(0, Math.Min(800, block.ToString().Length))}...");
         
         // 1. 먼저 defineID 찾기 (가장 신뢰할 수 있는 함수 이름 소스)
         var defineId = block.Descendants("defineID").FirstOrDefault()?.Value?.Trim();
@@ -552,7 +561,6 @@ public static class BE2XmlToRuntimeJson
         {
             node.functionName = defineId;
             calledFunctionNames.Add(defineId);
-            Debug.Log($"[ParseCallFunctionBlock] Found function call from defineID: {defineId}");
         }
         
         // 2. headerInputs에서 함수 이름 및 인자 찾기
@@ -569,7 +577,6 @@ public static class BE2XmlToRuntimeJson
                     {
                         node.functionName = inputDefineId;
                         calledFunctionNames.Add(inputDefineId);
-                        Debug.Log($"[ParseCallFunctionBlock] Found function call from headerInput defineID: {inputDefineId}");
                     }
                     continue; // defineID가 있는 input은 함수 이름이므로 args에 추가하지 않음
                 }
@@ -582,21 +589,18 @@ public static class BE2XmlToRuntimeJson
                     if (float.TryParse(valStr, out float argValue))
                     {
                         node.args.Add(argValue);
-                        Debug.Log($"[ParseCallFunctionBlock] Added argument from headerInputs: {argValue}");
                     }
                     // 숫자가 아닌 경우 함수 이름일 수 있음
                     else if (string.IsNullOrEmpty(node.functionName))
                     {
                         node.functionName = valStr;
                         calledFunctionNames.Add(valStr);
-                        Debug.Log($"[ParseCallFunctionBlock] Found function call from headerInputs value: {valStr}");
                     }
                     else
                     {
                         // 변수 이름일 수 있음 - 변수 값을 해석
                         var resolvedValue = ResolveFloat(valStr);
                         node.args.Add(resolvedValue);
-                        Debug.Log($"[ParseCallFunctionBlock] Added argument from headerInputs (resolved): {valStr} -> {resolvedValue}");
                     }
                 }
             }
@@ -624,23 +628,19 @@ public static class BE2XmlToRuntimeJson
                             if (float.TryParse(valStr, out float argValue))
                             {
                                 node.args.Add(argValue);
-                                Debug.Log($"[ParseCallFunctionBlock] Added argument from sections: {argValue}");
                             }
                             else
                             {
                                 // 변수 이름일 수 있음 - 변수 값을 해석
                                 var resolvedValue = ResolveFloat(valStr);
                                 node.args.Add(resolvedValue);
-                                Debug.Log($"[ParseCallFunctionBlock] Added argument from sections (resolved): {valStr} -> {resolvedValue}");
                             }
                         }
                     }
                 }
             }
         }
-        
-        Debug.Log($"[ParseCallFunctionBlock] Function '{node.functionName}' has {node.args.Count} arguments: [{string.Join(", ", node.args)}]");
-        
+                
         return node;
     }
     
@@ -697,16 +697,159 @@ public static class BE2XmlToRuntimeJson
     static LoopBlockNode ParseIfBlock(XElement block, string type)
     {
         var node = new LoopBlockNode { type = type };
+        Debug.Log($"[ParseIfBlock] ========== Parsing {type} block ==========");
         
-        // 1. headerInputs에서 conditionPin 추출 (digitalRead 블록)
+        // 1. headerInputs에서 조건 추출 (digitalRead 또는 Block_Read 블록)
         var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
+        Debug.Log($"[ParseIfBlock] headerInputs count: {headerInputs?.Count ?? 0}");
+        
+        XElement opBlock = null;
+        
         if (headerInputs != null && headerInputs.Count > 0)
         {
-            var opBlock = headerInputs[0].Element("operation")?.Element("Block");
-            if (opBlock != null)
+            // 첫 번째 Input의 전체 구조 출력
+            var firstInput = headerInputs[0];
+            Debug.Log($"[ParseIfBlock] First input XML:\n{firstInput.ToString().Substring(0, Math.Min(800, firstInput.ToString().Length))}...");
+            
+            // isOperation 확인
+            var isOperation = firstInput.Element("isOperation")?.Value?.Trim()?.ToLower() == "true";
+            Debug.Log($"[ParseIfBlock] isOperation: {isOperation}");
+            
+            if (isOperation)
             {
-                var opName = opBlock.Element("blockName")?.Value?.Trim();
-                if (opName != null && opName.Contains("digitalRead"))
+                opBlock = firstInput.Element("operation")?.Element("Block");
+            }
+        }
+        
+        // headerInputs에서 못 찾았으면 sections/inputs에서 isOperation=true인 Input 찾기
+        if (opBlock == null)
+        {
+            var sectionInputs = block.Element("sections")?.Descendants("Input").ToList();
+            if (sectionInputs != null)
+            {
+                foreach (var input in sectionInputs)
+                {
+                    var isOp = input.Element("isOperation")?.Value?.Trim()?.ToLower() == "true";
+                    if (isOp)
+                    {
+                        opBlock = input.Element("operation")?.Element("Block");
+                        if (opBlock != null)
+                        {
+                            Debug.Log($"[ParseIfBlock] Found opBlock in sections/inputs");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        Debug.Log($"[ParseIfBlock] opBlock found: {opBlock != null}");
+        
+        if (opBlock != null)
+        {
+            var opName = opBlock.Element("blockName")?.Value?.Trim();
+            Debug.Log($"[ParseIfBlock] opBlock name: '{opName}'");
+                
+                // Block_Read (센서 읽기) 블록 처리
+                if (opName != null && (opName.Contains("Block_Read") || opName.Contains("Block Cst Block_Read") || opName.Contains("Block Ins Block_Read")))
+                {
+                    Debug.Log($"[ParseIfBlock] Found Block_Read operation block. XML structure:\n{opBlock.ToString().Substring(0, Math.Min(500, opBlock.ToString().Length))}...");
+                    
+                    // Block_Read 내부의 operation/Block에서 센서 변수 찾기
+                    var innerOpBlocks = opBlock.Descendants("operation")
+                        .SelectMany(op => op.Elements("Block"))
+                        .ToList();
+                    Debug.Log($"[ParseIfBlock] Inner operation blocks count: {innerOpBlocks.Count}");
+                    
+                    foreach (var innerBlock in innerOpBlocks)
+                    {
+                        var innerBlockName = innerBlock.Element("blockName")?.Value?.Trim();
+                        Debug.Log($"[ParseIfBlock] Inner block name: '{innerBlockName}'");
+                        
+                        if (innerBlockName != null && (innerBlockName.Contains("Variable") || innerBlockName.Contains("Op Variable")))
+                        {
+                            var sensorVarName = innerBlock.Element("varName")?.Value?.Trim();
+                            Debug.Log($"[ParseIfBlock] Found sensor variable: '{sensorVarName}'");
+                            
+                            if (!string.IsNullOrEmpty(sensorVarName))
+                            {
+                                // sensor_left -> leftSensor, sensor_right -> rightSensor 변환
+                                if (sensorVarName.Contains("sensor"))
+                                {
+                                    if (sensorVarName.Contains("left"))
+                                        node.conditionSensorFunction = "leftSensor";
+                                    else if (sensorVarName.Contains("right"))
+                                        node.conditionSensorFunction = "rightSensor";
+                                    else
+                                        node.conditionSensorFunction = sensorVarName;
+                                }
+                                else
+                                {
+                                    node.conditionSensorFunction = sensorVarName;
+                                }
+                                Debug.Log($"[ParseIfBlock] Mapped to conditionSensorFunction: {node.conditionSensorFunction}");
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // 1. headerInputs에서 센서 함수 이름 추출 시도 (fallback)
+                    if (string.IsNullOrEmpty(node.conditionSensorFunction))
+                    {
+                        var readHeaderInputs = opBlock.Element("headerInputs")?.Elements("Input").ToList();
+                        if (readHeaderInputs != null && readHeaderInputs.Count > 0)
+                        {
+                            node.conditionSensorFunction = readHeaderInputs[0].Element("value")?.Value?.Trim();
+                            Debug.Log($"[ParseIfBlock] Found sensor from headerInputs: {node.conditionSensorFunction}");
+                        }
+                    }
+                    
+                    // 2. varName에서 검색 (fallback)
+                    if (string.IsNullOrEmpty(node.conditionSensorFunction))
+                    {
+                        var varName = opBlock.Element("varName")?.Value?.Trim();
+                        if (!string.IsNullOrEmpty(varName))
+                        {
+                            node.conditionSensorFunction = varName;
+                            Debug.Log($"[ParseIfBlock] Found sensor from varName: {node.conditionSensorFunction}");
+                        }
+                    }
+                    
+                    Debug.Log($"[ParseIfBlock] Final conditionSensorFunction: {node.conditionSensorFunction ?? "NULL"}");
+                }
+                // Block Op Variable (변수 참조 블록) 처리 - 센서 변수 참조
+                else if (opName != null && (opName.Contains("Block Op Variable") || opName.Contains("Op Variable")))
+                {
+                    // varName에서 변수 이름 추출
+                    var varName = opBlock.Element("varName")?.Value?.Trim();
+                    Debug.Log($"[ParseIfBlock] Found Block Op Variable. varName: '{varName}'");
+                    
+                    if (!string.IsNullOrEmpty(varName))
+                    {
+                        // sensor_left/sensor_right 같은 센서 변수인지 확인
+                        if (varName.Contains("sensor"))
+                        {
+                            // 변수 이름을 센서 함수 이름으로 변환
+                            // sensor_left -> leftSensor, sensor_right -> rightSensor
+                            if (varName.Contains("left"))
+                                node.conditionSensorFunction = "leftSensor";
+                            else if (varName.Contains("right"))
+                                node.conditionSensorFunction = "rightSensor";
+                            else
+                                node.conditionSensorFunction = varName; // 다른 센서 이름은 그대로 사용
+                                
+                            Debug.Log($"[ParseIfBlock] Mapped variable '{varName}' to sensor function: {node.conditionSensorFunction}");
+                        }
+                        else
+                        {
+                            // 센서 변수가 아닌 경우 일반 조건 변수로 처리
+                            node.conditionSensorFunction = varName;
+                            Debug.Log($"[ParseIfBlock] Using variable as condition: {varName}");
+                        }
+                    }
+                }
+                // digitalRead 블록 처리 (기존 로직)
+                else if (opName != null && opName.Contains("digitalRead"))
                 {
                     // digitalRead 블록에서 핀 추출
                     var pinVarName = opBlock.Element("varName")?.Value;
@@ -733,7 +876,6 @@ public static class BE2XmlToRuntimeJson
                         }
                     }
                 }
-            }
         }
         
         // 2. sections 처리 - body와 conditionValue 추출
@@ -776,9 +918,7 @@ public static class BE2XmlToRuntimeJson
     {
         var result = new List<LoopBlockNode>();
         var childBlocks = section.Element("childBlocks")?.Elements("Block");
-        
-        Debug.Log($"[ParseSectionBlocks] Section has childBlocks: {childBlocks != null}");
-        
+                
         if (childBlocks == null) 
         {
             Debug.Log($"[ParseSectionBlocks] No childBlocks found in section");
@@ -788,21 +928,17 @@ public static class BE2XmlToRuntimeJson
         foreach (var child in childBlocks)
         {
             var blockName = child.Element("blockName")?.Value?.Trim();
-            Debug.Log($"[ParseSectionBlocks] Processing child block: {blockName}");
             
             var node = ParseBlockToLoopNode(child);
             if (node != null)
             {
                 result.Add(node);
-                Debug.Log($"[ParseSectionBlocks] Added node of type: {node.type}");
             }
             else
             {
                 Debug.LogWarning($"[ParseSectionBlocks] Block '{blockName}' returned null - not recognized");
             }
         }
-        
-        Debug.Log($"[ParseSectionBlocks] Total blocks parsed: {result.Count}");
         return result;
     }
     
@@ -913,6 +1049,13 @@ public static class BE2XmlToRuntimeJson
                     parts.Add($"\"value\": {node.value}");
                 break;
             
+            case "analogRead":
+                if (!string.IsNullOrEmpty(node.sensorFunction))
+                    parts.Add($"\"sensorFunction\": \"{EscapeJson(node.sensorFunction)}\"");
+                if (!string.IsNullOrEmpty(node.targetVar))
+                    parts.Add($"\"targetVar\": \"{EscapeJson(node.targetVar)}\"");
+                break;
+            
             case "callFunction":
                 parts.Add($"\"functionName\": \"{EscapeJson(node.functionName)}\"");
                 // 함수 인자(args) 출력
@@ -925,7 +1068,11 @@ public static class BE2XmlToRuntimeJson
                 
             case "if":
             case "ifElse":
-                parts.Add($"\"conditionPin\": {node.conditionPin}");
+                // conditionSensorFunction이 있으면 센서 기반 조건, 아니면 핀 기반 조건
+                if (!string.IsNullOrEmpty(node.conditionSensorFunction))
+                    parts.Add($"\"conditionSensorFunction\": \"{EscapeJson(node.conditionSensorFunction)}\"");
+                else
+                    parts.Add($"\"conditionPin\": {node.conditionPin}");
                 parts.Add($"\"conditionValue\": {node.conditionValue}");
                 
                 // body
@@ -970,15 +1117,20 @@ public static class BE2XmlToRuntimeJson
     
     class LoopBlockNode
     {
-        public string type;        // "analogWrite", "if", "ifElse", "callFunction"
+        public string type;        // "analogWrite", "analogRead", "if", "ifElse", "callFunction"
         
         // For analogWrite
         public int pin;
         public float value;
         public string valueVar;
         
+        // For analogRead (센서 읽기)
+        public string sensorFunction;  // 센서 함수 이름 (예: "leftSensor", "rightSensor")
+        public string targetVar;       // 결과를 저장할 변수 이름
+        
         // For if/ifElse
         public int conditionPin;
+        public string conditionSensorFunction;  // 센서 기반 조건 (예: "leftSensor", "rightSensor")
         public int conditionValue;  // Section의 inputs에서 추출한 조건 값
         public List<LoopBlockNode> body;
         public List<LoopBlockNode> elseBody;
