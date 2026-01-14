@@ -39,7 +39,13 @@ namespace MG_BlocksEngine2.Block.Instruction
         {
             if (!_initialized)
             {
-                Initialize(defineInstruction);
+                // defineInstruction이 null이면 아직 초기화 시점이 아님
+                // C_DelayedFunctionBlockInit에서 나중에 Initialize가 호출됨
+                if (defineInstruction != null)
+                {
+                    Initialize(defineInstruction);
+                }
+                // defineInstruction이 null이면 여기서 아무것도 하지 않음 (정상적인 상황)
             }
             else
             {
@@ -63,20 +69,97 @@ namespace MG_BlocksEngine2.Block.Instruction
 
         [SerializeField]
         bool _initialized = false;
-        public void Initialize(BE2_Ins_DefineFunction defineInstruction)
+        public void Initialize(BE2_Ins_DefineFunction defineInstruction, List<string> savedInputValues = null)
         {
+            Debug.Log($"[FunctionBlock.Initialize] 시작 - defineInstruction: {(defineInstruction != null ? defineInstruction.defineID : "null")}, savedInputValues: {(savedInputValues != null ? savedInputValues.Count.ToString() : "null")}");
+            
             if (!defineInstruction)
+            {
+                Debug.LogWarning("[FunctionBlock.Initialize] defineInstruction이 null, 종료");
                 return;
+            }
 
+            // defineInstruction을 먼저 할당해야 RebuildFunctionInstance에서 사용 가능
+            this.defineInstruction = defineInstruction;
+            defineID = defineInstruction.defineID;
+            Debug.Log($"[FunctionBlock.Initialize] defineID 설정: {defineID}");
+            
+            // FunctionBlock 헤더 아이템 생성 (라벨과 인풋필드) - 저장된 값 전달
+            RebuildHeaderItems(savedInputValues);
+            
             RebuildFunctionInstance();
 
-            this.defineInstruction = defineInstruction;
             defineInstruction.onDefineChange.AddListener(RebuildFunctionInstance);
             BE2_MainEventsManager.Instance.StartListening(BE2EventTypesBlock.OnFunctionDefinitionRemoved, Remove);
 
-            defineID = defineInstruction.defineID;
-
             _initialized = true;
+            Debug.Log($"[FunctionBlock.Initialize] 완료 - _initialized: {_initialized}");
+        }
+        
+        /// <summary>
+        /// DefineFunction의 헤더 아이템을 복사하여 FunctionBlock 헤더에 생성
+        /// </summary>
+        /// <param name="savedInputValues">저장된 Input 값들 (역직렬화 시 사용)</param>
+        public void RebuildHeaderItems(List<string> savedInputValues = null)
+        {
+            if (defineInstruction == null || Block == null) return;
+            
+            I_BE2_BlockLayout instantiatedLayout = Block.Transform.GetComponent<I_BE2_BlockLayout>();
+            if (instantiatedLayout == null) return;
+            
+            Transform headerTransform = instantiatedLayout.SectionsArray[0].Header.RectTransform;
+            var defineHeader = defineInstruction.Block.Layout.SectionsArray[0].Header;
+            defineHeader.UpdateItemsArray();
+            
+            int i = 0;
+            int inputIndex = 0; // savedInputValues 인덱스
+            foreach (I_BE2_BlockSectionHeaderItem item in defineHeader.ItemsArray)
+            {
+                // 첫 번째 아이템(고정 라벨)은 스킵
+                if (i == 0)
+                {
+                    i++;
+                    continue;
+                }
+                
+                if (item is BE2_BlockSectionHeader_Label)
+                {
+                    GameObject label = Instantiate(
+                        MG_BlocksEngine2.EditorScript.BE2_Inspector.Instance.LabelTextTemplate, 
+                        Vector3.zero, 
+                        Quaternion.identity,
+                        headerTransform);
+                    label.GetComponent<TMP_Text>().text = item.Transform.GetComponent<TMP_Text>().text;
+                    Debug.Log($"[FunctionBlock.RebuildHeaderItems] Label 생성: {item.Transform.GetComponent<TMP_Text>().text}");
+                }
+                else if (item is BE2_BlockSectionHeader_LocalVariable)
+                {
+                    GameObject input = Instantiate(
+                        MG_BlocksEngine2.EditorScript.BE2_Inspector.Instance.InputFieldTemplate, 
+                        Vector3.zero, 
+                        Quaternion.identity,
+                        headerTransform);
+                    
+                    // 저장된 값이 있으면 설정
+                    string inputValue = "";
+                    if (savedInputValues != null && inputIndex < savedInputValues.Count)
+                    {
+                        inputValue = savedInputValues[inputIndex];
+                        Debug.Log($"[FunctionBlock.RebuildHeaderItems] Input 값 설정: {inputValue}");
+                    }
+                    input.GetComponent<TMP_InputField>().text = inputValue;
+                    
+                    inputIndex++;
+                    Debug.Log($"[FunctionBlock.RebuildHeaderItems] Input 생성");
+                }
+                
+                i++;
+            }
+            
+            // 헤더 레이아웃 업데이트
+            instantiatedLayout.SectionsArray[0].Header.UpdateItemsArray();
+            instantiatedLayout.SectionsArray[0].Header.UpdateInputsArray();
+            Debug.Log($"[FunctionBlock.RebuildHeaderItems] 헤더 아이템 생성 완료 - 총 {i-1}개, Input 값 {inputIndex}개");
         }
 
         void Remove(I_BE2_Block block)
@@ -94,6 +177,7 @@ namespace MG_BlocksEngine2.Block.Instruction
 
         public void RebuildFunctionInstance()
         {
+            Debug.Log($"[FunctionBlock.RebuildFunctionInstance] 시작 - defineInstruction: {(defineInstruction != null ? defineInstruction.defineID : "null")}");
             localVariables = new List<BE2_Op_FunctionLocalVariable>();
 
             StartCoroutine(C_RebuildFunctionInstance());
@@ -101,21 +185,40 @@ namespace MG_BlocksEngine2.Block.Instruction
 
         IEnumerator C_RebuildFunctionInstance()
         {
+            Debug.Log("[FunctionBlock.C_RebuildFunctionInstance] 코루틴 시작");
             yield return new WaitForEndOfFrame();
 
-            if (Block == null || Block.Layout == null) yield break;
+            if (Block == null || Block.Layout == null)
+            {
+                Debug.LogWarning("[FunctionBlock.C_RebuildFunctionInstance] Block 또는 Layout이 null, 종료");
+                yield break;
+            }
+            
+            if (defineInstruction == null)
+            {
+                Debug.LogWarning("[FunctionBlock.C_RebuildFunctionInstance] defineInstruction이 null, 종료");
+                yield break;
+            }
 
             I_BE2_BlockSectionBody body = Block.Layout.SectionsArray[0].Body;
+            Debug.Log($"[FunctionBlock.C_RebuildFunctionInstance] 기존 자식 블록 삭제 시작 - 개수: {body.ChildBlocksCount}");
             for (int i = body.ChildBlocksCount - 1; i >= 0; i--)
             {
                 if (body.ChildBlocksArray[i] as Object)
                     Destroy(body.ChildBlocksArray[i].Transform.gameObject);
             }
 
-            foreach (I_BE2_Block childBlock in defineInstruction.Block.Layout.SectionsArray[0].Body.ChildBlocksArray)
+            var defineBody = defineInstruction.Block.Layout.SectionsArray[0].Body;
+            int childCount = defineBody.ChildBlocksArray.Length;
+            Debug.Log($"[FunctionBlock.C_RebuildFunctionInstance] DefineFunction 자식 블록 복사 시작 - 개수: {childCount}");
+            
+            foreach (I_BE2_Block childBlock in defineBody.ChildBlocksArray)
             {
+                Debug.Log($"[FunctionBlock.C_RebuildFunctionInstance] 자식 블록 생성: {childBlock.Transform.name}");
                 InstantiateNoViewBlockRecursive(childBlock, Block.Layout.SectionsArray[0].Body.RectTransform);
             }
+            
+            Debug.Log("[FunctionBlock.C_RebuildFunctionInstance] 코루틴 완료");
         }
 
         public BE2_Ins_FunctionBlock mirrorFunction;

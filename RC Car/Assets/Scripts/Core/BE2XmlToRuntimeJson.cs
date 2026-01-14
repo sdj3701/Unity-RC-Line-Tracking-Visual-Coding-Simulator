@@ -555,32 +555,48 @@ public static class BE2XmlToRuntimeJson
             Debug.Log($"[ParseCallFunctionBlock] Found function call from defineID: {defineId}");
         }
         
-        // 2. headerInputs에서 함수 이름 찾기 (defineID를 못 찾은 경우)
-        if (string.IsNullOrEmpty(node.functionName))
+        // 2. headerInputs에서 함수 이름 및 인자 찾기
+        var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
+        if (headerInputs != null && headerInputs.Count > 0)
         {
-            var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
-            if (headerInputs != null && headerInputs.Count > 0)
+            foreach (var input in headerInputs)
             {
-                foreach (var input in headerInputs)
+                // defineID 먼저 확인 (함수 이름으로 사용)
+                var inputDefineId = input.Element("defineID")?.Value?.Trim();
+                if (!string.IsNullOrEmpty(inputDefineId) && !IsNumericOnly(inputDefineId))
                 {
-                    // defineID 먼저 확인
-                    var inputDefineId = input.Element("defineID")?.Value?.Trim();
-                    if (!string.IsNullOrEmpty(inputDefineId) && !IsNumericOnly(inputDefineId))
+                    if (string.IsNullOrEmpty(node.functionName))
                     {
                         node.functionName = inputDefineId;
                         calledFunctionNames.Add(inputDefineId);
                         Debug.Log($"[ParseCallFunctionBlock] Found function call from headerInput defineID: {inputDefineId}");
-                        break;
                     }
-                    
-                    // value 확인 (숫자만 있는 값은 스킵)
-                    var funcName = input.Element("value")?.Value?.Trim();
-                    if (!string.IsNullOrEmpty(funcName) && !IsNumericOnly(funcName))
+                    continue; // defineID가 있는 input은 함수 이름이므로 args에 추가하지 않음
+                }
+                
+                // value 확인
+                var valStr = input.Element("value")?.Value?.Trim();
+                if (!string.IsNullOrEmpty(valStr))
+                {
+                    // 숫자인 경우 args에 추가
+                    if (float.TryParse(valStr, out float argValue))
                     {
-                        node.functionName = funcName;
-                        calledFunctionNames.Add(funcName);
-                        Debug.Log($"[ParseCallFunctionBlock] Found function call from headerInputs value: {funcName}");
-                        break;
+                        node.args.Add(argValue);
+                        Debug.Log($"[ParseCallFunctionBlock] Added argument from headerInputs: {argValue}");
+                    }
+                    // 숫자가 아닌 경우 함수 이름일 수 있음
+                    else if (string.IsNullOrEmpty(node.functionName))
+                    {
+                        node.functionName = valStr;
+                        calledFunctionNames.Add(valStr);
+                        Debug.Log($"[ParseCallFunctionBlock] Found function call from headerInputs value: {valStr}");
+                    }
+                    else
+                    {
+                        // 변수 이름일 수 있음 - 변수 값을 해석
+                        var resolvedValue = ResolveFloat(valStr);
+                        node.args.Add(resolvedValue);
+                        Debug.Log($"[ParseCallFunctionBlock] Added argument from headerInputs (resolved): {valStr} -> {resolvedValue}");
                     }
                 }
             }
@@ -591,7 +607,7 @@ public static class BE2XmlToRuntimeJson
             Debug.LogWarning($"[ParseCallFunctionBlock] Could not extract function name from block!");
         }
         
-        // 3. 함수 인자(arguments) 추출 - sections 내부의 inputs에서
+        // 3. sections 내부의 inputs에서 추가 인자 추출
         var argSections = block.Element("sections")?.Elements("Section");
         if (argSections != null)
         {
@@ -608,14 +624,14 @@ public static class BE2XmlToRuntimeJson
                             if (float.TryParse(valStr, out float argValue))
                             {
                                 node.args.Add(argValue);
-                                Debug.Log($"[ParseCallFunctionBlock] Added argument: {argValue}");
+                                Debug.Log($"[ParseCallFunctionBlock] Added argument from sections: {argValue}");
                             }
                             else
                             {
                                 // 변수 이름일 수 있음 - 변수 값을 해석
                                 var resolvedValue = ResolveFloat(valStr);
                                 node.args.Add(resolvedValue);
-                                Debug.Log($"[ParseCallFunctionBlock] Added argument (resolved): {valStr} -> {resolvedValue}");
+                                Debug.Log($"[ParseCallFunctionBlock] Added argument from sections (resolved): {valStr} -> {resolvedValue}");
                             }
                         }
                     }
@@ -623,7 +639,7 @@ public static class BE2XmlToRuntimeJson
             }
         }
         
-        Debug.Log($"[ParseCallFunctionBlock] Function '{node.functionName}' has {node.args.Count} arguments");
+        Debug.Log($"[ParseCallFunctionBlock] Function '{node.functionName}' has {node.args.Count} arguments: [{string.Join(", ", node.args)}]");
         
         return node;
     }
