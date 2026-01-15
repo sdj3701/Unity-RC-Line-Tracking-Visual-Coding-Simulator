@@ -22,8 +22,6 @@ public static class BE2XmlToRuntimeJson
 
     public static void Export(string xmlText)
     {
-        Debug.Log($"[BE2XmlToRuntimeJson] ========== Export START ==========");
-        Debug.Log($"[BE2XmlToRuntimeJson] XML length: {xmlText?.Length ?? 0}");
         
         var jsonPath = Path.Combine(Application.persistentDataPath, "BlocksRuntime.json");
         
@@ -33,7 +31,6 @@ public static class BE2XmlToRuntimeJson
         calledFunctionNames.Clear();
                 
         var chunks = xmlText.Split(new[] { "#" }, StringSplitOptions.RemoveEmptyEntries);
-        Debug.Log($"[BE2XmlToRuntimeJson] Total chunks: {chunks.Length}");
 
         // ============================================================
         // 1단계: 모든 청크를 파싱하여 함수 정의 수집 및 WhenPlayClicked 찾기
@@ -58,8 +55,6 @@ public static class BE2XmlToRuntimeJson
 
             var blockName = doc.Root?.Element("blockName")?.Value?.Trim();
             
-            // 디버그: 모든 블록 이름 출력
-            Debug.Log($"[BE2XmlToRuntimeJson] Found block: {blockName}");
             
             // 함수 정의 블록 수집 (여러 가능한 이름 패턴)
             bool isFunctionDefinition = 
@@ -697,11 +692,9 @@ public static class BE2XmlToRuntimeJson
     static LoopBlockNode ParseIfBlock(XElement block, string type)
     {
         var node = new LoopBlockNode { type = type };
-        Debug.Log($"[ParseIfBlock] ========== Parsing {type} block ==========");
         
         // 1. headerInputs에서 조건 추출 (digitalRead 또는 Block_Read 블록)
         var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
-        Debug.Log($"[ParseIfBlock] headerInputs count: {headerInputs?.Count ?? 0}");
         
         XElement opBlock = null;
         
@@ -709,11 +702,9 @@ public static class BE2XmlToRuntimeJson
         {
             // 첫 번째 Input의 전체 구조 출력
             var firstInput = headerInputs[0];
-            Debug.Log($"[ParseIfBlock] First input XML:\n{firstInput.ToString().Substring(0, Math.Min(800, firstInput.ToString().Length))}...");
             
             // isOperation 확인
             var isOperation = firstInput.Element("isOperation")?.Value?.Trim()?.ToLower() == "true";
-            Debug.Log($"[ParseIfBlock] isOperation: {isOperation}");
             
             if (isOperation)
             {
@@ -735,41 +726,33 @@ public static class BE2XmlToRuntimeJson
                         opBlock = input.Element("operation")?.Element("Block");
                         if (opBlock != null)
                         {
-                            Debug.Log($"[ParseIfBlock] Found opBlock in sections/inputs");
                             break;
                         }
                     }
                 }
             }
         }
-        
-        Debug.Log($"[ParseIfBlock] opBlock found: {opBlock != null}");
-        
+                
         if (opBlock != null)
         {
             var opName = opBlock.Element("blockName")?.Value?.Trim();
-            Debug.Log($"[ParseIfBlock] opBlock name: '{opName}'");
                 
                 // Block_Read (센서 읽기) 블록 처리
                 if (opName != null && (opName.Contains("Block_Read") || opName.Contains("Block Cst Block_Read") || opName.Contains("Block Ins Block_Read")))
                 {
-                    Debug.Log($"[ParseIfBlock] Found Block_Read operation block. XML structure:\n{opBlock.ToString().Substring(0, Math.Min(500, opBlock.ToString().Length))}...");
                     
                     // Block_Read 내부의 operation/Block에서 센서 변수 찾기
                     var innerOpBlocks = opBlock.Descendants("operation")
                         .SelectMany(op => op.Elements("Block"))
                         .ToList();
-                    Debug.Log($"[ParseIfBlock] Inner operation blocks count: {innerOpBlocks.Count}");
                     
                     foreach (var innerBlock in innerOpBlocks)
                     {
                         var innerBlockName = innerBlock.Element("blockName")?.Value?.Trim();
-                        Debug.Log($"[ParseIfBlock] Inner block name: '{innerBlockName}'");
                         
                         if (innerBlockName != null && (innerBlockName.Contains("Variable") || innerBlockName.Contains("Op Variable")))
                         {
                             var sensorVarName = innerBlock.Element("varName")?.Value?.Trim();
-                            Debug.Log($"[ParseIfBlock] Found sensor variable: '{sensorVarName}'");
                             
                             if (!string.IsNullOrEmpty(sensorVarName))
                             {
@@ -787,7 +770,6 @@ public static class BE2XmlToRuntimeJson
                                 {
                                     node.conditionSensorFunction = sensorVarName;
                                 }
-                                Debug.Log($"[ParseIfBlock] Mapped to conditionSensorFunction: {node.conditionSensorFunction}");
                                 break;
                             }
                         }
@@ -800,7 +782,6 @@ public static class BE2XmlToRuntimeJson
                         if (readHeaderInputs != null && readHeaderInputs.Count > 0)
                         {
                             node.conditionSensorFunction = readHeaderInputs[0].Element("value")?.Value?.Trim();
-                            Debug.Log($"[ParseIfBlock] Found sensor from headerInputs: {node.conditionSensorFunction}");
                         }
                     }
                     
@@ -811,18 +792,15 @@ public static class BE2XmlToRuntimeJson
                         if (!string.IsNullOrEmpty(varName))
                         {
                             node.conditionSensorFunction = varName;
-                            Debug.Log($"[ParseIfBlock] Found sensor from varName: {node.conditionSensorFunction}");
                         }
                     }
                     
-                    Debug.Log($"[ParseIfBlock] Final conditionSensorFunction: {node.conditionSensorFunction ?? "NULL"}");
                 }
                 // Block Op Variable (변수 참조 블록) 처리 - 센서 변수 참조
                 else if (opName != null && (opName.Contains("Block Op Variable") || opName.Contains("Op Variable")))
                 {
                     // varName에서 변수 이름 추출
                     var varName = opBlock.Element("varName")?.Value?.Trim();
-                    Debug.Log($"[ParseIfBlock] Found Block Op Variable. varName: '{varName}'");
                     
                     if (!string.IsNullOrEmpty(varName))
                     {
@@ -838,13 +816,11 @@ public static class BE2XmlToRuntimeJson
                             else
                                 node.conditionSensorFunction = varName; // 다른 센서 이름은 그대로 사용
                                 
-                            Debug.Log($"[ParseIfBlock] Mapped variable '{varName}' to sensor function: {node.conditionSensorFunction}");
                         }
                         else
                         {
                             // 센서 변수가 아닌 경우 일반 조건 변수로 처리
                             node.conditionSensorFunction = varName;
-                            Debug.Log($"[ParseIfBlock] Using variable as condition: {varName}");
                         }
                     }
                 }
@@ -899,7 +875,6 @@ public static class BE2XmlToRuntimeJson
                     if (!string.IsNullOrEmpty(valueStr))
                     {
                         node.conditionValue = ResolveInt(valueStr);
-                        Debug.Log($"[ParseIfBlock] conditionValue extracted: {node.conditionValue}");
                     }
                 }
             }
@@ -921,7 +896,6 @@ public static class BE2XmlToRuntimeJson
                 
         if (childBlocks == null) 
         {
-            Debug.Log($"[ParseSectionBlocks] No childBlocks found in section");
             return result;
         }
         

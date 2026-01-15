@@ -324,7 +324,6 @@ namespace MG_BlocksEngine2.Serializer
             // 현재 블록이 변수 블록인지 확인 (Block Op Variable 등)
             if (!string.IsNullOrEmpty(serializableBlock.varManagerName))
             {
-                Debug.Log($"[RegisterVariablesRecursive] 변수 블록 발견: blockName={serializableBlock.blockName}, varName={serializableBlock.varName}, varManagerName={serializableBlock.varManagerName}");
                 
                 System.Type varManagerType = GetTypeFromAllAssemblies(serializableBlock.varManagerName);
                 if (varManagerType != null)
@@ -334,7 +333,6 @@ namespace MG_BlocksEngine2.Serializer
                     {
                         varManager.CreateAndAddVarToPanel(serializableBlock.varName);
                         varCount++;
-                        Debug.Log($"[RegisterVariablesRecursive] 변수 등록 성공: {serializableBlock.varName}");
                     }
                     else
                     {
@@ -361,7 +359,6 @@ namespace MG_BlocksEngine2.Serializer
                         if (!firstInput.isOperation && !string.IsNullOrEmpty(firstInput.value))
                         {
                             string varName = firstInput.value;
-                            Debug.Log($"[RegisterVariablesRecursive] SetVariable/ChangeVariable 블록에서 변수 발견: {varName}");
                             
                             // BE2_VariablesManager를 직접 찾아서 변수 등록
                             System.Type varManagerType = GetTypeFromAllAssemblies("MG_BlocksEngine2.Environment.BE2_VariablesManager");
@@ -372,7 +369,6 @@ namespace MG_BlocksEngine2.Serializer
                                 {
                                     varManager.CreateAndAddVarToPanel(varName);
                                     varCount++;
-                                    Debug.Log($"[RegisterVariablesRecursive] SetVariable/ChangeVariable 변수 등록 성공: {varName}");
                                 }
                             }
                         }
