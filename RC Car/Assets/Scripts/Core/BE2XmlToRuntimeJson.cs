@@ -603,7 +603,8 @@ public static class BE2XmlToRuntimeJson
     static LoopBlockNode ParseCallFunctionBlock(XElement block)
     {
         var node = new LoopBlockNode { type = "callFunction" };
-        node.args = new List<float>();  // 미리 초기화
+        node.args = new List<float>();      // 숫자 인자 리스트
+        node.argVars = new List<string>();  // 변수명 인자 리스트 (null이면 해당 인덱스는 args 사용)
         
         // 디버그: 블록 내용 출력
         
@@ -637,10 +638,11 @@ public static class BE2XmlToRuntimeJson
                 var valStr = input.Element("value")?.Value?.Trim();
                 if (!string.IsNullOrEmpty(valStr))
                 {
-                    // 숫자인 경우 args에 추가
+                    // 숫자인 경우 args에 추가, argVars에는 null
                     if (float.TryParse(valStr, out float argValue))
                     {
                         node.args.Add(argValue);
+                        node.argVars.Add(null);  // 숫자이므로 변수 참조 없음
                     }
                     // 숫자가 아닌 경우 함수 이름일 수 있음
                     else if (string.IsNullOrEmpty(node.functionName))
@@ -650,9 +652,10 @@ public static class BE2XmlToRuntimeJson
                     }
                     else
                     {
-                        // 변수 이름일 수 있음 - 변수 값을 해석
-                        var resolvedValue = ResolveFloat(valStr);
-                        node.args.Add(resolvedValue);
+                        // 변수 이름 - argVars에 저장하고 args에는 placeholder 0 추가
+                        node.args.Add(0);  // placeholder (런타임에 변수값으로 대체됨)
+                        node.argVars.Add(valStr);  // 변수명 저장
+                        Debug.Log($"[ParseCallFunctionBlock] Added argVar: {valStr}");
                     }
                 }
             }
@@ -674,18 +677,41 @@ public static class BE2XmlToRuntimeJson
                 {
                     foreach (var input in inputs)
                     {
+                        // isOperation이 true인 경우 operation 블록 내부의 varName 확인
+                        var isOperation = input.Element("isOperation")?.Value?.Trim();
+                        if (isOperation == "true")
+                        {
+                            // operation 블록 내부에서 varName 추출
+                            var opBlock = input.Element("operation")?.Element("Block");
+                            if (opBlock != null)
+                            {
+                                var varName = opBlock.Element("varName")?.Value?.Trim();
+                                if (!string.IsNullOrEmpty(varName))
+                                {
+                                    // 변수명을 argVars에 저장
+                                    node.args.Add(0);  // placeholder (런타임에 변수값으로 대체됨)
+                                    node.argVars.Add(varName);
+                                    Debug.Log($"[ParseCallFunctionBlock] Added argVar from operation: {varName}");
+                                    continue;
+                                }
+                            }
+                        }
+                        
+                        // isOperation이 false이거나 varName이 없는 경우 value 사용
                         var valStr = input.Element("value")?.Value?.Trim();
                         if (!string.IsNullOrEmpty(valStr))
                         {
                             if (float.TryParse(valStr, out float argValue))
                             {
                                 node.args.Add(argValue);
+                                node.argVars.Add(null);  // 숫자이므로 변수 참조 없음
                             }
                             else
                             {
-                                // 변수 이름일 수 있음 - 변수 값을 해석
-                                var resolvedValue = ResolveFloat(valStr);
-                                node.args.Add(resolvedValue);
+                                // 변수 이름 - argVars에 저장
+                                node.args.Add(0);  // placeholder
+                                node.argVars.Add(valStr);
+                                Debug.Log($"[ParseCallFunctionBlock] Added argVar from section: {valStr}");
                             }
                         }
                     }
@@ -1156,6 +1182,12 @@ public static class BE2XmlToRuntimeJson
                     var argsStr = string.Join(", ", node.args);
                     parts.Add($"\"args\": [{argsStr}]");
                 }
+                // 변수명 인자(argVars) 출력 - null이 아닌 항목이 있는 경우에만
+                if (node.argVars != null && node.argVars.Any(v => v != null))
+                {
+                    var argVarsStr = string.Join(", ", node.argVars.Select(v => v == null ? "null" : $"\"{EscapeJson(v)}\""));
+                    parts.Add($"\"argVars\": [{argVarsStr}]");
+                }
                 break;
                 
             case "if":
@@ -1236,7 +1268,8 @@ public static class BE2XmlToRuntimeJson
         
         // For callFunction
         public string functionName;
-        public List<float> args;  // 함수 호출 시 전달하는 인자들
+        public List<float> args;      // 함수 호출 시 전달하는 숫자 인자들
+        public List<string> argVars;  // 변수명 인자들 (null이면 해당 인덱스는 args 값 사용)
         
         // For setVariable
         public string setVarName;

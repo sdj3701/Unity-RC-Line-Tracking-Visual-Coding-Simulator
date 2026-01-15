@@ -240,13 +240,26 @@ public class BlockCodeExecutor : MonoBehaviour
         
         // args를 params 이름으로 매핑
         // params: ["s"], args: [150] → variables["s"] = 150
+        // argVars가 있으면 해당 인덱스는 변수값으로 해석
         if (callNode.args != null && funcDef.parameters != null)
         {
             int count = Math.Min(callNode.args.Count, funcDef.parameters.Count);
             for (int i = 0; i < count; i++)
             {
                 string paramName = funcDef.parameters[i];
-                float argValue = callNode.args[i];
+                float argValue;
+                
+                // argVars가 있고 해당 인덱스에 변수명이 있으면 변수값 조회
+                if (callNode.argVars != null && i < callNode.argVars.Count && !string.IsNullOrEmpty(callNode.argVars[i]))
+                {
+                    argValue = GetVariable(callNode.argVars[i], 0f);
+                    Debug.Log($"<color=yellow>[3] ExecuteFunction: Resolved argVar '{callNode.argVars[i]}' = {argValue}</color>");
+                }
+                else
+                {
+                    argValue = callNode.args[i];
+                }
+                
                 variables[paramName] = argValue;
                 Debug.Log($"<color=yellow>[3] ExecuteFunction: Set {paramName} = {argValue}</color>");
             }
@@ -543,6 +556,11 @@ public class BlockCodeExecutor : MonoBehaviour
                         while (idx < json.Length && json[idx] != '[') idx++;
                         if (idx < json.Length) node.args = ParseFloatArray(json, ref idx);
                         break;
+                    case "argVars":
+                        // argVars 배열 파싱 (변수명 또는 null)
+                        while (idx < json.Length && json[idx] != '[') idx++;
+                        if (idx < json.Length) node.argVars = ParseNullableStringArray(json, ref idx);
+                        break;
                     case "params":
                         // params 배열 파싱 (파라미터 이름 목록)
                         while (idx < json.Length && json[idx] != '[') idx++;
@@ -630,6 +648,35 @@ public class BlockCodeExecutor : MonoBehaviour
             if (c == '"')
             {
                 list.Add(ParseString(json, ref idx));
+            }
+            else
+            {
+                idx++;
+            }
+        }
+        return list;
+    }
+    
+    /// <summary>
+    /// null 또는 문자열을 포함하는 배열 파싱 (argVars용)
+    /// </summary>
+    List<string> ParseNullableStringArray(string json, ref int idx)
+    {
+        var list = new List<string>();
+        idx++; // skip '['
+        
+        while (idx < json.Length)
+        {
+            char c = json[idx];
+            if (c == ']') { idx++; break; }
+            if (c == '"')
+            {
+                list.Add(ParseString(json, ref idx));
+            }
+            else if (c == 'n' && idx + 3 < json.Length && json.Substring(idx, 4) == "null")
+            {
+                list.Add(null);
+                idx += 4; // skip "null"
             }
             else
             {
@@ -737,7 +784,8 @@ public class BlockCodeExecutor : MonoBehaviour
         public float value;
         public string valueVar;
         public string functionName;   // 함수 호출에서 호출할 함수 이름
-        public List<float> args;      // 함수 호출 시 전달할 인자들
+        public List<float> args;      // 함수 호출 시 전달할 숫자 인자들
+        public List<string> argVars;  // 변수명 인자들 (null이면 해당 인덱스는 args 값 사용)
         public string conditionVar;
         public int conditionPin;      // if/ifElse용 조건 핀
         public string conditionSensorFunction; // if/ifElse용 센서 기반 조건 (예: "leftSensor")
