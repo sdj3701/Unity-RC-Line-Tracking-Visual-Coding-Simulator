@@ -89,59 +89,50 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
     
     /// <summary>
     /// BlockCodeExecutor의 변수에서 핀 매핑 업데이트
+    /// 변수 이름이 아닌 변수 값(핀 번호)이 Default Pin과 일치하면 자동 맵핑
     /// </summary>
     public void UpdatePinMappingFromVariables()
     {
-        if (blockCodeExecutor == null)
-        {
-            Debug.LogWarning("[VirtualArduinoMicro] BlockCodeExecutor not found!");
-            SetupDefaultPinMapping();
-            return;
-        }
-        
         pinToFunction.Clear();
         
-        // 변수에서 핀 매핑 읽기
-        var variables = blockCodeExecutor.Variables;
-        
-        // 센서 핀
-        if (variables.TryGetValue("pin_sensor_left", out float leftSensor))
-            pinToFunction[(int)leftSensor] = "leftSensor";
-        else
-            pinToFunction[defaultLeftSensorPin] = "leftSensor";
-            
-        if (variables.TryGetValue("pin_sensor_right", out float rightSensor))
-            pinToFunction[(int)rightSensor] = "rightSensor";
-        else
-            pinToFunction[defaultRightSensorPin] = "rightSensor";
-        
-        // 모터 핀 (왼쪽)
-        if (variables.TryGetValue("pin_wheel_left_forward", out float leftF))
-            pinToFunction[(int)leftF] = "leftMotorF";
-        else
-            pinToFunction[defaultLeftMotorFPin] = "leftMotorF";
-            
-        if (variables.TryGetValue("pin_wheel_left_back", out float leftB))
-            pinToFunction[(int)leftB] = "leftMotorB";
-        else
-            pinToFunction[defaultLeftMotorBPin] = "leftMotorB";
-        
-        // 모터 핀 (오른쪽)
-        if (variables.TryGetValue("pin_wheel_right_forward", out float rightF))
-            pinToFunction[(int)rightF] = "rightMotorF";
-        else
-            pinToFunction[defaultRightMotorFPin] = "rightMotorF";
-            
-        if (variables.TryGetValue("pin_wheel_right_back", out float rightB))
-            pinToFunction[(int)rightB] = "rightMotorB";
-        else
-            pinToFunction[defaultRightMotorBPin] = "rightMotorB";
-        
-        Debug.Log($"[VirtualArduinoMicro] Pin mapping updated from variables:");
-        foreach (var kvp in pinToFunction)
+        // Default Pin → Function 맵핑 (고정, 하드웨어 구성과 일치)
+        var defaultPinToFunction = new Dictionary<int, string>()
         {
-            Debug.Log($"  Pin {kvp.Key} → {kvp.Value}");
+            { defaultLeftSensorPin, "leftSensor" },
+            { defaultRightSensorPin, "rightSensor" },
+            { defaultLeftMotorFPin, "leftMotorF" },
+            { defaultLeftMotorBPin, "leftMotorB" },
+            { defaultRightMotorFPin, "rightMotorF" },
+            { defaultRightMotorBPin, "rightMotorB" },
+        };
+        
+        // 변수를 순회하면서 값(핀 번호)이 Default Pin과 일치하면 맵핑
+        if (blockCodeExecutor != null && blockCodeExecutor.Variables != null)
+        {
+            foreach (var variable in blockCodeExecutor.Variables)
+            {
+                int pinNumber = (int)variable.Value;
+                
+                // 이 핀 번호가 Default Pin 중 하나와 일치하는지 확인
+                if (defaultPinToFunction.TryGetValue(pinNumber, out string function))
+                {
+                    pinToFunction[pinNumber] = function;
+                    Debug.Log($"[VirtualArduinoMicro] Mapped: {variable.Key}={pinNumber} → {function}");
+                }
+            }
         }
+        
+        // 매핑되지 않은 Default Pin은 기본값으로 설정 (fallback)
+        foreach (var kvp in defaultPinToFunction)
+        {
+            if (!pinToFunction.ContainsKey(kvp.Key))
+            {
+                pinToFunction[kvp.Key] = kvp.Value;
+                Debug.Log($"[VirtualArduinoMicro] Default: Pin {kvp.Key} → {kvp.Value}");
+            }
+        }
+        
+        Debug.Log($"[VirtualArduinoMicro] Pin mapping completed. Total: {pinToFunction.Count} pins");
     }
     
     void CollectPeripherals()

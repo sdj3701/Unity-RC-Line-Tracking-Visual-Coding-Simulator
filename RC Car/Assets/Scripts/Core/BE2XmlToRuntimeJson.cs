@@ -19,6 +19,40 @@ public static class BE2XmlToRuntimeJson
     
     // 실제로 호출된 함수 이름들
     private static HashSet<string> calledFunctionNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    
+    // ============================================================
+    // 블록 파서 등록 Dictionary (확장 용이)
+    // 새 블록 추가 시 여기에 한 줄만 추가하면 됩니다.
+    // ============================================================
+    private static readonly Dictionary<string, Func<XElement, LoopBlockNode>> blockParsers = 
+        new Dictionary<string, Func<XElement, LoopBlockNode>>(StringComparer.OrdinalIgnoreCase)
+    {
+        // PWM 블록
+        { "Block Cst Block_pWM", ParsePwmBlock },
+        { "Block Ins Block_pWM", ParsePwmBlock },
+        
+        // SetVariable 블록
+        { "Block Ins SetVariable", ParseSetVariableBlock },
+        { "Block Cst SetVariable", ParseSetVariableBlock },
+        
+        // If 블록
+        { "Block Ins If", block => ParseIfBlock(block, "if") },
+        { "Block Cst If", block => ParseIfBlock(block, "if") },
+        
+        // IfElse 블록
+        { "Block Ins IfElse", block => ParseIfBlock(block, "ifElse") },
+        { "Block Cst IfElse", block => ParseIfBlock(block, "ifElse") },
+        
+        // 함수 호출 블록
+        { "Block Ins CallFunction", ParseCallFunctionBlock },
+        { "Block Cst CallFunction", ParseCallFunctionBlock },
+        { "Block Ins FunctionBlock", ParseCallFunctionBlock },
+        { "Block Cst FunctionBlock", ParseCallFunctionBlock },
+        
+        // Block_Read 블록 (센서 읽기)
+        { "Block Cst Block_Read", ParseBlockReadBlock },
+        { "Block Ins Block_Read", ParseBlockReadBlock },
+    };
 
     public static void Export(string xmlText)
     {
@@ -472,45 +506,68 @@ public static class BE2XmlToRuntimeJson
     }
     
     /// <summary>
-    /// 단일 블록을 LoopBlockNode로 변환
+    /// 단일 블록을 LoopBlockNode로 변환 (Dictionary 기반)
+    /// 새 블록 타입 추가 시 상단의 blockParsers Dictionary에 등록하세요.
     /// </summary>
     static LoopBlockNode ParseBlockToLoopNode(XElement block)
     {
         var name = block.Element("blockName")?.Value?.Trim();
+        if (string.IsNullOrEmpty(name)) return null;
+        
         Debug.Log($"[ParseBlockToLoopNode] Processing block: {name}");
         
-        // PWM 블록
-        if (name == "Block Cst Block_pWM")
+        // Dictionary에서 파서 조회 (O(1) 성능)
+        if (blockParsers.TryGetValue(name, out var parser))
         {
-            return ParsePwmBlock(block);
+            return parser(block);
         }
         
-        // If 블록
-        if (name == "Block Cst If" || name == "Block Ins If")
-        {
-            return ParseIfBlock(block, "if");
-        }
-        
-        // IfElse 블록
-        if (name == "Block Cst IfElse" || name == "Block Ins IfElse")
-        {
-            return ParseIfBlock(block, "ifElse");
-        }
-        
-        // 함수 호출 블록
-        if (name == "Block Ins CallFunction" || name == "Block Cst CallFunction" ||
-            name == "Block Ins FunctionBlock" || name == "Block Cst FunctionBlock")
-        {
-            return ParseCallFunctionBlock(block);
-        }
-        
-        // Block_Read 블록 (센서 읽기)
-        if (name == "Block Cst Block_Read" || name == "Block Ins Block_Read")
-        {
-            return ParseBlockReadBlock(block);
-        }
-        
+        // 등록되지 않은 블록 타입은 null 반환
+        Debug.Log($"[ParseBlockToLoopNode] Unregistered block type: {name}");
         return null;
+    }
+    
+    /// <summary>
+    /// SetVariable 블록 파싱
+    /// </summary>
+    static LoopBlockNode ParseSetVariableBlock(XElement block)
+    {
+        var node = new LoopBlockNode { type = "setVariable" };
+        
+        // sections/Section/inputs에서 변수 이름과 값 추출
+        var inputs = block.Descendants("Input").ToList();
+        
+        if (inputs.Count >= 2)
+        {
+            // 첫 번째 Input: 변수 이름
+            node.setVarName = inputs[0].Element("value")?.Value?.Trim();
+            
+            // 두 번째 Input: 값
+            var valStr = inputs[1].Element("value")?.Value?.Trim();
+            if (!string.IsNullOrEmpty(valStr) && float.TryParse(valStr, out float parsedValue))
+            {
+                node.setVarValue = parsedValue;
+            }
+            
+            Debug.Log($"[ParseSetVariableBlock] {node.setVarName} = {node.setVarValue}");
+        }
+        else
+        {
+            // headerInputs에서 시도 (fallback)
+            var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
+            if (headerInputs != null && headerInputs.Count >= 2)
+            {
+                node.setVarName = headerInputs[0].Element("value")?.Value?.Trim();
+                var valStr = headerInputs[1].Element("value")?.Value?.Trim();
+                if (!string.IsNullOrEmpty(valStr) && float.TryParse(valStr, out float parsedValue))
+                {
+                    node.setVarValue = parsedValue;
+                }
+                Debug.Log($"[ParseSetVariableBlock] (from headerInputs) {node.setVarName} = {node.setVarValue}");
+            }
+        }
+        
+        return node;
     }
     
     /// <summary>
@@ -1070,6 +1127,12 @@ public static class BE2XmlToRuntimeJson
                     parts.Add($"\"elseBody\": [{string.Join(", ", elseParts)}]");
                 }
                 break;
+            
+            case "setVariable":
+                if (!string.IsNullOrEmpty(node.setVarName))
+                    parts.Add($"\"setVarName\": \"{EscapeJson(node.setVarName)}\"");
+                parts.Add($"\"setVarValue\": {node.setVarValue}");
+                break;
         }
         
         return $"{{ {string.Join(", ", parts)} }}";
@@ -1112,6 +1175,10 @@ public static class BE2XmlToRuntimeJson
         // For callFunction
         public string functionName;
         public List<float> args;  // 함수 호출 시 전달하는 인자들
+        
+        // For setVariable
+        public string setVarName;
+        public float setVarValue;
     }
     
     class FunctionNode
