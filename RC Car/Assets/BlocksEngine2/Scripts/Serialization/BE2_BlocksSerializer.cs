@@ -295,17 +295,38 @@ namespace MG_BlocksEngine2.Serializer
             }
         }
 
+        // 모든 로드된 어셈블리에서 타입을 검색하는 헬퍼 함수
+        private static System.Type GetTypeFromAllAssemblies(string typeName)
+        {
+            if (string.IsNullOrEmpty(typeName))
+                return null;
+                
+            // 먼저 기본 방법으로 시도
+            System.Type type = System.Type.GetType(typeName);
+            if (type != null) return type;
+            
+            // 모든 어셈블리에서 검색
+            foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                type = assembly.GetType(typeName);
+                if (type != null) return type;
+            }
+            
+            return null;
+        }
+
         // 재귀적으로 모든 중첩 블록에서 변수를 찾아 등록하는 헬퍼 함수
         private static void RegisterVariablesRecursive(BE2_SerializableBlock serializableBlock, ref int varCount)
         {
             if (serializableBlock == null)
                 return;
 
-            // 현재 블록이 변수 블록인지 확인
+            // 현재 블록이 변수 블록인지 확인 (Block Op Variable 등)
             if (!string.IsNullOrEmpty(serializableBlock.varManagerName))
             {
+                Debug.Log($"[RegisterVariablesRecursive] 변수 블록 발견: blockName={serializableBlock.blockName}, varName={serializableBlock.varName}, varManagerName={serializableBlock.varManagerName}");
                 
-                System.Type varManagerType = System.Type.GetType(serializableBlock.varManagerName);
+                System.Type varManagerType = GetTypeFromAllAssemblies(serializableBlock.varManagerName);
                 if (varManagerType != null)
                 {
                     I_BE2_VariablesManager varManager = MonoBehaviour.FindObjectOfType(varManagerType) as I_BE2_VariablesManager;
@@ -313,6 +334,48 @@ namespace MG_BlocksEngine2.Serializer
                     {
                         varManager.CreateAndAddVarToPanel(serializableBlock.varName);
                         varCount++;
+                        Debug.Log($"[RegisterVariablesRecursive] 변수 등록 성공: {serializableBlock.varName}");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[RegisterVariablesRecursive] VariablesManager를 찾을 수 없음: {varManagerType}");
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"[RegisterVariablesRecursive] 타입을 찾을 수 없음: {serializableBlock.varManagerName}");
+                }
+            }
+            
+            // SetVariable, ChangeVariable 블록의 첫 번째 input 값을 변수로 등록
+            // 이 블록들은 varManagerName이 비어있지만, 첫 번째 input이 변수명을 담고 있음
+            if (serializableBlock.blockName == "Block Ins SetVariable" || 
+                serializableBlock.blockName == "Block Ins ChangeVariable")
+            {
+                if (serializableBlock.sections != null && serializableBlock.sections.Count > 0)
+                {
+                    var firstSection = serializableBlock.sections[0];
+                    if (firstSection.inputs != null && firstSection.inputs.Count > 0)
+                    {
+                        var firstInput = firstSection.inputs[0];
+                        if (!firstInput.isOperation && !string.IsNullOrEmpty(firstInput.value))
+                        {
+                            string varName = firstInput.value;
+                            Debug.Log($"[RegisterVariablesRecursive] SetVariable/ChangeVariable 블록에서 변수 발견: {varName}");
+                            
+                            // BE2_VariablesManager를 직접 찾아서 변수 등록
+                            System.Type varManagerType = GetTypeFromAllAssemblies("MG_BlocksEngine2.Environment.BE2_VariablesManager");
+                            if (varManagerType != null)
+                            {
+                                I_BE2_VariablesManager varManager = MonoBehaviour.FindObjectOfType(varManagerType) as I_BE2_VariablesManager;
+                                if (varManager != null)
+                                {
+                                    varManager.CreateAndAddVarToPanel(varName);
+                                    varCount++;
+                                    Debug.Log($"[RegisterVariablesRecursive] SetVariable/ChangeVariable 변수 등록 성공: {varName}");
+                                }
+                            }
+                        }
                     }
                 }
             }
