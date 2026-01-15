@@ -714,32 +714,87 @@ public static class BE2XmlToRuntimeJson
     {
         var node = new LoopBlockNode { type = "analogWrite" };
         
-        var allInputs = block.Element("headerInputs")?.Elements("Input").ToList() 
-                       ?? block.Descendants("Input").ToList();
+        // headerInputs 또는 sections/Section/inputs에서 입력 가져오기
+        var allInputs = block.Element("headerInputs")?.Elements("Input").ToList();
         
-        // 핀 번호 (인덱스 1)
-        if (allInputs.Count >= 2)
+        // headerInputs가 없거나 비어있으면 sections/Section/inputs에서 가져오기
+        if (allInputs == null || allInputs.Count == 0)
         {
-            var pinInput = allInputs[1];
-            var pinVarName = pinInput.Descendants("varName").FirstOrDefault()?.Value;
-            if (!string.IsNullOrEmpty(pinVarName))
-                node.pin = ResolveInt(pinVarName);
-            else
-                node.pin = ResolveInt(pinInput.Element("value")?.Value);
+            allInputs = block.Element("sections")?.Element("Section")?.Element("inputs")?.Elements("Input").ToList();
         }
         
-        // 값 (인덱스 2)
-        if (allInputs.Count >= 3)
+        if (allInputs == null || allInputs.Count == 0)
         {
-            var valueInput = allInputs[2];
-            var directValue = valueInput.Element("value")?.Value;
-            if (!string.IsNullOrEmpty(directValue))
-                node.value = ResolveFloat(directValue);
-            else
+            Debug.LogWarning("[ParsePwmBlock] No inputs found in block");
+            return node;
+        }
+        
+        Debug.Log($"[ParsePwmBlock] Found {allInputs.Count} inputs");
+        
+        // Block_pWM 구조: 인덱스 0 = 핀, 인덱스 1 = 값
+        // 핀 번호 (인덱스 0)
+        if (allInputs.Count >= 1)
+        {
+            var pinInput = allInputs[0];
+            
+            // operation 내부의 Block에서 varName 확인 (변수 참조)
+            var pinOpBlock = pinInput.Element("operation")?.Element("Block");
+            if (pinOpBlock != null)
             {
-                var opBlock = valueInput.Element("operation")?.Element("Block");
-                if (opBlock != null)
-                    node.valueVar = opBlock.Element("varName")?.Value;
+                var pinVarName = pinOpBlock.Element("varName")?.Value?.Trim();
+                if (!string.IsNullOrEmpty(pinVarName))
+                {
+                    // pinVar로 처리 (변수 참조)
+                    node.pinVar = pinVarName;
+                    Debug.Log($"[ParsePwmBlock] Found pinVar: {pinVarName}");
+                }
+            }
+            
+            // pinVar가 설정되지 않았으면 직접 값 사용
+            if (string.IsNullOrEmpty(node.pinVar))
+            {
+                var pinVarName = pinInput.Descendants("varName").FirstOrDefault()?.Value?.Trim();
+                if (!string.IsNullOrEmpty(pinVarName))
+                {
+                    // 변수 이름으로 핀 참조 (예: pin_wheel_left_forward)
+                    node.pinVar = pinVarName;
+                    Debug.Log($"[ParsePwmBlock] Found pinVar (from descendants): {pinVarName}");
+                }
+                else
+                {
+                    // 직접 숫자 값 사용
+                    node.pin = ResolveInt(pinInput.Element("value")?.Value);
+                    Debug.Log($"[ParsePwmBlock] Found pin: {node.pin}");
+                }
+            }
+        }
+        
+        // 값 (인덱스 1)
+        if (allInputs.Count >= 2)
+        {
+            var valueInput = allInputs[1];
+            
+            // operation 내부의 Block에서 varName 확인 (변수 참조)
+            var valueOpBlock = valueInput.Element("operation")?.Element("Block");
+            if (valueOpBlock != null)
+            {
+                var valueVarName = valueOpBlock.Element("varName")?.Value?.Trim();
+                if (!string.IsNullOrEmpty(valueVarName))
+                {
+                    node.valueVar = valueVarName;
+                    Debug.Log($"[ParsePwmBlock] Found valueVar: {valueVarName}");
+                }
+            }
+            
+            // valueVar가 설정되지 않았으면 직접 값 사용
+            if (string.IsNullOrEmpty(node.valueVar))
+            {
+                var directValue = valueInput.Element("value")?.Value;
+                if (!string.IsNullOrEmpty(directValue))
+                {
+                    node.value = ResolveFloat(directValue);
+                    Debug.Log($"[ParsePwmBlock] Found value: {node.value}");
+                }
             }
         }
         
@@ -1073,7 +1128,13 @@ public static class BE2XmlToRuntimeJson
         switch (node.type)
         {
             case "analogWrite":
-                parts.Add($"\"pin\": {node.pin}");
+                // pinVar가 있으면 pinVar 출력, 없으면 pin 출력
+                if (!string.IsNullOrEmpty(node.pinVar))
+                    parts.Add($"\"pinVar\": \"{EscapeJson(node.pinVar)}\"");
+                else
+                    parts.Add($"\"pin\": {node.pin}");
+                
+                // valueVar가 있으면 valueVar 출력, 없으면 value 출력
                 if (!string.IsNullOrEmpty(node.valueVar))
                     parts.Add($"\"valueVar\": \"{EscapeJson(node.valueVar)}\"");
                 else
@@ -1158,8 +1219,9 @@ public static class BE2XmlToRuntimeJson
         
         // For analogWrite
         public int pin;
+        public string pinVar;       // 핀 변수 참조 (pinVar 우선, 없으면 pin 사용)
         public float value;
-        public string valueVar;
+        public string valueVar;     // 값 변수 참조 (valueVar 우선, 없으면 value 사용)
         
         // For analogRead (센서 읽기)
         public string sensorFunction;  // 센서 함수 이름 (예: "leftSensor", "rightSensor")

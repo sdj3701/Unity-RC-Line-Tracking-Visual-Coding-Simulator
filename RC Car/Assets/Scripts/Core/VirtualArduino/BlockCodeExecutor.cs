@@ -156,18 +156,26 @@ public class BlockCodeExecutor : MonoBehaviour
             case "analogWrite":
                 if (arduino != null)
                 {
-                    // 값이 변수 참조인 경우
+                    // 핀이 변수 참조인 경우 (pinVar 우선, 없으면 pin 사용)
+                    int targetPin = node.pin;
+                    if (!string.IsNullOrEmpty(node.pinVar))
+                    {
+                        targetPin = (int)GetVariable(node.pinVar, node.pin);
+                        Debug.Log($"<color=cyan>[3] ExecuteNode: analogWrite pinVar={node.pinVar} → pin={targetPin}</color>");
+                    }
+                    
+                    // 값이 변수 참조인 경우 (valueVar 우선, 없으면 value 사용)
                     float value = node.value;
                     if (!string.IsNullOrEmpty(node.valueVar))
                     {
                         value = GetVariable(node.valueVar, 0f);
-                        Debug.Log($"<color=cyan>[3] ExecuteNode: analogWrite pin={node.pin}, valueVar={node.valueVar} → {value}</color>");
+                        Debug.Log($"<color=cyan>[3] ExecuteNode: analogWrite pin={targetPin}, valueVar={node.valueVar} → {value}</color>");
                     }
                     else
                     {
-                        Debug.Log($"<color=cyan>[3] ExecuteNode: analogWrite pin={node.pin}, value={value}</color>");
+                        Debug.Log($"<color=cyan>[3] ExecuteNode: analogWrite pin={targetPin}, value={value}</color>");
                     }
-                    arduino.AnalogWrite(node.pin, value);
+                    arduino.AnalogWrite(targetPin, value);
                 }
                 else
                 {
@@ -519,6 +527,7 @@ public class BlockCodeExecutor : MonoBehaviour
                     case "setVarValue": node.setVarValue = ParseFloat(json, ref idx); break;
                     case "number": node.number = ParseFloat(json, ref idx); break;
                     case "pin": node.pin = (int)ParseFloat(json, ref idx); break;
+                    case "pinVar": node.pinVar = ParseString(json, ref idx); break;
                     case "value": node.value = ParseFloat(json, ref idx); break;
                     case "valueVar": node.valueVar = ParseString(json, ref idx); break;
                     case "functionName": node.functionName = ParseString(json, ref idx); break;
@@ -724,6 +733,7 @@ public class BlockCodeExecutor : MonoBehaviour
         public List<string> parameters;  // 함수 파라미터 이름 목록
         public float number;
         public int pin;
+        public string pinVar;     // 핀 변수 참조 (pinVar 우선, 없으면 pin 사용)
         public float value;
         public string valueVar;
         public string functionName;   // 함수 호출에서 호출할 함수 이름
