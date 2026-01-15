@@ -158,6 +158,15 @@ public static class BE2XmlToRuntimeJson
         }
         
         // ============================================================
+        // 2.5단계: 함수 정의 내의 변수들을 미리 수집 (ResolveFloat에서 사용)
+        // ============================================================
+        foreach (var kvp in functionDefinitions)
+        {
+            CollectVariablesFromFunctionDefinition(kvp.Value);
+        }
+        Debug.Log($"[BE2XmlToRuntimeJson] Collected {variables.Count} variables from functions");
+        
+        // ============================================================
         // 3단계: WhenPlayClicked과 연결된 Loop 블록 처리 (함수 호출 추적 포함)
         // ============================================================
         var loopBlocks = new List<LoopBlockNode>();
@@ -461,6 +470,44 @@ public static class BE2XmlToRuntimeJson
         }
     }
     
+    /// <summary>
+    /// 함수 정의 블록에서 변수들을 미리 수집 (ResolveFloat에서 사용하기 위해)
+    /// </summary>
+    static void CollectVariablesFromFunctionDefinition(XElement funcBlock)
+    {
+        // sections 내부의 childBlocks에서 SetVariable 블록 찾기
+        var sections = funcBlock.Element("sections")?.Elements("Section");
+        if (sections != null)
+        {
+            foreach (var section in sections)
+            {
+                var childBlocks = section.Element("childBlocks")?.Elements("Block");
+                if (childBlocks != null)
+                {
+                    foreach (var child in childBlocks)
+                    {
+                        var blockName = child.Element("blockName")?.Value?.Trim();
+                        if (blockName == "Block Ins SetVariable" || blockName == "Block Cst SetVariable")
+                        {
+                            var inputs = child.Descendants("Input").ToList();
+                            if (inputs.Count >= 2)
+                            {
+                                string varName = inputs[0].Element("value")?.Value?.Trim();
+                                string valStr = inputs[1].Element("value")?.Value?.Trim();
+                                
+                                if (!string.IsNullOrEmpty(varName) && float.TryParse(valStr, out float value))
+                                {
+                                    variables[varName] = value;
+                                    Debug.Log($"[CollectVariables] {varName} = {value}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     // ============================================================
     // Loop 블록 처리 (모든 블록을 재귀적으로 순회)
     // ============================================================
@@ -688,10 +735,11 @@ public static class BE2XmlToRuntimeJson
                                 var varName = opBlock.Element("varName")?.Value?.Trim();
                                 if (!string.IsNullOrEmpty(varName))
                                 {
-                                    // 변수명을 argVars에 저장
-                                    node.args.Add(0);  // placeholder (런타임에 변수값으로 대체됨)
+                                    // 변수값을 해석하여 args에 저장, argVars에도 변수명 저장
+                                    var resolvedValue = ResolveFloat(varName);
+                                    node.args.Add(resolvedValue);
                                     node.argVars.Add(varName);
-                                    Debug.Log($"[ParseCallFunctionBlock] Added argVar from operation: {varName}");
+                                    Debug.Log($"[ParseCallFunctionBlock] Added arg: {resolvedValue} (from var '{varName}')");
                                     continue;
                                 }
                             }
