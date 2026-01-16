@@ -4,6 +4,9 @@ using UnityEngine;
 
 using MG_BlocksEngine2.Core;
 using MG_BlocksEngine2.Utils;
+using MG_BlocksEngine2.Serializer;
+using MG_BlocksEngine2.DragDrop;
+using MG_BlocksEngine2.Environment;
 using TMPro;
 
 namespace MG_BlocksEngine2.Block.Instruction
@@ -69,7 +72,11 @@ namespace MG_BlocksEngine2.Block.Instruction
 
         [SerializeField]
         bool _initialized = false;
-        public void Initialize(BE2_Ins_DefineFunction defineInstruction, List<string> savedInputValues = null)
+        
+        // 프로그래밍 환경 참조 (Operation 블록 생성 시 필요)
+        private I_BE2_ProgrammingEnv _programmingEnv;
+        
+        public void Initialize(BE2_Ins_DefineFunction defineInstruction, List<BE2_SerializableInput> savedInputs = null, I_BE2_ProgrammingEnv programmingEnv = null)
         {
             
             if (!defineInstruction)
@@ -80,9 +87,10 @@ namespace MG_BlocksEngine2.Block.Instruction
             // defineInstruction을 먼저 할당해야 RebuildFunctionInstance에서 사용 가능
             this.defineInstruction = defineInstruction;
             defineID = defineInstruction.defineID;
+            _programmingEnv = programmingEnv;
             
-            // FunctionBlock 헤더 아이템 생성 (라벨과 인풋필드) - 저장된 값 전달
-            RebuildHeaderItems(savedInputValues);
+            // FunctionBlock 헤더 아이템 생성 (라벨과 인풋필드) - 저장된 Operation 블록도 전달
+            RebuildHeaderItems(savedInputs);
             
             RebuildFunctionInstance();
 
@@ -95,8 +103,8 @@ namespace MG_BlocksEngine2.Block.Instruction
         /// <summary>
         /// DefineFunction의 헤더 아이템을 복사하여 FunctionBlock 헤더에 생성
         /// </summary>
-        /// <param name="savedInputValues">저장된 Input 값들 (역직렬화 시 사용)</param>
-        public void RebuildHeaderItems(List<string> savedInputValues = null)
+        /// <param name="savedInputs">저장된 Input 데이터 (역직렬화 시 사용, Operation 블록 포함)</param>
+        public void RebuildHeaderItems(List<BE2_SerializableInput> savedInputs = null)
         {
             if (defineInstruction == null || Block == null) return;
             
@@ -108,7 +116,7 @@ namespace MG_BlocksEngine2.Block.Instruction
             defineHeader.UpdateItemsArray();
             
             int i = 0;
-            int inputIndex = 0; // savedInputValues 인덱스
+            int inputIndex = 0; // savedInputs 인덱스
             foreach (I_BE2_BlockSectionHeaderItem item in defineHeader.ItemsArray)
             {
                 // 첫 번째 아이템(고정 라벨)은 스킵
@@ -129,6 +137,14 @@ namespace MG_BlocksEngine2.Block.Instruction
                 }
                 else if (item is BE2_BlockSectionHeader_LocalVariable)
                 {
+                    // 저장된 Input 데이터 가져오기
+                    BE2_SerializableInput savedInput = null;
+                    if (savedInputs != null && inputIndex < savedInputs.Count)
+                    {
+                        savedInput = savedInputs[inputIndex];
+                    }
+                    
+                    // 항상 InputField를 먼저 생성 (Operation 블록이 연결될 슬롯으로 사용)
                     GameObject input = Instantiate(
                         MG_BlocksEngine2.EditorScript.BE2_Inspector.Instance.InputFieldTemplate, 
                         Vector3.zero, 
@@ -137,11 +153,18 @@ namespace MG_BlocksEngine2.Block.Instruction
                     
                     // 저장된 값이 있으면 설정
                     string inputValue = "";
-                    if (savedInputValues != null && inputIndex < savedInputValues.Count)
+                    if (savedInput != null && !string.IsNullOrEmpty(savedInput.value))
                     {
-                        inputValue = savedInputValues[inputIndex];
+                        inputValue = savedInput.value;
                     }
                     input.GetComponent<TMP_InputField>().text = inputValue;
+                    
+                    // Operation 블록이 있는 경우 (Block Op Variable 등) - InputField에 연결
+                    if (savedInput != null && savedInput.isOperation && savedInput.operation != null && _programmingEnv != null)
+                    {
+                        // Operation 블록을 생성하고 InputField에 연결
+                        StartCoroutine(C_CreateOperationBlock(savedInput.operation, headerTransform, inputIndex));
+                    }
                     
                     inputIndex++;
                 }
@@ -152,6 +175,44 @@ namespace MG_BlocksEngine2.Block.Instruction
             // 헤더 레이아웃 업데이트
             instantiatedLayout.SectionsArray[0].Header.UpdateItemsArray();
             instantiatedLayout.SectionsArray[0].Header.UpdateInputsArray();
+        }
+        
+        /// <summary>
+        /// Operation 블록을 생성하여 FunctionBlock 헤더에 연결
+        /// </summary>
+        IEnumerator C_CreateOperationBlock(BE2_SerializableBlock operationBlock, Transform headerTransform, int inputIndex)
+        {
+            yield return new WaitForEndOfFrame();
+            
+            if (_programmingEnv == null) yield break;
+            
+            // Operation 블록 생성
+            I_BE2_Block operation = BE2_BlocksSerializer.SerializableToBlock(operationBlock, _programmingEnv);
+            if (operation == null) yield break;
+            
+            yield return new WaitForEndOfFrame();
+            
+            // 헤더의 InputsArray 업데이트
+            Block.Layout.SectionsArray[0].Header.UpdateInputsArray();
+            
+            var inputs = Block.Layout.SectionsArray[0].Header.InputsArray;
+            if (inputIndex < inputs.Length)
+            {
+                // 해당 Input 슬롯에 Operation 블록 연결
+                var targetInput = inputs[inputIndex];
+                if (targetInput != null)
+                {
+                    BE2_Raycaster.ConnectionPoint connectionPoint = new BE2_Raycaster.ConnectionPoint();
+                    connectionPoint.spot = targetInput.Transform.GetComponent<I_BE2_Spot>();
+                    BE2_DragDropManager.Instance.ConnectionPoint = connectionPoint;
+                    operation.Transform.GetComponent<I_BE2_Drag>().OnPointerDown();
+                    operation.Transform.GetComponent<I_BE2_Drag>().OnPointerUp();
+                }
+            }
+            
+            // 레이아웃 업데이트
+            Block.Layout.SectionsArray[0].Header.UpdateItemsArray();
+            Block.Layout.SectionsArray[0].Header.UpdateInputsArray();
         }
 
         void Remove(I_BE2_Block block)

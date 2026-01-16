@@ -745,17 +745,14 @@ namespace MG_BlocksEngine2.Serializer
             if (defineInstruction != null)
             {
                 
-                // serializableBlock에서 저장된 input 값 추출
-                List<string> savedInputValues = new List<string>();
+                // serializableBlock에서 저장된 input 데이터 추출 (Operation 블록 포함)
+                List<BE2_SerializableInput> savedInputs = null;
                 if (serializableBlock != null && serializableBlock.sections != null && serializableBlock.sections.Count > 0)
                 {
-                    foreach (var input in serializableBlock.sections[0].inputs)
-                    {
-                        savedInputValues.Add(input.value ?? "");
-                    }
+                    savedInputs = serializableBlock.sections[0].inputs;
                 }
                 
-                functionBlockInstruction.Initialize(defineInstruction, savedInputValues);
+                functionBlockInstruction.Initialize(defineInstruction, savedInputs, programmingEnv);
                 yield return new WaitForEndOfFrame();
                 functionBlockInstruction.RebuildFunctionInstance();
             }
