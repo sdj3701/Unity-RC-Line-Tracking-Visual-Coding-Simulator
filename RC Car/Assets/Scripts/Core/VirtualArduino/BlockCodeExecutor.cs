@@ -239,8 +239,8 @@ public class BlockCodeExecutor : MonoBehaviour
         Debug.Log($"<color=yellow>[3] ExecuteFunction: Calling '{callNode.functionName}' with {callNode.args?.Count ?? 0} args, {funcDef.parameters?.Count ?? 0} params</color>");
         
         // args를 params 이름으로 매핑
-        // params: ["s"], args: [150] → variables["s"] = 150
-        // argVars가 있으면 해당 인덱스는 변수값으로 해석
+        // params: ["Speed"], args: [150] → variables["Speed"] = 150
+        // argVars가 있으면 런타임에서 변수값 조회하여 사용
         if (callNode.args != null && funcDef.parameters != null)
         {
             int count = Math.Min(callNode.args.Count, funcDef.parameters.Count);
@@ -249,28 +249,39 @@ public class BlockCodeExecutor : MonoBehaviour
                 string paramName = funcDef.parameters[i];
                 float argValue;
                 
-                // argVars가 있고 해당 인덱스에 변수명이 있으면 변수값 조회
+                // argVars가 있고 해당 인덱스에 변수명이 있으면 런타임에서 변수 조회
                 if (callNode.argVars != null && i < callNode.argVars.Count && !string.IsNullOrEmpty(callNode.argVars[i]))
                 {
-                    argValue = GetVariable(callNode.argVars[i], 0f);
-                    Debug.Log($"<color=yellow>[3] ExecuteFunction: Resolved argVar '{callNode.argVars[i]}' = {argValue}</color>");
+                    string varName = callNode.argVars[i];
+                    argValue = GetVariable(varName, callNode.args[i]);
+                    Debug.Log($"<color=yellow>[3] ExecuteFunction: Set {paramName} = {argValue} (from var '{varName}')</color>");
+                }
+                else
+                {
+                    argValue = callNode.args[i];
+                    Debug.Log($"<color=yellow>[3] ExecuteFunction: Set {paramName} = {argValue}</color>");
+                }
+                
+                variables[paramName] = argValue;
+            }
+        }
+        
+        // args가 더 많은 경우 arg0, arg1...으로 저장 (fallback)
+        // argVars를 통한 변수 참조도 지원
+        if (callNode.args != null)
+        {
+            for (int i = 0; i < callNode.args.Count; i++)
+            {
+                float argValue;
+                if (callNode.argVars != null && i < callNode.argVars.Count && !string.IsNullOrEmpty(callNode.argVars[i]))
+                {
+                    argValue = GetVariable(callNode.argVars[i], callNode.args[i]);
                 }
                 else
                 {
                     argValue = callNode.args[i];
                 }
-                
-                variables[paramName] = argValue;
-                Debug.Log($"<color=yellow>[3] ExecuteFunction: Set {paramName} = {argValue}</color>");
-            }
-        }
-        
-        // args가 더 많은 경우 arg0, arg1...으로 저장 (fallback)
-        if (callNode.args != null)
-        {
-            for (int i = 0; i < callNode.args.Count; i++)
-            {
-                variables[$"arg{i}"] = callNode.args[i];
+                variables[$"arg{i}"] = argValue;
             }
         }
         
@@ -302,14 +313,16 @@ public class BlockCodeExecutor : MonoBehaviour
             }
             else
             {
-                // 센서 값 읽기 (VirtualLineSensor.OnFunctionAnalogRead 호출)
-                float sensorValue = arduino.FunctionAnalogRead(node.conditionSensorFunction);
+                // 센서에서 바로 boolean 값 사용
+                // 테스트용: 센서 좌우 반전 (rightSensor → leftSensor, leftSensor → rightSensor)
+                string swappedSensor = node.conditionSensorFunction;
+                if (swappedSensor == "rightSensor") swappedSensor = "leftSensor";
+                else if (swappedSensor == "leftSensor") swappedSensor = "rightSensor";
                 
-                // 센서 값과 conditionValue 비교
-                // sensorValue == conditionValue이면 true (예: 센서 1이고 conditionValue 1이면 true)
-                condition = Mathf.Approximately(sensorValue, node.conditionValue);
+                bool sensorValue = arduino.FunctionDigitalRead(swappedSensor);
+                condition = sensorValue;  // 흰색(true) → 작동, 검은색(false) → 정지
                     
-                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} sensor={node.conditionSensorFunction}, sensorValue={sensorValue}, conditionValue={node.conditionValue} → {condition}</color>");
+                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} sensor={node.conditionSensorFunction}, detected={condition}</color>");
             }
         }
         else

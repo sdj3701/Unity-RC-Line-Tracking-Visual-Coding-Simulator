@@ -275,10 +275,11 @@ public static class BE2XmlToRuntimeJson
         { 
             name = name, 
             body = new List<LoopBlockNode>(),
-            parameters = new List<string>()
+            parameters = new List<string>(),
+            localVarToParam = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         };
         
-        // defineItems에서 파라미터 이름 추출 (type="variable"인 Item)
+        // 1단계: defineItems에서 파라미터 이름 추출 (type="variable"인 Item)
         var defineItems = funcBlock.Element("defineItems")?.Elements("Item");
         if (defineItems != null)
         {
@@ -313,37 +314,40 @@ public static class BE2XmlToRuntimeJson
             }
         }
         
-        // sections 내부의 inputs에서 파라미터 이름 추출
+        Debug.Log($"[ParseFunctionDefinition] Function '{name}' has {funcNode.parameters.Count} params: [{string.Join(", ", funcNode.parameters)}]");
+        
+        // 2단계: 함수 본문에서 사용된 로컬 변수 이름 수집 (순서대로)
+        var localVarsInBody = new List<string>();
+        CollectLocalVariables(funcBlock, localVarsInBody);
+        
+        Debug.Log($"[ParseFunctionDefinition] Found {localVarsInBody.Count} local vars in body: [{string.Join(", ", localVarsInBody)}]");
+        
+        // 3단계: 로컬 변수 → 파라미터 매핑 생성
+        for (int i = 0; i < localVarsInBody.Count && i < funcNode.parameters.Count; i++)
+        {
+            var localVarName = localVarsInBody[i];
+            var paramName = funcNode.parameters[i];
+            
+            if (!string.IsNullOrEmpty(localVarName) && localVarName != paramName)
+            {
+                funcNode.localVarToParam[localVarName] = paramName;
+                Debug.Log($"[ParseFunctionDefinition] Mapping local var '{localVarName}' → param '{paramName}'");
+            }
+        }
+        
+        // 4단계: sections 내부의 블록들 파싱 (매핑 적용)
         var sections = funcBlock.Element("sections")?.Elements("Section");
         if (sections != null)
         {
             foreach (var section in sections)
             {
-                // 파라미터 이름 추출
-                var inputs = section.Element("inputs")?.Elements("Input");
-                if (inputs != null)
-                {
-                    foreach (var input in inputs)
-                    {
-                        var paramName = input.Element("value")?.Value?.Trim();
-                        if (!string.IsNullOrEmpty(paramName) && !IsNumericOnly(paramName) && paramName != name)
-                        {
-                            // 중복 방지
-                            if (!funcNode.parameters.Contains(paramName))
-                            {
-                                funcNode.parameters.Add(paramName);
-                            }
-                        }
-                    }
-                }
-                
                 // 블록들 파싱
                 var childBlocks = section.Element("childBlocks")?.Elements("Block");
                 if (childBlocks != null)
                 {
                     foreach (var child in childBlocks)
                     {
-                        ProcessLoopBlocksRecursive(child, funcNode.body);
+                        ProcessLoopBlocksRecursiveWithMapping(child, funcNode.body, funcNode.localVarToParam);
                     }
                 }
             }
@@ -355,10 +359,84 @@ public static class BE2XmlToRuntimeJson
         {
             foreach (var child in outerChildBlocks)
             {
-                ProcessLoopBlocksRecursive(child, funcNode.body);
+                ProcessLoopBlocksRecursiveWithMapping(child, funcNode.body, funcNode.localVarToParam);
             }
         }      
         return funcNode;
+    }
+    
+    /// <summary>
+    /// 함수 본문에서 로컬 변수 이름을 순서대로 수집 (isLocalVar=true인 블록)
+    /// </summary>
+    static void CollectLocalVariables(XElement element, List<string> localVars)
+    {
+        // Block Op FunctionLocalVariable 블록에서 varName 추출
+        var allBlocks = element.Descendants("Block").Where(b => 
+        {
+            var blockName = b.Element("blockName")?.Value?.Trim() ?? "";
+            var isLocalVar = b.Element("isLocalVar")?.Value?.Trim()?.ToLower() == "true";
+            return isLocalVar || blockName.Contains("FunctionLocalVariable") || blockName.Contains("LocalVariable");
+        });
+        
+        foreach (var block in allBlocks)
+        {
+            var varName = block.Element("varName")?.Value?.Trim();
+            if (!string.IsNullOrEmpty(varName) && !localVars.Contains(varName))
+            {
+                localVars.Add(varName);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 재귀적으로 블록을 처리하여 리스트에 추가 (매핑 적용 버전)
+    /// </summary>
+    static void ProcessLoopBlocksRecursiveWithMapping(XElement block, List<LoopBlockNode> loopBlocks, Dictionary<string, string> varMapping)
+    {
+        var node = ParseBlockToLoopNode(block);
+        if (node != null)
+        {
+            // 매핑 적용: valueVar가 매핑에 있으면 파라미터 이름으로 대체
+            if (!string.IsNullOrEmpty(node.valueVar) && varMapping.TryGetValue(node.valueVar, out string mappedName))
+            {
+                Debug.Log($"[ProcessLoopBlocksRecursiveWithMapping] Replacing valueVar '{node.valueVar}' → '{mappedName}'");
+                node.valueVar = mappedName;
+            }
+            if (!string.IsNullOrEmpty(node.pinVar) && varMapping.TryGetValue(node.pinVar, out string mappedPinName))
+            {
+                Debug.Log($"[ProcessLoopBlocksRecursiveWithMapping] Replacing pinVar '{node.pinVar}' → '{mappedPinName}'");
+                node.pinVar = mappedPinName;
+            }
+            
+            loopBlocks.Add(node);
+        }
+        else
+        {
+            // 현재 블록이 Loop 노드가 아닌 경우 내부 섹션 처리
+            var sections = block.Element("sections")?.Elements("Section");
+            if (sections != null)
+            {
+                foreach (var section in sections)
+                {
+                    var childBlocks = section.Element("childBlocks")?.Elements("Block");
+                    if (childBlocks != null)
+                    {
+                        foreach (var child in childBlocks)
+                        {
+                            ProcessLoopBlocksRecursiveWithMapping(child, loopBlocks, varMapping);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // OuterArea 재귀 처리
+        var outerChildBlocks = block.Element("OuterArea")?.Element("childBlocks")?.Elements("Block");
+        if (outerChildBlocks != null)
+        {
+            foreach (var child in outerChildBlocks)
+                ProcessLoopBlocksRecursiveWithMapping(child, loopBlocks, varMapping);
+        }
     }
     
     /// <summary>
@@ -848,7 +926,7 @@ public static class BE2XmlToRuntimeJson
         {
             var valueInput = allInputs[1];
             
-            // operation 내부의 Block에서 varName 확인 (변수 참조)
+            // 1. operation 내부의 Block에서 varName 확인 (변수 참조)
             var valueOpBlock = valueInput.Element("operation")?.Element("Block");
             if (valueOpBlock != null)
             {
@@ -856,18 +934,58 @@ public static class BE2XmlToRuntimeJson
                 if (!string.IsNullOrEmpty(valueVarName))
                 {
                     node.valueVar = valueVarName;
-                    Debug.Log($"[ParsePwmBlock] Found valueVar: {valueVarName}");
+                    Debug.Log($"[ParsePwmBlock] Found valueVar from operation/Block/varName: {valueVarName}");
                 }
             }
             
-            // valueVar가 설정되지 않았으면 직접 값 사용
+            // 2. isOperation=true인 경우 operation 블록 내부 재검색
             if (string.IsNullOrEmpty(node.valueVar))
             {
-                var directValue = valueInput.Element("value")?.Value;
+                var isOp = valueInput.Element("isOperation")?.Value?.Trim()?.ToLower() == "true";
+                if (isOp)
+                {
+                    var opBlock = valueInput.Element("operation")?.Element("Block");
+                    if (opBlock != null)
+                    {
+                        var varName = opBlock.Descendants("varName").FirstOrDefault()?.Value?.Trim();
+                        if (!string.IsNullOrEmpty(varName))
+                        {
+                            node.valueVar = varName;
+                            Debug.Log($"[ParsePwmBlock] Found valueVar from isOperation block: {varName}");
+                        }
+                    }
+                }
+            }
+            
+            // 3. descendants에서 varName 찾기 (fallback)
+            if (string.IsNullOrEmpty(node.valueVar))
+            {
+                var descendantVarName = valueInput.Descendants("varName").FirstOrDefault()?.Value?.Trim();
+                if (!string.IsNullOrEmpty(descendantVarName))
+                {
+                    node.valueVar = descendantVarName;
+                    Debug.Log($"[ParsePwmBlock] Found valueVar from descendants: {descendantVarName}");
+                }
+            }
+            
+            // 4. value가 변수 이름인 경우 (숫자가 아닌 경우) valueVar로 처리
+            if (string.IsNullOrEmpty(node.valueVar))
+            {
+                var directValue = valueInput.Element("value")?.Value?.Trim();
                 if (!string.IsNullOrEmpty(directValue))
                 {
-                    node.value = ResolveFloat(directValue);
-                    Debug.Log($"[ParsePwmBlock] Found value: {node.value}");
+                    // 숫자인 경우 value로, 아닌 경우 valueVar로 처리
+                    if (float.TryParse(directValue, out float parsedValue))
+                    {
+                        node.value = parsedValue;
+                        Debug.Log($"[ParsePwmBlock] Found numeric value: {node.value}");
+                    }
+                    else
+                    {
+                        // 숫자가 아닌 경우 변수 이름으로 처리
+                        node.valueVar = directValue;
+                        Debug.Log($"[ParsePwmBlock] Found valueVar from non-numeric value: {directValue}");
+                    }
                 }
             }
         }
@@ -898,21 +1016,28 @@ public static class BE2XmlToRuntimeJson
             }
         }
         
-        // headerInputs에서 못 찾았으면 sections/inputs에서 isOperation=true인 Input 찾기
+        // headerInputs에서 못 찾았으면 if 블록의 직접 sections/inputs에서 isOperation=true인 Input 찾기
+        // 주의: Descendants 대신 직접 자식만 확인하여 함수 호출 블록 내부의 인자와 혼동 방지
         if (opBlock == null)
         {
-            var sectionInputs = block.Element("sections")?.Descendants("Input").ToList();
-            if (sectionInputs != null)
+            var ifSections = block.Element("sections")?.Elements("Section").ToList();
+            if (ifSections != null && ifSections.Count > 0)
             {
-                foreach (var input in sectionInputs)
+                // 첫 번째 section의 inputs에서만 조건 찾기
+                var firstSectionInputs = ifSections[0].Element("inputs")?.Elements("Input").ToList();
+                if (firstSectionInputs != null)
                 {
-                    var isOp = input.Element("isOperation")?.Value?.Trim()?.ToLower() == "true";
-                    if (isOp)
+                    foreach (var input in firstSectionInputs)
                     {
-                        opBlock = input.Element("operation")?.Element("Block");
-                        if (opBlock != null)
+                        var isOp = input.Element("isOperation")?.Value?.Trim()?.ToLower() == "true";
+                        if (isOp)
                         {
-                            break;
+                            opBlock = input.Element("operation")?.Element("Block");
+                            if (opBlock != null)
+                            {
+                                Debug.Log($"[ParseIfBlock] Found condition opBlock in section inputs: {opBlock.Element("blockName")?.Value}");
+                                break;
+                            }
                         }
                     }
                 }
@@ -1329,6 +1454,7 @@ public static class BE2XmlToRuntimeJson
         public string name;
         public List<string> parameters;  // 함수 파라미터 이름 목록
         public List<LoopBlockNode> body;
+        public Dictionary<string, string> localVarToParam;  // 로컬 변수 이름 → 파라미터 이름 매핑
     }
 }
 
