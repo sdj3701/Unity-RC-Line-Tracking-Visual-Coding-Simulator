@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 
 using MG_BlocksEngine2.Utils;
 
@@ -31,8 +32,10 @@ namespace MG_BlocksEngine2.UI
             }
             set => _instance = value;
         }
+
         public BE2_UI_PanelCancel panelCancel;
         public bool isActive = false;
+        public Image image;
 
         void Start()
         {
@@ -136,6 +139,8 @@ namespace MG_BlocksEngine2.UI
                 Debug.LogError($"Failed to save XML: {ex.Message}");
             }
 
+            image.gameObject.SetActive(true);
+
             CloseContextMenu();
         }
         
@@ -188,6 +193,10 @@ namespace MG_BlocksEngine2.UI
             }
 
             CloseContextMenu();
+        }
+
+        public void CloseCompletedUI(){
+            image.gameObject.SetActive(false);
         }
 
         /// <summary>
