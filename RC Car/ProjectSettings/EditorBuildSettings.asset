@@ -8,7 +8,7 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/TestCreateBlock.unity
     guid: 047014c7983d1624284da9883a9c916e
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Car.unity
     guid: 22ad97f45d9af4741a26e979fd916d13
   m_configObjects: {}
