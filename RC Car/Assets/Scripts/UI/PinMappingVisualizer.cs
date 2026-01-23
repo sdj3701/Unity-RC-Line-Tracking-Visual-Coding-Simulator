@@ -1,5 +1,6 @@
 using UnityEngine;
 using TMPro;
+using MG_BlocksEngine2.UI;
 
 /// <summary>
 /// 아두이노 핀 매핑 정보를 UI 라벨에 표시합니다.
@@ -30,12 +31,50 @@ public class PinMappingVisualizer : MonoBehaviour
     [Tooltip("라벨 표시 형식. {0}=기능명, {1}=핀번호")]
     [SerializeField] string labelFormat = "Pin {1}";
     
+    [Header("Status Colors")]
+    [Tooltip("맵핑 성공 시 색상")]
+    [SerializeField] Color successColor = Color.green;
+    [Tooltip("맵핑 실패/대기 시 색상")]
+    [SerializeField] Color defaultColor = Color.white;
+    
     void Start()
     {
         if (arduino == null)
             arduino = FindObjectOfType<VirtualArduinoMicro>();
             
         UpdateAllLabels();
+        SetAllLabelsColor(defaultColor);
+    }
+    
+    void OnEnable()
+    {
+        // 핀 맵핑 완료 이벤트 구독
+        VirtualArduinoMicro.OnPinMappingCompleted += OnPinMappingCompleted;
+    }
+    
+    void OnDisable()
+    {
+        // 이벤트 구독 해제
+        VirtualArduinoMicro.OnPinMappingCompleted -= OnPinMappingCompleted;
+    }
+    
+    /// <summary>
+    /// 핀 맵핑 완료 시 호출되는 핸들러
+    /// </summary>
+    void OnPinMappingCompleted(bool success)
+    {
+        UpdateAllLabels();
+        
+        if (success)
+        {
+            SetAllLabelsColor(successColor);
+            Debug.Log("[PinMappingVisualizer] All pins mapped successfully! Labels set to green.");
+        }
+        else
+        {
+            SetAllLabelsColor(defaultColor);
+            Debug.Log("[PinMappingVisualizer] Pin mapping incomplete. Labels set to default color.");
+        }
     }
     
     /// <summary>
@@ -64,6 +103,27 @@ public class PinMappingVisualizer : MonoBehaviour
         if (label != null)
         {
             label.text = string.Format(labelFormat, functionName, pinNumber);
+        }
+    }
+    
+    /// <summary>
+    /// 모든 라벨의 색상 변경
+    /// </summary>
+    void SetAllLabelsColor(Color color)
+    {
+        SetLabelColor(leftSensorLabel, color);
+        SetLabelColor(rightSensorLabel, color);
+        SetLabelColor(leftMotorForwardLabel, color);
+        SetLabelColor(leftMotorBackwardLabel, color);
+        SetLabelColor(rightMotorForwardLabel, color);
+        SetLabelColor(rightMotorBackwardLabel, color);
+    }
+    
+    void SetLabelColor(TextMeshProUGUI label, Color color)
+    {
+        if (label != null)
+        {
+            label.color = color;
         }
     }
 }
