@@ -49,9 +49,9 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
     List<IVirtualPeripheral> peripherals = new List<IVirtualPeripheral>();
     
     /// <summary>
-    /// 핀 맵핑 완료 시 발생하는 이벤트 (성공 여부 전달)
+    /// 핀 맵핑 완료 시 발생하는 이벤트 (맵핑된 핀 Set 전달)
     /// </summary>
-    public static event System.Action<bool> OnPinMappingCompleted;
+    public static event System.Action<HashSet<int>> OnPinMappingCompleted;
     
     void Awake()
     {
@@ -112,7 +112,8 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
             { defaultRightMotorBPin, "rightMotorB" },
         };
         
-        int mappedFromVariables = 0;
+        // 맵핑된 핀 번호를 추적 (중복 방지)
+        var mappedPins = new HashSet<int>();
         
         // 변수를 순회하면서 값(핀 번호)이 Default Pin과 일치하면 맵핑
         if (blockCodeExecutor != null && blockCodeExecutor.Variables != null)
@@ -125,7 +126,7 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
                 if (defaultPinToFunction.TryGetValue(pinNumber, out string function))
                 {
                     pinToFunction[pinNumber] = function;
-                    mappedFromVariables++;
+                    mappedPins.Add(pinNumber);  // 고유 핀만 추가됨
                     Debug.Log($"[VirtualArduinoMicro] Mapped: {variable.Key}={pinNumber} → {function}");
                 }
             }
@@ -137,17 +138,17 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
             if (!pinToFunction.ContainsKey(kvp.Key))
             {
                 pinToFunction[kvp.Key] = kvp.Value;
-                Debug.Log($"[VirtualArduinoMicro] Default: Pin {kvp.Key} → {kvp.Value}");
+                Debug.Log($"[VirtualArduinoMicro] Default (NOT mapped by variable): Pin {kvp.Key} → {kvp.Value}");
             }
         }
         
-        // 6개 핀이 모두 변수에서 맵핑되었는지 확인
-        bool allMapped = mappedFromVariables >= 6;
+        // 6개 핀 모두가 변수에서 맵핑되었는지 확인
+        bool allMapped = mappedPins.Count >= 6;
         
-        Debug.Log($"[VirtualArduinoMicro] Pin mapping completed. Mapped from variables: {mappedFromVariables}/6, Success: {allMapped}");
+        Debug.Log($"[VirtualArduinoMicro] Pin mapping completed. Unique pins mapped: {mappedPins.Count}/6, Success: {allMapped}");
         
-        // 이벤트 발생
-        OnPinMappingCompleted?.Invoke(allMapped);
+        // 이벤트 발생 (맵핑된 핀 Set 전달)
+        OnPinMappingCompleted?.Invoke(mappedPins);
         
         return allMapped;
     }

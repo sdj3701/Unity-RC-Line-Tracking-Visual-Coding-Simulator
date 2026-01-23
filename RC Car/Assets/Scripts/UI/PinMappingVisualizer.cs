@@ -61,19 +61,36 @@ public class PinMappingVisualizer : MonoBehaviour
     /// <summary>
     /// 핀 맵핑 완료 시 호출되는 핸들러
     /// </summary>
-    void OnPinMappingCompleted(bool success)
+    void OnPinMappingCompleted(System.Collections.Generic.HashSet<int> mappedPins)
     {
+        if (arduino == null)
+        {
+            Debug.LogWarning("[PinMappingVisualizer] VirtualArduinoMicro not found!");
+            return;
+        }
+        
         UpdateAllLabels();
         
-        if (success)
+        // 각 핀별로 맵핑 여부에 따라 색상 설정
+        SetLabelColorByMapping(leftSensorLabel, arduino.defaultLeftSensorPin, mappedPins);
+        SetLabelColorByMapping(rightSensorLabel, arduino.defaultRightSensorPin, mappedPins);
+        SetLabelColorByMapping(leftMotorForwardLabel, arduino.defaultLeftMotorFPin, mappedPins);
+        SetLabelColorByMapping(leftMotorBackwardLabel, arduino.defaultLeftMotorBPin, mappedPins);
+        SetLabelColorByMapping(rightMotorForwardLabel, arduino.defaultRightMotorFPin, mappedPins);
+        SetLabelColorByMapping(rightMotorBackwardLabel, arduino.defaultRightMotorBPin, mappedPins);
+        
+        Debug.Log($"[PinMappingVisualizer] Individual pin colors updated. Mapped: {mappedPins.Count}/6");
+    }
+    
+    /// <summary>
+    /// 핀 맵핑 여부에 따라 라벨 색상 설정
+    /// </summary>
+    void SetLabelColorByMapping(TextMeshProUGUI label, int pinNumber, System.Collections.Generic.HashSet<int> mappedPins)
+    {
+        if (label != null)
         {
-            SetAllLabelsColor(successColor);
-            Debug.Log("[PinMappingVisualizer] All pins mapped successfully! Labels set to green.");
-        }
-        else
-        {
-            SetAllLabelsColor(defaultColor);
-            Debug.Log("[PinMappingVisualizer] Pin mapping incomplete. Labels set to default color.");
+            bool isMapped = mappedPins.Contains(pinNumber);
+            label.color = isMapped ? successColor : defaultColor;
         }
     }
     
