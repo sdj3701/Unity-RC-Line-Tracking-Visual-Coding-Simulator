@@ -65,6 +65,10 @@ namespace MG_BlocksEngine2.UI
 
                 newVarPanel.GetComponent<BE2_UI_VariableViewer>().RefreshViewer();
 
+                // 생성 직후 레이아웃 즉시 정렬
+                Canvas.ForceUpdateCanvases();
+                LayoutRebuilder.ForceRebuildLayoutImmediate(newVarPanel.GetComponent<RectTransform>());
+
                 // v2.9 - bugfix: glitch on resizing the Blocks Selection Viewer
                 BE2_UI_BlocksSelectionViewer.Instance.ForceRebuildLayout();
 
