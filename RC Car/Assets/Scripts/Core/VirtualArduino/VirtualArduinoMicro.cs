@@ -188,7 +188,7 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
         foreach (string function in peripheral.SupportedFunctions)
         {
             functionToPeripheral[function] = peripheral;
-            Debug.Log($"[VirtualArduinoMicro] Function '{function}' → {peripheral.GetType().Name}");
+            //Debug.Log($"[VirtualArduinoMicro] Function '{function}' → {peripheral.GetType().Name}");
         }
     }
     
