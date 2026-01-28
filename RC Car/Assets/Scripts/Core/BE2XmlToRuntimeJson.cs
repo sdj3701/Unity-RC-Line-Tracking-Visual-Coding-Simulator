@@ -54,6 +54,112 @@ public static class BE2XmlToRuntimeJson
         { "Block Ins Block_Read", ParseBlockReadBlock },
     };
 
+    /// <summary>
+    /// XML을 JSON 문자열로 변환하여 반환 (파일 저장 없음)
+    /// SaveCodeWithName에서 사용
+    /// </summary>
+    public static string ExportToString(string xmlText)
+    {
+        // 초기화
+        variables.Clear();
+        functionDefinitions.Clear();
+        calledFunctionNames.Clear();
+                
+        var chunks = xmlText.Split(new[] { "#" }, StringSplitOptions.RemoveEmptyEntries);
+
+        // 1단계: 모든 청크를 파싱하여 함수 정의 수집 및 WhenPlayClicked 찾기
+        XElement mainTriggerBlock = null;
+        
+        foreach (var chunk in chunks)
+        {
+            if (string.IsNullOrWhiteSpace(chunk)) continue;
+            
+            XDocument doc;
+            try 
+            { 
+                doc = XDocument.Parse(chunk.Trim()); 
+            }
+            catch (Exception)
+            { 
+                continue; 
+            }
+
+            var blockName = doc.Root?.Element("blockName")?.Value?.Trim();
+            
+            // 함수 정의 블록 수집
+            bool isFunctionDefinition = 
+                blockName == "Block Ins DefineFunction" || blockName == "Block Cst DefineFunction" ||
+                blockName == "Block Ins Function" || blockName == "Block Cst Function" ||
+                blockName == "Block Ins NewFunction" || blockName == "Block Cst NewFunction" ||
+                blockName == "Block Ins FunctionDef" || blockName == "Block Cst FunctionDef" ||
+                (blockName != null && blockName.Contains("DefineFunction")) ||
+                (blockName != null && blockName.Contains("NewFunction"));
+            
+            if (!isFunctionDefinition && blockName != "Block Ins FunctionBlock" && blockName != "Block Cst FunctionBlock")
+            {
+                var hasDefineID = !string.IsNullOrEmpty(doc.Root?.Element("defineID")?.Value?.Trim());
+                var hasSections = doc.Root?.Element("sections") != null;
+                if (hasDefineID && hasSections && 
+                    blockName != "Block Ins WhenPlayClicked" && blockName != "Block Cst WhenPlayClicked")
+                {
+                    var defineID = doc.Root?.Element("defineID")?.Value?.Trim();
+                    if (!string.IsNullOrEmpty(defineID) && !IsNumericOnly(defineID))
+                    {
+                        functionDefinitions[defineID] = doc.Root;
+                    }
+                }
+            }
+            
+            if (isFunctionDefinition)
+            {
+                var funcName = ExtractFunctionName(doc.Root);
+                if (!string.IsNullOrEmpty(funcName))
+                {
+                    functionDefinitions[funcName] = doc.Root;
+                }
+            }
+            else if (blockName == "Block Ins WhenPlayClicked" || blockName == "Block Cst WhenPlayClicked")
+            {
+                mainTriggerBlock = doc.Root;
+            }
+        }
+        
+        if (mainTriggerBlock == null)
+        {
+            return BuildJson(new List<VariableNode>(), new List<LoopBlockNode>(), new List<FunctionNode>());
+        }
+        
+        // 2단계: 변수 정의 처리
+        var initBlocks = new List<VariableNode>();
+        ProcessVariableDefinitions(mainTriggerBlock, initBlocks);
+        
+        // 2.5단계: 함수 정의 내의 변수 수집
+        foreach (var kvp in functionDefinitions)
+        {
+            CollectVariablesFromFunctionDefinition(kvp.Value);
+        }
+        
+        // 3단계: Loop 블록 처리
+        var loopBlocks = new List<LoopBlockNode>();
+        ProcessLoopBlocks(mainTriggerBlock, loopBlocks);
+                
+        // 4단계: 호출된 함수만 파싱
+        var functionNodes = new List<FunctionNode>();
+        foreach (var funcName in calledFunctionNames)
+        {
+            if (functionDefinitions.TryGetValue(funcName, out var funcBlock))
+            {
+                var funcNode = ParseFunctionDefinition(funcName, funcBlock);
+                if (funcNode != null)
+                {
+                    functionNodes.Add(funcNode);
+                }
+            }
+        }
+
+        return BuildJson(initBlocks, loopBlocks, functionNodes);
+    }
+
     public static void Export(string xmlText)
     {
         

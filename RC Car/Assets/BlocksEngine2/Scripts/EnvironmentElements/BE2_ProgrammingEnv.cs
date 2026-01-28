@@ -144,12 +144,14 @@ namespace MG_BlocksEngine2.Environment
 
         public void SaveButton()
         {
-            BE2_UI_ContextMenuManager.instance.CodeGenerated();
+            // 저장 UI 패널 열기 (사용자가 파일명 입력 후 저장)
+            BE2_UI_ContextMenuManager.instance.OpenSavePanel();
         }
 
         public void LoadXMLButton()
         {
-            BE2_UI_ContextMenuManager.instance.XMLCodeGenerated();
+            // 불러오기 UI 패널 열기 (파일 목록에서 선택 후 로드)
+            BE2_UI_ContextMenuManager.instance.OpenLoadPanel();
         }
     }
 }

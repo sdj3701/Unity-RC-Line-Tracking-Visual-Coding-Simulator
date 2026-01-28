@@ -4,6 +4,9 @@ using UnityEngine;
 using UnityEngine.UI;
 
 using MG_BlocksEngine2.Utils;
+using MG_BlocksEngine2.Storage;
+using MG_BlocksEngine2.Environment;
+using MG_BlocksEngine2.Serializer;
 
 namespace MG_BlocksEngine2.UI
 {
@@ -36,6 +39,11 @@ namespace MG_BlocksEngine2.UI
         public BE2_UI_PanelCancel panelCancel;
         public bool isActive = false;
         public Image image;
+
+        // === 저장/불러오기 UI 패널 참조 ===
+        [Header("Save/Load UI Panels")]
+        public BE2_UI_CodeSavePanel codeSavePanel;
+        public BE2_UI_CodeLoadPanel codeLoadPanel;
 
         void Start()
         {
@@ -74,6 +82,173 @@ namespace MG_BlocksEngine2.UI
                 panelCancel.transform.gameObject.SetActive(false);
             }
         }
+
+        #region 새 저장/불러오기 시스템
+
+        /// <summary>
+        /// 저장 패널 열기 (기존 SaveButton에서 호출)
+        /// </summary>
+        public void OpenSavePanel()
+        {
+            if (codeSavePanel != null)
+            {
+                codeSavePanel.Open();
+            }
+            else
+            {
+                Debug.LogWarning("[ContextMenuManager] CodeSavePanel이 연결되지 않았습니다. 기존 방식으로 저장합니다.");
+                CodeGenerated();
+            }
+        }
+
+        /// <summary>
+        /// 불러오기 패널 열기 (기존 LoadXMLButton에서 호출)
+        /// </summary>
+        public void OpenLoadPanel()
+        {
+            if (codeLoadPanel != null)
+            {
+                codeLoadPanel.Open();
+            }
+            else
+            {
+                Debug.LogWarning("[ContextMenuManager] CodeLoadPanel이 연결되지 않았습니다. 기존 방식으로 불러옵니다.");
+                XMLCodeGenerated();
+            }
+        }
+
+        /// <summary>
+        /// 사용자 지정 이름으로 코드 저장 (XML + JSON)
+        /// </summary>
+        public bool SaveCodeWithName(string fileName)
+        {
+            // XML 생성
+            var exporter = GameObject.FindObjectOfType<BE2_CodeExporter>();
+            bool created = false;
+            if (exporter == null)
+            {
+                var go = new GameObject("BE2_CodeExporter_Auto");
+                exporter = go.AddComponent<BE2_CodeExporter>();
+                created = true;
+            }
+
+            string xmlContent = exporter.GenerateXmlFromAllEnvs();
+            
+            if (created && exporter != null)
+            {
+                DestroyImmediate(exporter.gameObject);
+            }
+
+            if (string.IsNullOrEmpty(xmlContent))
+            {
+                Debug.LogWarning("[SaveCodeWithName] XML 생성 실패 또는 블록 없음");
+                return false;
+            }
+
+            // JSON 생성
+            string jsonContent = BE2XmlToRuntimeJson.ExportToString(xmlContent);
+            if (string.IsNullOrEmpty(jsonContent))
+            {
+                Debug.LogWarning("[SaveCodeWithName] JSON 생성 실패");
+                return false;
+            }
+
+            // StorageManager를 통해 저장
+            bool success = BE2_CodeStorageManager.Instance.SaveCode(fileName, xmlContent, jsonContent);
+            
+            if (success)
+            {
+                Debug.Log($"[SaveCodeWithName] 저장 완료: {fileName}");
+                
+                // 이벤트 발생
+                OnCodeGenerated?.Invoke();
+                
+                // 완료 UI 표시
+                if (image != null)
+                    image.gameObject.SetActive(true);
+            }
+
+            return success;
+        }
+
+        /// <summary>
+        /// 파일에서 코드 불러오기 (기존 블록 삭제 후 로드)
+        /// </summary>
+        public bool LoadCodeFromFile(string fileName)
+        {
+            // XML 불러오기
+            string xmlContent = BE2_CodeStorageManager.Instance.LoadXml(fileName);
+            if (string.IsNullOrEmpty(xmlContent))
+            {
+                Debug.LogWarning($"[LoadCodeFromFile] XML 파일을 찾을 수 없음: {fileName}");
+                return false;
+            }
+
+            // Programming Environment 찾기
+            var envs = GameObject.FindObjectsOfType<BE2_ProgrammingEnv>();
+            if (envs == null || envs.Length == 0)
+            {
+                Debug.LogWarning("[LoadCodeFromFile] BE2_ProgrammingEnv를 찾을 수 없습니다.");
+                return false;
+            }
+
+            // 활성화된 env 찾기
+            BE2_ProgrammingEnv targetEnv = null;
+            foreach (var env in envs)
+            {
+                if (env != null && env.gameObject.activeInHierarchy)
+                {
+                    targetEnv = env;
+                    break;
+                }
+            }
+            if (targetEnv == null) targetEnv = envs[0];
+
+            // 기존 블록 삭제
+            targetEnv.ClearBlocks();
+            Debug.Log("[LoadCodeFromFile] 기존 블록 삭제 완료");
+
+            // XML에서 블록 로드
+            BE2_BlocksSerializer.XMLToBlocksCode(xmlContent, targetEnv);
+            Debug.Log($"[LoadCodeFromFile] 블록 로드 완료: {fileName}");
+
+            // JSON 재생성 (런타임용)
+            BE2XmlToRuntimeJson.Export(xmlContent);
+            Debug.Log("[LoadCodeFromFile] JSON 재생성 완료");
+
+            // 이벤트 발생
+            OnCodeGenerated?.Invoke();
+
+            return true;
+        }
+
+        /// <summary>
+        /// 저장된 파일 삭제
+        /// </summary>
+        public bool DeleteSaveFile(string fileName)
+        {
+            return BE2_CodeStorageManager.Instance.DeleteCode(fileName);
+        }
+
+        /// <summary>
+        /// 저장된 파일 목록 반환
+        /// </summary>
+        public List<string> GetSavedFileList()
+        {
+            return BE2_CodeStorageManager.Instance.GetFileList();
+        }
+
+        /// <summary>
+        /// 파일 존재 여부 확인
+        /// </summary>
+        public bool FileExists(string fileName)
+        {
+            return BE2_CodeStorageManager.Instance.FileExists(fileName);
+        }
+
+        #endregion
+
+        #region 기존 저장/불러오기 (호환성 유지)
 
         public void CodeGenerated()
         {
@@ -145,7 +320,6 @@ namespace MG_BlocksEngine2.UI
         }
         
 
-
         // XML Code Generated 코드 임포트
         public void XMLCodeGenerated()
         {
@@ -160,7 +334,7 @@ namespace MG_BlocksEngine2.UI
             }
 
             // Programming Environment 찾기
-            var envs = GameObject.FindObjectsOfType<MG_BlocksEngine2.Environment.BE2_ProgrammingEnv>();
+            var envs = GameObject.FindObjectsOfType<BE2_ProgrammingEnv>();
             if (envs == null || envs.Length == 0)
             {
                 Debug.LogWarning("[XMLCodeGenerated] BE2_ProgrammingEnv를 찾을 수 없습니다.");
@@ -169,7 +343,7 @@ namespace MG_BlocksEngine2.UI
             }
 
             // 활성화된 env 찾기
-            MG_BlocksEngine2.Environment.BE2_ProgrammingEnv targetEnv = null;
+            BE2_ProgrammingEnv targetEnv = null;
             foreach (var env in envs)
             {
                 if (env != null && env.gameObject.activeInHierarchy)
@@ -181,7 +355,7 @@ namespace MG_BlocksEngine2.UI
             if (targetEnv == null) targetEnv = envs[0];
 
             // XML 로드
-            bool success = MG_BlocksEngine2.Serializer.BE2_BlocksSerializer.LoadCode(path, targetEnv);
+            bool success = BE2_BlocksSerializer.LoadCode(path, targetEnv);
             
             if (success)
             {
@@ -194,6 +368,8 @@ namespace MG_BlocksEngine2.UI
 
             CloseContextMenu();
         }
+
+        #endregion
 
         public void CloseCompletedUI(){
             image.gameObject.SetActive(false);
