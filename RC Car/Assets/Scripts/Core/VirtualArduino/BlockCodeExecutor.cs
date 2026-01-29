@@ -130,8 +130,28 @@ public class BlockCodeExecutor : MonoBehaviour
         {
             Debug.Log($"<color=yellow>[2] BlockCodeExecutor.Tick() - Running LOOP ({program.loop.Count} blocks)</color>");
             
-            // Loop 블록의 명령만 실행 (기본 전진 로직 제거)
-            // JSON의 analogWrite 블록이 모터 속도를 직접 제어함
+            // ★ 기본 전진 설정: 조건문 실행 전에 양쪽 바퀴를 'go' 속도로 설정
+            // 조건이 참이면 함수가 값을 덮어씀, 조건이 모두 거짓이면 기본 전진 유지
+            if (arduino != null)
+            {
+                float goSpeed = GetVariable("go", 200f);
+                float stopSpeed = GetVariable("stop", 0f);
+                
+                int pinRightForward = (int)GetVariable("pin_wheel_right_forward", 6);
+                int pinLeftForward = (int)GetVariable("pin_wheel_left_forward", 9);
+                int pinRightBack = (int)GetVariable("pin_wheel_right_back", 10);
+                int pinLeftBack = (int)GetVariable("pin_wheel_left_back", 11);
+                
+                // 양쪽 전진, 후진은 정지
+                arduino.AnalogWrite(pinRightForward, goSpeed);
+                arduino.AnalogWrite(pinLeftForward, goSpeed);
+                arduino.AnalogWrite(pinRightBack, stopSpeed);
+                arduino.AnalogWrite(pinLeftBack, stopSpeed);
+                
+                Debug.Log($"<color=green>[2] ★ 기본 전진: L={goSpeed}, R={goSpeed}</color>");
+            }
+            
+            // Loop 블록 실행 (if 조건이 참이면 함수가 기본값 덮어씀)
             foreach (var node in program.loop)
             {
                 ExecuteNode(node);
