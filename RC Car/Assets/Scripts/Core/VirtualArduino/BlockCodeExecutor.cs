@@ -130,27 +130,8 @@ public class BlockCodeExecutor : MonoBehaviour
         {
             Debug.Log($"<color=yellow>[2] BlockCodeExecutor.Tick() - Running LOOP ({program.loop.Count} blocks)</color>");
             
-            // 기본 전진 상태 설정: 양쪽 바퀴를 "go" 속도로 설정
-            // if 조건이 맞으면 해당 방향으로 회전 (한쪽 바퀴만 활성화)
-            if (arduino != null)
-            {
-                float goSpeed = GetVariable("go", 200f);
-                float stopSpeed = GetVariable("stop", 0f);
-                
-                // 기본: 양쪽 전진 바퀴 활성화, 후진 바퀴 비활성화
-                int pinRightForward = (int)GetVariable("pin_wheel_right_forward", 6);
-                int pinLeftForward = (int)GetVariable("pin_wheel_left_forward", 9);
-                int pinRightBack = (int)GetVariable("pin_wheel_right_back", 10);
-                int pinLeftBack = (int)GetVariable("pin_wheel_left_back", 11);
-                
-                arduino.AnalogWrite(pinRightForward, goSpeed);
-                arduino.AnalogWrite(pinLeftForward, goSpeed);
-                arduino.AnalogWrite(pinRightBack, stopSpeed);
-                arduino.AnalogWrite(pinLeftBack, stopSpeed);
-                
-                Debug.Log($"<color=green>[2] Default FORWARD: L={goSpeed}, R={goSpeed}</color>");
-            }
-            
+            // Loop 블록의 명령만 실행 (기본 전진 로직 제거)
+            // JSON의 analogWrite 블록이 모터 속도를 직접 제어함
             foreach (var node in program.loop)
             {
                 ExecuteNode(node);

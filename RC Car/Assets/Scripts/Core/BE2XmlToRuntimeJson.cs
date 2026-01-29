@@ -60,18 +60,24 @@ public static class BE2XmlToRuntimeJson
     /// </summary>
     public static string ExportToString(string xmlText)
     {
+        Debug.Log("=== [BE2XmlToRuntimeJson] ExportToString 시작 ===");
+        
         // 초기화
         variables.Clear();
         functionDefinitions.Clear();
         calledFunctionNames.Clear();
                 
         var chunks = xmlText.Split(new[] { "#" }, StringSplitOptions.RemoveEmptyEntries);
+        Debug.Log($"[DEBUG FLOW] ExportToString - {chunks.Length}개 청크 발견");
 
         // 1단계: 모든 청크를 파싱하여 함수 정의 수집 및 WhenPlayClicked 찾기
         XElement mainTriggerBlock = null;
+        int bestChildBlockCount = -1;  // 가장 많은 childBlocks를 가진 WhenPlayClicked 선택
+        int whenPlayClickedCount = 0;
         
-        foreach (var chunk in chunks)
+        for (int chunkIndex = 0; chunkIndex < chunks.Length; chunkIndex++)
         {
+            var chunk = chunks[chunkIndex];
             if (string.IsNullOrWhiteSpace(chunk)) continue;
             
             XDocument doc;
@@ -118,20 +124,39 @@ public static class BE2XmlToRuntimeJson
                     functionDefinitions[funcName] = doc.Root;
                 }
             }
+            // WhenPlayClicked 블록 찾기 - 가장 많은 childBlocks를 가진 블록 선택
             else if (blockName == "Block Ins WhenPlayClicked" || blockName == "Block Cst WhenPlayClicked")
             {
-                mainTriggerBlock = doc.Root;
+                whenPlayClickedCount++;
+                
+                // childBlocks 개수 확인
+                var childBlocks = doc.Root?.Element("sections")?.Element("Section")?.Element("childBlocks")?.Elements("Block");
+                int childCount = childBlocks?.Count() ?? 0;
+                
+                Debug.Log($"[DEBUG FLOW] ExportToString 청크 {chunkIndex}: WhenPlayClicked #{whenPlayClickedCount}, childBlocks: {childCount}");
+                
+                // 더 많은 childBlocks를 가진 블록 선택 (빈 블록 문제 해결)
+                if (childCount > bestChildBlockCount)
+                {
+                    bestChildBlockCount = childCount;
+                    mainTriggerBlock = doc.Root;
+                    Debug.Log($"[DEBUG FLOW] ExportToString: ★ 새로운 mainTriggerBlock 선택됨 (childBlocks: {childCount})");
+                }
             }
         }
         
+        Debug.Log($"[DEBUG FLOW] ExportToString - WhenPlayClicked: {whenPlayClickedCount}개, 선택된 블록 childBlocks: {bestChildBlockCount}개");
+        
         if (mainTriggerBlock == null)
         {
+            Debug.LogWarning("[DEBUG FLOW] ExportToString - mainTriggerBlock이 null! 빈 JSON 반환");
             return BuildJson(new List<VariableNode>(), new List<LoopBlockNode>(), new List<FunctionNode>());
         }
         
         // 2단계: 변수 정의 처리
         var initBlocks = new List<VariableNode>();
         ProcessVariableDefinitions(mainTriggerBlock, initBlocks);
+        Debug.Log($"[DEBUG FLOW] ExportToString - 변수 {initBlocks.Count}개 발견");
         
         // 2.5단계: 함수 정의 내의 변수 수집
         foreach (var kvp in functionDefinitions)
@@ -142,6 +167,7 @@ public static class BE2XmlToRuntimeJson
         // 3단계: Loop 블록 처리
         var loopBlocks = new List<LoopBlockNode>();
         ProcessLoopBlocks(mainTriggerBlock, loopBlocks);
+        Debug.Log($"[DEBUG FLOW] ExportToString - Loop 블록 {loopBlocks.Count}개 발견");
                 
         // 4단계: 호출된 함수만 파싱
         var functionNodes = new List<FunctionNode>();
@@ -156,30 +182,43 @@ public static class BE2XmlToRuntimeJson
                 }
             }
         }
-
-        return BuildJson(initBlocks, loopBlocks, functionNodes);
+        
+        var result = BuildJson(initBlocks, loopBlocks, functionNodes);
+        Debug.Log($"[DEBUG FLOW] ExportToString 완료 - JSON 길이: {result.Length}자");
+        return result;
     }
 
     public static void Export(string xmlText)
     {
+        Debug.Log("=== [BE2XmlToRuntimeJson] Export 시작 ===");
         
         var jsonPath = Path.Combine(Application.persistentDataPath, "BlocksRuntime.json");
+        Debug.Log($"[DEBUG FLOW] JSON 저장 경로: {jsonPath}");
         
         // 초기화
         variables.Clear();
         functionDefinitions.Clear();
         calledFunctionNames.Clear();
+        Debug.Log("[DEBUG FLOW] 1. 변수/함수 딕셔너리 초기화 완료");
                 
         var chunks = xmlText.Split(new[] { "#" }, StringSplitOptions.RemoveEmptyEntries);
+        Debug.Log($"[DEBUG FLOW] 2. XML 청크 분할 완료 - 총 {chunks.Length}개 청크 발견");
 
         // ============================================================
         // 1단계: 모든 청크를 파싱하여 함수 정의 수집 및 WhenPlayClicked 찾기
         // ============================================================
         XElement mainTriggerBlock = null;
+        int bestChildBlockCount = -1;  // 가장 많은 childBlocks를 가진 WhenPlayClicked 선택
+        int whenPlayClickedCount = 0;
         
-        foreach (var chunk in chunks)
+        for (int chunkIndex = 0; chunkIndex < chunks.Length; chunkIndex++)
         {
-            if (string.IsNullOrWhiteSpace(chunk)) continue;
+            var chunk = chunks[chunkIndex];
+            if (string.IsNullOrWhiteSpace(chunk)) 
+            {
+                Debug.Log($"[DEBUG FLOW] 청크 {chunkIndex}: 빈 청크, 스킵");
+                continue;
+            }
             
             XDocument doc;
             try 
@@ -188,12 +227,13 @@ public static class BE2XmlToRuntimeJson
             }
             catch (Exception ex)
             { 
-                Debug.LogWarning($"[BE2XmlToRuntimeJson] Failed to parse chunk: {ex.Message}"); 
+                Debug.LogWarning($"[BE2XmlToRuntimeJson] Failed to parse chunk {chunkIndex}: {ex.Message}"); 
                 Debug.LogWarning($"[BE2XmlToRuntimeJson] Chunk content: {chunk.Substring(0, Math.Min(200, chunk.Length))}...");
                 continue; 
             }
 
             var blockName = doc.Root?.Element("blockName")?.Value?.Trim();
+            Debug.Log($"[DEBUG FLOW] 청크 {chunkIndex}: blockName = '{blockName}'");
             
             
             // 함수 정의 블록 수집 (여러 가능한 이름 패턴)
@@ -220,6 +260,7 @@ public static class BE2XmlToRuntimeJson
                     if (!string.IsNullOrEmpty(defineID) && !IsNumericOnly(defineID))
                     {
                         functionDefinitions[defineID] = doc.Root;
+                        Debug.Log($"[DEBUG FLOW] 청크 {chunkIndex}: 함수 정의 발견 (defineID) - '{defineID}'");
                     }
                 }
             }
@@ -230,37 +271,63 @@ public static class BE2XmlToRuntimeJson
                 if (!string.IsNullOrEmpty(funcName))
                 {
                     functionDefinitions[funcName] = doc.Root;
+                    Debug.Log($"[DEBUG FLOW] 청크 {chunkIndex}: 함수 정의 발견 - '{funcName}'");
                 }
                 else
                 {
                     Debug.LogWarning($"[BE2XmlToRuntimeJson] Function definition block found but no name extracted!");
                 }
             }
-            // WhenPlayClicked 블록 찾기
+            // WhenPlayClicked 블록 찾기 - 가장 많은 childBlocks를 가진 블록 선택
             else if (blockName == "Block Ins WhenPlayClicked" || blockName == "Block Cst WhenPlayClicked")
             {
-                mainTriggerBlock = doc.Root;
+                whenPlayClickedCount++;
+                
+                // childBlocks 개수 확인
+                var childBlocks = doc.Root?.Element("sections")?.Element("Section")?.Element("childBlocks")?.Elements("Block");
+                int childCount = childBlocks?.Count() ?? 0;
+                
+                Debug.Log($"[DEBUG FLOW] 청크 {chunkIndex}: WhenPlayClicked #{whenPlayClickedCount} 발견! childBlocks 개수 = {childCount}");
+                
+                // 더 많은 childBlocks를 가진 블록 선택 (빈 블록 문제 해결)
+                if (childCount > bestChildBlockCount)
+                {
+                    bestChildBlockCount = childCount;
+                    mainTriggerBlock = doc.Root;
+                    Debug.Log($"[DEBUG FLOW] 청크 {chunkIndex}: ★ 새로운 mainTriggerBlock 선택됨 (childBlocks: {childCount})");
+                }
+                else
+                {
+                    Debug.Log($"[DEBUG FLOW] 청크 {chunkIndex}: 이 블록은 더 적은 childBlocks를 가지므로 스킵됨");
+                }
             }
         }
         
+        Debug.Log($"[DEBUG FLOW] 3. 청크 스캔 완료 - WhenPlayClicked: {whenPlayClickedCount}개, 함수 정의: {functionDefinitions.Count}개");
+        
         if (mainTriggerBlock == null)
         {
+            Debug.LogWarning("[DEBUG FLOW] ⚠ mainTriggerBlock이 null! 빈 JSON 생성됨");
             // 빈 JSON 생성
             var emptyJson = BuildJson(new List<VariableNode>(), new List<LoopBlockNode>(), new List<FunctionNode>());
             File.WriteAllText(jsonPath, emptyJson);
             return;
         }
         
+        Debug.Log($"[DEBUG FLOW] 4. mainTriggerBlock 선택됨 - childBlocks: {bestChildBlockCount}개");
+        
                 
         // ============================================================
         // 2단계: WhenPlayClicked과 연결된 변수 정의 처리
         // ============================================================
+        Debug.Log("[DEBUG FLOW] 5. 변수 정의 처리 시작...");
         var initBlocks = new List<VariableNode>();
         ProcessVariableDefinitions(mainTriggerBlock, initBlocks);
         
+        Debug.Log($"[DEBUG FLOW] 5. 변수 정의 처리 완료 - {initBlocks.Count}개 변수 발견:");
         foreach (var v in initBlocks)
         {
-            Debug.Log($"  - {v.name} = {v.value}");
+            Debug.Log($"    - {v.name} = {v.value}");
         }
         
         // ============================================================
@@ -270,26 +337,35 @@ public static class BE2XmlToRuntimeJson
         {
             CollectVariablesFromFunctionDefinition(kvp.Value);
         }
-        Debug.Log($"[BE2XmlToRuntimeJson] Collected {variables.Count} variables from functions");
+        Debug.Log($"[DEBUG FLOW] 5.5. 함수 내 변수 수집 완료 - 총 {variables.Count}개 변수");
         
         // ============================================================
         // 3단계: WhenPlayClicked과 연결된 Loop 블록 처리 (함수 호출 추적 포함)
         // ============================================================
+        Debug.Log("[DEBUG FLOW] 6. Loop 블록 처리 시작...");
         var loopBlocks = new List<LoopBlockNode>();
         ProcessLoopBlocks(mainTriggerBlock, loopBlocks);
+        Debug.Log($"[DEBUG FLOW] 6. Loop 블록 처리 완료 - {loopBlocks.Count}개 블록 발견");
+        foreach (var lb in loopBlocks)
+        {
+            Debug.Log($"    - type: {lb.type}, pin: {lb.pin}, pinVar: {lb.pinVar}, value: {lb.value}, valueVar: {lb.valueVar}");
+        }
                 
         // ============================================================
         // 4단계: 호출된 함수만 파싱하여 functions 배열 구성
         // ============================================================
+        Debug.Log($"[DEBUG FLOW] 7. 함수 파싱 시작 - 호출된 함수: {calledFunctionNames.Count}개");
         var functionNodes = new List<FunctionNode>();
         foreach (var funcName in calledFunctionNames)
         {
+            Debug.Log($"    - 함수 '{funcName}' 파싱 중...");
             if (functionDefinitions.TryGetValue(funcName, out var funcBlock))
             {
                 var funcNode = ParseFunctionDefinition(funcName, funcBlock);
                 if (funcNode != null)
                 {
                     functionNodes.Add(funcNode);
+                    Debug.Log($"    - 함수 '{funcName}' 파싱 성공 - body 블록 수: {funcNode.body?.Count ?? 0}");
                 }
             }
             else
@@ -299,8 +375,12 @@ public static class BE2XmlToRuntimeJson
         }
 
         // JSON 빌드
+        Debug.Log($"[DEBUG FLOW] 8. JSON 빌드 시작 - init: {initBlocks.Count}, loop: {loopBlocks.Count}, functions: {functionNodes.Count}");
         var json = BuildJson(initBlocks, loopBlocks, functionNodes);
+        Debug.Log($"[DEBUG FLOW] 8. JSON 빌드 완료 - 길이: {json.Length}자");
+        Debug.Log($"[DEBUG FLOW] JSON 미리보기:\n{json.Substring(0, Math.Min(500, json.Length))}...");
         File.WriteAllText(jsonPath, json);
+        Debug.Log($"=== [BE2XmlToRuntimeJson] Export 완료 ===");
     }
     
     /// <summary>
@@ -586,19 +666,30 @@ public static class BE2XmlToRuntimeJson
     
     /// <summary>
     /// 블록과 그 하위 OuterArea의 모든 SetVariable 블록을 처리하여 변수 리스트에 저장
+    /// Loop 블록 내부로는 진입하지 않음
     /// </summary>
     static void ProcessVariableDefinitions(XElement block, List<VariableNode> initBlocks)
     {
         var name = block.Element("blockName")?.Value?.Trim();
         
-        if (name == "Block Ins SetVariable")
+        // Loop 블록 내부로는 진입하지 않음 (Loop 내부의 SetVariable은 init가 아님)
+        if (name == "Block Cst Loop" || name == "Block Ins Loop")
         {
-            var inputs = block.Descendants("Input").ToList();
+            Debug.Log($"[ProcessVariableDefinitions] Loop 블록 발견 - 내부 스킵");
+            return;
+        }
+        
+        if (name == "Block Ins SetVariable" || name == "Block Cst SetVariable")
+        {
+            // sections/Section/inputs에서 직접 Input만 가져옴 (Descendants 사용하지 않음)
+            var sectionInputs = block.Element("sections")?.Element("Section")?.Element("inputs")?.Elements("Input").ToList();
             
-            if (inputs.Count >= 2)
+            if (sectionInputs != null && sectionInputs.Count >= 2)
             {
-                string varName = inputs[0].Element("value")?.Value;
-                string valStr = inputs[1].Element("value")?.Value;
+                string varName = sectionInputs[0].Element("value")?.Value?.Trim();
+                string valStr = sectionInputs[1].Element("value")?.Value?.Trim();
+                
+                Debug.Log($"[ProcessVariableDefinitions] SetVariable 발견: {varName} = {valStr}");
                                 
                 if (!string.IsNullOrEmpty(varName))
                 {
@@ -613,8 +704,8 @@ public static class BE2XmlToRuntimeJson
                 var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
                 if (headerInputs != null && headerInputs.Count >= 2)
                 {
-                    string varName = headerInputs[0].Element("value")?.Value;
-                    string valStr = headerInputs[1].Element("value")?.Value;
+                    string varName = headerInputs[0].Element("value")?.Value?.Trim();
+                    string valStr = headerInputs[1].Element("value")?.Value?.Trim();
                                         
                     if (!string.IsNullOrEmpty(varName))
                     {
@@ -693,23 +784,19 @@ public static class BE2XmlToRuntimeJson
     }
     
     // ============================================================
-    // Loop 블록 처리 (모든 블록을 재귀적으로 순회)
+    // Loop 블록 처리: Loop 블록 내부의 자식 블록만 loop 배열에 추가
     // ============================================================
     
     static void ProcessLoopBlocks(XElement block, List<LoopBlockNode> loopBlocks)
     {
-        // 현재 블록 처리 시도
-        var node = ParseBlockToLoopNode(block);
-        if (node != null)
+        var name = block.Element("blockName")?.Value?.Trim();
+        
+        // Loop 블록을 찾았을 때, 그 내부의 자식 블록들만 loop 배열에 추가
+        if (name == "Block Cst Loop" || name == "Block Ins Loop")
         {
-            loopBlocks.Add(node);
-            // If 블록 내부는 ParseBlockToLoopNode에서 이미 처리하므로 여기서는 스킵
-            // (중복 방지)
-        }
-        else
-        {
-            // 현재 블록이 Loop 노드가 아닌 경우 (변수 정의, 트리거 등)
-            // 내부 섹션 재귀 처리
+            Debug.Log($"[ProcessLoopBlocks] Loop 블록 발견 - 내부 처리 시작");
+            
+            // Loop 블록 내부의 sections/Section/childBlocks에서 자식 블록들 파싱
             var sections = block.Element("sections")?.Elements("Section");
             if (sections != null)
             {
@@ -720,14 +807,37 @@ public static class BE2XmlToRuntimeJson
                     {
                         foreach (var child in childBlocks)
                         {
-                            ProcessLoopBlocks(child, loopBlocks);
+                            // Loop 내부의 블록만 loop 배열에 추가
+                            ProcessLoopBlocksRecursive(child, loopBlocks);
                         }
+                    }
+                }
+            }
+            
+            // Loop 블록 자체의 OuterArea는 처리하지 않음 (Loop 다음의 블록은 loop 배열에 들어가지 않음)
+            return;
+        }
+        
+        // Loop 블록이 아닌 경우 (WhenPlayClicked, SetVariable 등)
+        // 내부 섹션에서 Loop 블록 찾기
+        var blockSections = block.Element("sections")?.Elements("Section");
+        if (blockSections != null)
+        {
+            foreach (var section in blockSections)
+            {
+                var childBlocks = section.Element("childBlocks")?.Elements("Block");
+                if (childBlocks != null)
+                {
+                    foreach (var child in childBlocks)
+                    {
+                        // 재귀적으로 Loop 블록 찾기 (SetVariable 등은 스킵됨)
+                        ProcessLoopBlocks(child, loopBlocks);
                     }
                 }
             }
         }
         
-        // OuterArea 재귀 처리 (다음 블록으로 이동)
+        // OuterArea 재귀 처리 (다음 블록으로 이동하여 Loop 블록 찾기)
         var outerChildBlocks = block.Element("OuterArea")?.Element("childBlocks")?.Elements("Block");
         if (outerChildBlocks != null)
         {
@@ -765,16 +875,16 @@ public static class BE2XmlToRuntimeJson
     {
         var node = new LoopBlockNode { type = "setVariable" };
         
-        // sections/Section/inputs에서 변수 이름과 값 추출
-        var inputs = block.Descendants("Input").ToList();
+        // sections/Section/inputs에서 직접 Input 요소만 추출 (Descendants 사용하지 않음)
+        var sectionInputs = block.Element("sections")?.Element("Section")?.Element("inputs")?.Elements("Input").ToList();
         
-        if (inputs.Count >= 2)
+        if (sectionInputs != null && sectionInputs.Count >= 2)
         {
             // 첫 번째 Input: 변수 이름
-            node.setVarName = inputs[0].Element("value")?.Value?.Trim();
+            node.setVarName = sectionInputs[0].Element("value")?.Value?.Trim();
             
             // 두 번째 Input: 값
-            var valStr = inputs[1].Element("value")?.Value?.Trim();
+            var valStr = sectionInputs[1].Element("value")?.Value?.Trim();
             if (!string.IsNullOrEmpty(valStr) && float.TryParse(valStr, out float parsedValue))
             {
                 node.setVarValue = parsedValue;

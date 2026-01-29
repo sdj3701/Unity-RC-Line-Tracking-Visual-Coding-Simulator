@@ -141,7 +141,7 @@ public class VirtualCarPhysics : MonoBehaviour
         
         // 회전: 좌우 모터 차이
         float angular = (rightMotor - leftMotor) * maxAngularSpeed * Time.fixedDeltaTime;
-        rb.MoveRotation(rb.rotation * Quaternion.Euler(0f, angular, 0f));
+        rb.MoveRotation(rb.rotation * Quaternion.Euler(0f, -angular, 0f));
     }
     
     void ApplyWheelVisualRotation(float left, float right)

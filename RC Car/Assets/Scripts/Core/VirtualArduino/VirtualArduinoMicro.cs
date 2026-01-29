@@ -101,6 +101,9 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
     {
         pinToFunction.Clear();
         
+        Debug.Log("<color=cyan>═══════════════════════════════════════════════════════</color>");
+        Debug.Log("<color=cyan>★ [VirtualArduinoMicro] 핀 맵핑 시작 ★</color>");
+        
         // Default Pin → Function 맵핑 (고정, 하드웨어 구성과 일치)
         var defaultPinToFunction = new Dictionary<int, string>()
         {
@@ -127,7 +130,7 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
                 {
                     pinToFunction[pinNumber] = function;
                     mappedPins.Add(pinNumber);  // 고유 핀만 추가됨
-                    Debug.Log($"[VirtualArduinoMicro] Mapped: {variable.Key}={pinNumber} → {function}");
+                    Debug.Log($"<color=lime>  ✓ [맵핑 성공] {variable.Key} = Pin {pinNumber} → {function}</color>");
                 }
             }
         }
@@ -138,14 +141,23 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
             if (!pinToFunction.ContainsKey(kvp.Key))
             {
                 pinToFunction[kvp.Key] = kvp.Value;
-                Debug.Log($"[VirtualArduinoMicro] Default (NOT mapped by variable): Pin {kvp.Key} → {kvp.Value}");
+                Debug.Log($"<color=yellow>  ⚠ [기본값 사용] Pin {kvp.Key} → {kvp.Value} (변수 없음)</color>");
             }
         }
         
         // 6개 핀 모두가 변수에서 맵핑되었는지 확인
         bool allMapped = mappedPins.Count >= 6;
         
-        Debug.Log($"[VirtualArduinoMicro] Pin mapping completed. Unique pins mapped: {mappedPins.Count}/6, Success: {allMapped}");
+        Debug.Log("<color=cyan>───────────────────────────────────────────────────────</color>");
+        if (allMapped)
+        {
+            Debug.Log($"<color=lime>★ [결과] 핀 맵핑 성공! {mappedPins.Count}/6 핀 맵핑됨 ★</color>");
+        }
+        else
+        {
+            Debug.Log($"<color=orange>★ [결과] 일부 핀 미맵핑: {mappedPins.Count}/6 핀 맵핑됨 ★</color>");
+        }
+        Debug.Log("<color=cyan>═══════════════════════════════════════════════════════</color>");
         
         // 이벤트 발생 (맵핑된 핀 Set 전달)
         OnPinMappingCompleted?.Invoke(mappedPins);

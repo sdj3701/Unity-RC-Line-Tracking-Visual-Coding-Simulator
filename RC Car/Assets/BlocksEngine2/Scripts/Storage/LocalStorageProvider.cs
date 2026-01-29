@@ -53,6 +53,14 @@ namespace MG_BlocksEngine2.Storage
                 File.WriteAllText(jsonPath, jsonContent);
                 Debug.Log($"[LocalStorageProvider] JSON 저장 완료: {jsonPath}");
 
+                // ★ BlocksRuntime.json/xml도 함께 업데이트하여 BlockCodeExecutor가 바로 로드할 수 있게 함
+                string runtimeJsonPath = Path.Combine(Application.persistentDataPath, "BlocksRuntime.json");
+                string runtimeXmlPath = Path.Combine(Application.persistentDataPath, "BlocksRuntime.xml");
+                
+                File.WriteAllText(runtimeJsonPath, jsonContent);
+                File.WriteAllText(runtimeXmlPath, xmlContent);
+                Debug.Log($"[LocalStorageProvider] ★ 런타임 파일 갱신 완료: {runtimeJsonPath}");
+
                 return true;
             }
             catch (Exception ex)
