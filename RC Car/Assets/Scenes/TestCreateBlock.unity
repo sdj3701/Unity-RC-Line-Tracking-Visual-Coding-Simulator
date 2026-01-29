@@ -3635,7 +3635,6 @@ GameObject:
   - component: {fileID: 59367017}
   - component: {fileID: 59367020}
   - component: {fileID: 59367019}
-  - component: {fileID: 59367018}
   m_Layer: 5
   m_Name: Import Panel
   m_TagString: Untagged
@@ -3668,30 +3667,6 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 100.00003}
   m_SizeDelta: {x: -1280, y: -600.00006}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &59367018
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 59367016}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cee59189c6e61f44f909142f76b08e02, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  mainPanel: {fileID: 59367016}
-  fileListContent: {fileID: 133243843}
-  fileItemTemplate: {fileID: 8049103239486230645, guid: e57dbec1933effb408c7250e53d1b86a,
-    type: 3}
-  toggleGroup: {fileID: 133243844}
-  loadButton: {fileID: 1293126930}
-  deleteButton: {fileID: 25623379}
-  cancelButton: {fileID: 1023797191}
-  deleteConfirmPanel: {fileID: 2105173759}
-  deleteConfirmButton: {fileID: 949125322}
-  deleteCancelButton: {fileID: 638878144}
-  emptyStateText: {fileID: 0}
 --- !u!114 &59367019
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7573,14 +7548,14 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 123388854}
-  m_LocalRotation: {x: 0.2588191, y: 0, z: 0, w: 0.9659258}
-  m_LocalPosition: {x: -8, y: 5, z: -16}
+  m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
+  m_LocalPosition: {x: 0.38, y: 4.32, z: 13.71}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_RootOrder: 7
-  m_LocalEulerAnglesHint: {x: 30, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 180, z: 0}
 --- !u!1 &123538955
 GameObject:
   m_ObjectHideFlags: 0
@@ -64169,8 +64144,8 @@ MonoBehaviour:
   panelCancel: {fileID: 613922984}
   isActive: 0
   image: {fileID: 1188347803}
-  codeSavePanel: {fileID: 1207533115}
-  codeLoadPanel: {fileID: 59367018}
+  codeSavePanel: {fileID: 1272871046}
+  codeLoadPanel: {fileID: 1272871045}
 --- !u!114 &1139373911
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -67553,7 +67528,6 @@ GameObject:
   - component: {fileID: 1207533112}
   - component: {fileID: 1207533114}
   - component: {fileID: 1207533113}
-  - component: {fileID: 1207533115}
   m_Layer: 5
   m_Name: Save Panel
   m_TagString: Untagged
@@ -67623,25 +67597,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1207533111}
   m_CullTransparentMesh: 1
---- !u!114 &1207533115
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1207533111}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a9718555fa30cef429f9026ed86fdf5a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  mainPanel: {fileID: 1207533111}
-  fileNameInput: {fileID: 1922914028}
-  saveButton: {fileID: 404396136}
-  cancelButton: {fileID: 1889416341}
-  overwriteConfirmPanel: {fileID: 1867055387}
-  overwriteConfirmButton: {fileID: 359352525}
-  overwriteCancelButton: {fileID: 1889416341}
 --- !u!1 &1211228982
 GameObject:
   m_ObjectHideFlags: 0
@@ -70910,6 +70865,8 @@ GameObject:
   - component: {fileID: 1272871044}
   - component: {fileID: 1272871043}
   - component: {fileID: 1272871042}
+  - component: {fileID: 1272871046}
+  - component: {fileID: 1272871045}
   m_Layer: 5
   m_Name: Canvas Complete UI
   m_TagString: Untagged
@@ -71004,6 +70961,49 @@ Canvas:
   m_SortingLayerID: 0
   m_SortingOrder: 102
   m_TargetDisplay: 0
+--- !u!114 &1272871045
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1272871040}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cee59189c6e61f44f909142f76b08e02, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mainPanel: {fileID: 59367016}
+  fileListContent: {fileID: 133243843}
+  fileItemTemplate: {fileID: 8049103239486230645, guid: e57dbec1933effb408c7250e53d1b86a,
+    type: 3}
+  toggleGroup: {fileID: 133243844}
+  loadButton: {fileID: 1293126930}
+  deleteButton: {fileID: 25623379}
+  cancelButton: {fileID: 1023797191}
+  deleteConfirmPanel: {fileID: 2105173759}
+  deleteConfirmButton: {fileID: 949125322}
+  deleteCancelButton: {fileID: 638878144}
+  emptyStateText: {fileID: 0}
+--- !u!114 &1272871046
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1272871040}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a9718555fa30cef429f9026ed86fdf5a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mainPanel: {fileID: 1207533111}
+  fileNameInput: {fileID: 1922914028}
+  saveButton: {fileID: 404396136}
+  cancelButton: {fileID: 1889416341}
+  overwriteConfirmPanel: {fileID: 1867055387}
+  overwriteConfirmButton: {fileID: 359352525}
+  overwriteCancelButton: {fileID: 1889416341}
 --- !u!1 &1275587615
 GameObject:
   m_ObjectHideFlags: 0
