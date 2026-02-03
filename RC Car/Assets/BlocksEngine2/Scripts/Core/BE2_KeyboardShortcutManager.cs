@@ -196,7 +196,10 @@ namespace MG_BlocksEngine2.Core
                         );
                     }
                     
-                    Debug.Log($"[Shortcut] Block pasted with offset ({_pasteCount}): {_clipboardBlock.Instruction.GetType().Name}");
+                    // Undo 스택에 붙여넣기 작업 저장
+                    PushUndoAction(new UndoAction(UndoActionType.Paste, null, newBlock, newBlock.Transform.localPosition, newBlock.Transform.parent));
+                    
+                    Debug.Log($"[Shortcut] Block pasted with offset ({_pasteCount}), Undo stack count: {_undoStack.Count}");
                 }
             }
             else

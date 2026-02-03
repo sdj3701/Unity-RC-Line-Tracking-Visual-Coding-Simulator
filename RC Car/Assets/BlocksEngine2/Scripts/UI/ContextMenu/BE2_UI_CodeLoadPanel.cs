@@ -35,6 +35,10 @@ namespace MG_BlocksEngine2.UI
         private BE2_UI_ContextMenuManager _contextMenuManager;
         private string _selectedFileName;
         private List<GameObject> _fileItemObjects = new List<GameObject>();
+        private Dictionary<string, Toggle> _fileToggles = new Dictionary<string, Toggle>();
+        
+        // 마지막으로 로드한 파일명 기억 (static으로 앱 실행 중 유지)
+        private static string _lastLoadedFileName;
         
         void Start()
         {
@@ -113,6 +117,7 @@ namespace MG_BlocksEngine2.UI
                     Destroy(obj);
             }
             _fileItemObjects.Clear();
+            _fileToggles.Clear();
             _selectedFileName = null;
             
             // 파일 목록 가져오기
@@ -126,6 +131,14 @@ namespace MG_BlocksEngine2.UI
             foreach (var fileName in files)
             {
                 CreateFileItem(fileName);
+            }
+            
+            // 마지막 로드한 파일이 있으면 선택
+            if (!string.IsNullOrEmpty(_lastLoadedFileName) && _fileToggles.ContainsKey(_lastLoadedFileName))
+            {
+                _fileToggles[_lastLoadedFileName].isOn = true;
+                _selectedFileName = _lastLoadedFileName;
+                Debug.Log($"[CodeLoadPanel] Auto-selected last loaded file: {_lastLoadedFileName}");
             }
             
             UpdateButtonStates();
@@ -149,7 +162,10 @@ namespace MG_BlocksEngine2.UI
             {
                 // ToggleGroup 설정
                 if (toggleGroup != null)
+                {
                     toggle.group = toggleGroup;
+                    toggleGroup.allowSwitchOff = true;  // 아무것도 선택 안 한 상태 허용
+                }
                 
                 // 텍스트 설정
                 TMP_Text label = toggle.GetComponentInChildren<TMP_Text>();
@@ -173,6 +189,12 @@ namespace MG_BlocksEngine2.UI
                         Debug.Log($"[CodeLoadPanel] Selected: {capturedFileName}");
                     }
                 });
+                
+                // 초기에는 선택되지 않은 상태로 설정 (나중에 RefreshFileList에서 선택)
+                toggle.isOn = false;
+                
+                // Dictionary에 저장
+                _fileToggles[fileName] = toggle;
             }
         }
         
@@ -202,6 +224,8 @@ namespace MG_BlocksEngine2.UI
                 bool success = _contextMenuManager.LoadCodeFromFile(_selectedFileName);
                 if (success)
                 {
+                    // 마지막 로드 파일명 저장
+                    _lastLoadedFileName = _selectedFileName;
                     Debug.Log($"[CodeLoadPanel] 로드 완료: {_selectedFileName}");
                     Close();
                 }
