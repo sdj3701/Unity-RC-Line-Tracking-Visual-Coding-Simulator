@@ -2,12 +2,14 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Linq;
 
 namespace MG_BlocksEngine2.UI
 {
     /// <summary>
     /// 코드 불러오기 패널 UI
     /// 파일 목록 표시 + 불러오기/삭제/취소 버튼 + 삭제 확인
+    /// 다중 선택 지원
     /// </summary>
     public class BE2_UI_CodeLoadPanel : MonoBehaviour
     {
@@ -17,7 +19,7 @@ namespace MG_BlocksEngine2.UI
         [Header("File List")]
         [SerializeField] private Transform fileListContent;
         [SerializeField] private Toggle fileItemTemplate;
-        [SerializeField] private ToggleGroup toggleGroup;
+        // ToggleGroup 제거 - 다중 선택 지원을 위해 사용 안 함
         
         [Header("Buttons")]
         [SerializeField] private Button loadButton;
@@ -33,9 +35,11 @@ namespace MG_BlocksEngine2.UI
         [SerializeField] private GameObject emptyStateText;
         
         private BE2_UI_ContextMenuManager _contextMenuManager;
-        private string _selectedFileName;
         private List<GameObject> _fileItemObjects = new List<GameObject>();
         private Dictionary<string, Toggle> _fileToggles = new Dictionary<string, Toggle>();
+        
+        // 선택된 파일들 (다중 선택 지원)
+        private HashSet<string> _selectedFileNames = new HashSet<string>();
         
         // 마지막으로 로드한 파일명 기억 (static으로 앱 실행 중 유지)
         private static string _lastLoadedFileName;
@@ -82,7 +86,7 @@ namespace MG_BlocksEngine2.UI
             if (mainPanel != null)
                 mainPanel.SetActive(true);
             
-            _selectedFileName = null;
+            _selectedFileNames.Clear();
             RefreshFileList();
             UpdateButtonStates();
             
@@ -100,7 +104,7 @@ namespace MG_BlocksEngine2.UI
             if (deleteConfirmPanel != null)
                 deleteConfirmPanel.SetActive(false);
             
-            _selectedFileName = null;
+            _selectedFileNames.Clear();
             
             Debug.Log("[CodeLoadPanel] Closed");
         }
@@ -118,7 +122,7 @@ namespace MG_BlocksEngine2.UI
             }
             _fileItemObjects.Clear();
             _fileToggles.Clear();
-            _selectedFileName = null;
+            _selectedFileNames.Clear();
             
             // 파일 목록 가져오기
             List<string> files = _contextMenuManager?.GetSavedFileList() ?? new List<string>();
@@ -137,7 +141,7 @@ namespace MG_BlocksEngine2.UI
             if (!string.IsNullOrEmpty(_lastLoadedFileName) && _fileToggles.ContainsKey(_lastLoadedFileName))
             {
                 _fileToggles[_lastLoadedFileName].isOn = true;
-                _selectedFileName = _lastLoadedFileName;
+                _selectedFileNames.Add(_lastLoadedFileName);
                 Debug.Log($"[CodeLoadPanel] Auto-selected last loaded file: {_lastLoadedFileName}");
             }
             
@@ -160,12 +164,8 @@ namespace MG_BlocksEngine2.UI
             Toggle toggle = itemObj.GetComponent<Toggle>();
             if (toggle != null)
             {
-                // ToggleGroup 설정
-                if (toggleGroup != null)
-                {
-                    toggle.group = toggleGroup;
-                    toggleGroup.allowSwitchOff = true;  // 아무것도 선택 안 한 상태 허용
-                }
+                // ToggleGroup 없이 다중 선택 가능
+                toggle.group = null;
                 
                 // 텍스트 설정
                 TMP_Text label = toggle.GetComponentInChildren<TMP_Text>();
@@ -178,19 +178,24 @@ namespace MG_BlocksEngine2.UI
                         legacyLabel.text = fileName;
                 }
                 
-                // 선택 이벤트
+                // 선택 이벤트 - 다중 선택 지원
                 string capturedFileName = fileName;
                 toggle.onValueChanged.AddListener((isOn) =>
                 {
                     if (isOn)
                     {
-                        _selectedFileName = capturedFileName;
-                        UpdateButtonStates();
-                        Debug.Log($"[CodeLoadPanel] Selected: {capturedFileName}");
+                        _selectedFileNames.Add(capturedFileName);
+                        Debug.Log($"[CodeLoadPanel] Added to selection: {capturedFileName} (Total: {_selectedFileNames.Count})");
                     }
+                    else
+                    {
+                        _selectedFileNames.Remove(capturedFileName);
+                        Debug.Log($"[CodeLoadPanel] Removed from selection: {capturedFileName} (Total: {_selectedFileNames.Count})");
+                    }
+                    UpdateButtonStates();
                 });
                 
-                // 초기에는 선택되지 않은 상태로 설정 (나중에 RefreshFileList에서 선택)
+                // 초기에는 선택되지 않은 상태로 설정
                 toggle.isOn = false;
                 
                 // Dictionary에 저장
@@ -203,7 +208,7 @@ namespace MG_BlocksEngine2.UI
         /// </summary>
         private void UpdateButtonStates()
         {
-            bool hasSelection = !string.IsNullOrEmpty(_selectedFileName);
+            bool hasSelection = _selectedFileNames.Count > 0;
             
             if (loadButton != null)
                 loadButton.interactable = hasSelection;
@@ -213,25 +218,51 @@ namespace MG_BlocksEngine2.UI
         }
         
         /// <summary>
+        /// 선택된 파일 목록 가져오기
+        /// </summary>
+        public List<string> GetSelectedFiles()
+        {
+            return _selectedFileNames.ToList();
+        }
+        
+        /// <summary>
         /// 불러오기 버튼 클릭
+        /// 다중 파일 로드 준비됨 (현재는 디버그 출력만)
         /// </summary>
         private void OnLoadClicked()
         {
-            if (string.IsNullOrEmpty(_selectedFileName)) return;
+            if (_selectedFileNames.Count == 0) return;
             
+            List<string> selectedFiles = GetSelectedFiles();
+            
+            // 다중 파일 로드 (현재는 디버그만 출력)
+            if (selectedFiles.Count > 1)
+            {
+                Debug.Log($"[CodeLoadPanel] 다중 파일 로드 요청됨 - {selectedFiles.Count}개 파일:");
+                foreach (var file in selectedFiles)
+                {
+                    Debug.Log($"  - {file}");
+                }
+                // TODO: 다중 파일 로드 기능 구현 시 여기에 추가
+                Debug.Log("[CodeLoadPanel] 다중 파일 로드 기능은 아직 구현되지 않았습니다.");
+                return;
+            }
+            
+            // 단일 파일 로드
+            string fileToLoad = selectedFiles[0];
             if (_contextMenuManager != null)
             {
-                bool success = _contextMenuManager.LoadCodeFromFile(_selectedFileName);
+                bool success = _contextMenuManager.LoadCodeFromFile(fileToLoad);
                 if (success)
                 {
                     // 마지막 로드 파일명 저장
-                    _lastLoadedFileName = _selectedFileName;
-                    Debug.Log($"[CodeLoadPanel] 로드 완료: {_selectedFileName}");
+                    _lastLoadedFileName = fileToLoad;
+                    Debug.Log($"[CodeLoadPanel] 로드 완료: {fileToLoad}");
                     Close();
                 }
                 else
                 {
-                    Debug.LogError($"[CodeLoadPanel] 로드 실패: {_selectedFileName}");
+                    Debug.LogError($"[CodeLoadPanel] 로드 실패: {fileToLoad}");
                 }
             }
         }
@@ -241,7 +272,7 @@ namespace MG_BlocksEngine2.UI
         /// </summary>
         private void OnDeleteClicked()
         {
-            if (string.IsNullOrEmpty(_selectedFileName)) return;
+            if (_selectedFileNames.Count == 0) return;
             
             // 삭제 확인 패널 표시
             if (deleteConfirmPanel != null)
@@ -249,25 +280,45 @@ namespace MG_BlocksEngine2.UI
         }
         
         /// <summary>
-        /// 삭제 확인
+        /// 삭제 확인 - 다중 파일 삭제 지원
         /// </summary>
         private void OnDeleteConfirmed()
         {
-            if (!string.IsNullOrEmpty(_selectedFileName) && _contextMenuManager != null)
+            if (_selectedFileNames.Count == 0 || _contextMenuManager == null)
             {
-                bool success = _contextMenuManager.DeleteSaveFile(_selectedFileName);
+                CloseDeleteConfirm();
+                return;
+            }
+            
+            List<string> filesToDelete = GetSelectedFiles();
+            int successCount = 0;
+            int failCount = 0;
+            
+            foreach (var fileName in filesToDelete)
+            {
+                bool success = _contextMenuManager.DeleteSaveFile(fileName);
                 if (success)
                 {
-                    Debug.Log($"[CodeLoadPanel] 삭제 완료: {_selectedFileName}");
-                    _selectedFileName = null;
-                    RefreshFileList();
+                    successCount++;
+                    Debug.Log($"[CodeLoadPanel] 삭제 완료: {fileName}");
+                    
+                    // 마지막 로드 파일이 삭제되면 기억 초기화
+                    if (_lastLoadedFileName == fileName)
+                    {
+                        _lastLoadedFileName = null;
+                    }
                 }
                 else
                 {
-                    Debug.LogError($"[CodeLoadPanel] 삭제 실패: {_selectedFileName}");
+                    failCount++;
+                    Debug.LogError($"[CodeLoadPanel] 삭제 실패: {fileName}");
                 }
             }
             
+            Debug.Log($"[CodeLoadPanel] 삭제 결과: 성공 {successCount}개, 실패 {failCount}개");
+            
+            _selectedFileNames.Clear();
+            RefreshFileList();
             CloseDeleteConfirm();
         }
         
