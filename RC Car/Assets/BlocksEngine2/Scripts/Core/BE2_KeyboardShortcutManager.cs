@@ -67,6 +67,11 @@ namespace MG_BlocksEngine2.Core
         private Stack<UndoAction> _undoStack = new Stack<UndoAction>();
         private const int MAX_UNDO_COUNT = 50;
 
+        // 붙여넣기 오프셋 추적
+        private int _pasteCount = 0;
+        private const float PASTE_OFFSET_X = 20f;   // 오른쪽으로 이동
+        private const float PASTE_OFFSET_Y = 20f;  // 아래쪽으로 이동 (UI좌표계)
+
         void Awake()
         {
             Instance = this;
@@ -154,6 +159,7 @@ namespace MG_BlocksEngine2.Core
             if (_selectedBlock != null && _selectedBlock.Transform != null)
             {
                 _clipboardBlock = _selectedBlock;
+                _pasteCount = 0;  // 복사 시 붙여넣기 카운터 리셋
                 Debug.Log($"[Shortcut] Block copied: {_selectedBlock.Instruction.GetType().Name}");
             }
             else
@@ -169,8 +175,29 @@ namespace MG_BlocksEngine2.Core
         {
             if (_clipboardBlock != null && _clipboardBlock.Transform != null)
             {
-                BE2_BlockUtils.DuplicateBlock(_clipboardBlock);
-                Debug.Log($"[Shortcut] Block pasted: {_clipboardBlock.Instruction.GetType().Name}");
+                _pasteCount++;
+                
+                // 복제 후 오프셋 적용
+                I_BE2_ProgrammingEnv programmingEnv = _clipboardBlock.Transform.GetComponentInParent<I_BE2_ProgrammingEnv>();
+                BE2_SerializableBlock serializableBlock = BE2_BlocksSerializer.BlockToSerializable(_clipboardBlock);
+                I_BE2_Block newBlock = BE2_BlocksSerializer.SerializableToBlock(serializableBlock, programmingEnv);
+                
+                if (newBlock != null)
+                {
+                    // 누적 오프셋 적용 (오른쪽 아래로)
+                    Vector3 offset = new Vector3(PASTE_OFFSET_X * _pasteCount, PASTE_OFFSET_Y * _pasteCount, 0);
+                    newBlock.Transform.position = _clipboardBlock.Transform.position + offset;
+                    
+                    if (newBlock.Type == BlockTypeEnum.trigger)
+                    {
+                        BE2_ExecutionManager.Instance.AddToBlocksStackArray(
+                            newBlock.Instruction.InstructionBase.BlocksStack, 
+                            programmingEnv.TargetObject
+                        );
+                    }
+                    
+                    Debug.Log($"[Shortcut] Block pasted with offset ({_pasteCount}): {_clipboardBlock.Instruction.GetType().Name}");
+                }
             }
             else
             {
