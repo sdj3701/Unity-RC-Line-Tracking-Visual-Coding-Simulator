@@ -1,17 +1,52 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
+using System.Collections.Generic;
 
 using MG_BlocksEngine2.Block;
 using MG_BlocksEngine2.DragDrop;
 using MG_BlocksEngine2.Utils;
 using MG_BlocksEngine2.Core;
+using MG_BlocksEngine2.Environment;
+using MG_BlocksEngine2.Serializer;
 
 namespace MG_BlocksEngine2.Core
 {
     /// <summary>
+    /// 실행 취소 가능한 작업 타입
+    /// </summary>
+    public enum UndoActionType
+    {
+        Delete,     // 블록 삭제 (Undo 시 복원)
+        Create,     // 블록 생성 (Undo 시 삭제)
+        Paste       // 블록 붙여넣기 (Undo 시 삭제)
+    }
+
+    /// <summary>
+    /// 실행 취소 작업 정보를 저장하는 구조체
+    /// </summary>
+    public struct UndoAction
+    {
+        public UndoActionType ActionType;
+        public string BlockXml;           // 삭제된 블록의 XML (Delete 작업용)
+        public I_BE2_Block CreatedBlock;  // 생성된 블록 참조 (Create/Paste 작업용)
+        public Vector3 Position;          // 블록 위치
+        public Transform Parent;          // 부모 Transform
+
+        public UndoAction(UndoActionType type, string xml = null, I_BE2_Block block = null, Vector3 pos = default, Transform parent = null)
+        {
+            ActionType = type;
+            BlockXml = xml;
+            CreatedBlock = block;
+            Position = pos;
+            Parent = parent;
+        }
+    }
+
+    /// <summary>
     /// 블록에 대한 키보드 단축키를 처리하는 매니저
     /// - Ctrl+C: 선택된 블록 복사
     /// - Ctrl+V: 클립보드 블록 붙여넣기
+    /// - Ctrl+Z: 실행 취소
     /// - Delete: 선택된 블록 삭제
     /// </summary>
     public class BE2_KeyboardShortcutManager : MonoBehaviour
@@ -27,6 +62,10 @@ namespace MG_BlocksEngine2.Core
 
         // DragDropManager 참조
         private BE2_DragDropManager _dragDropManager;
+
+        // Undo 스택 (최대 50개 작업 저장)
+        private Stack<UndoAction> _undoStack = new Stack<UndoAction>();
+        private const int MAX_UNDO_COUNT = 50;
 
         void Awake()
         {
@@ -95,6 +134,11 @@ namespace MG_BlocksEngine2.Core
             {
                 PasteBlock();
             }
+            // Ctrl+Z: 실행 취소
+            else if (ctrlPressed && Input.GetKeyDown(KeyCode.Z))
+            {
+                Undo();
+            }
             // Delete: 삭제
             else if (Input.GetKeyDown(KeyCode.Delete))
             {
@@ -135,7 +179,7 @@ namespace MG_BlocksEngine2.Core
         }
 
         /// <summary>
-        /// Delete: 선택된 블록 삭제
+        /// Delete: 선택된 블록 삭제 (Undo 스택에 저장)
         /// </summary>
         public void DeleteBlock()
         {
@@ -144,6 +188,23 @@ namespace MG_BlocksEngine2.Core
                 // 삭제하기 전에 참조 저장
                 I_BE2_Block blockToDelete = _selectedBlock;
                 _selectedBlock = null;
+
+                // Undo를 위해 블록 정보 저장
+                // Undo를 위해 블록 정보 저장
+                try
+                {
+                    BE2_SerializableBlock serializableBlock = BE2_BlocksSerializer.BlockToSerializable(blockToDelete);
+                    string blockXml = BE2_BlocksSerializer.SerializableToXML(serializableBlock);
+                    Vector3 position = blockToDelete.Transform.localPosition;
+                    Transform parent = blockToDelete.Transform.parent;
+
+                    PushUndoAction(new UndoAction(UndoActionType.Delete, blockXml, null, position, parent));
+                    Debug.Log($"[Shortcut] Block saved to undo stack. Stack count: {_undoStack.Count}");
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"[Shortcut] Failed to save block for undo: {e.Message}\n{e.StackTrace}");
+                }
 
                 // 클립보드 블록도 삭제되는 경우 클리어
                 if (_clipboardBlock == blockToDelete)
@@ -158,6 +219,87 @@ namespace MG_BlocksEngine2.Core
             {
                 Debug.Log("[Shortcut] No block selected to delete");
             }
+        }
+
+        /// <summary>
+        /// Ctrl+Z: 마지막 작업 실행 취소
+        /// </summary>
+        public void Undo()
+        {
+            if (_undoStack.Count == 0)
+            {
+                Debug.Log("[Shortcut] Nothing to undo");
+                return;
+            }
+
+            UndoAction action = _undoStack.Pop();
+
+            switch (action.ActionType)
+            {
+                case UndoActionType.Delete:
+                    // 삭제된 블록 복원
+                    if (!string.IsNullOrEmpty(action.BlockXml) && action.Parent != null)
+                    {
+                        try
+                        {
+                            // XML에서 블록 복원
+                            I_BE2_ProgrammingEnv programmingEnv = action.Parent.GetComponentInParent<I_BE2_ProgrammingEnv>();
+                            if (programmingEnv != null)
+                            {
+                                BE2_BlocksSerializer.XMLToBlocksCode(action.BlockXml, programmingEnv);
+                                Debug.Log("[Shortcut] Block restored (Undo delete)");
+                            }
+                            else
+                            {
+                                Debug.LogWarning("[Shortcut] Cannot restore block: Programming environment not found");
+                            }
+                        }
+                        catch (System.Exception e)
+                        {
+                            Debug.LogError($"[Shortcut] Failed to restore block: {e.Message}");
+                        }
+                    }
+                    break;
+
+                case UndoActionType.Create:
+                case UndoActionType.Paste:
+                    // 생성된 블록 삭제
+                    if (action.CreatedBlock != null && action.CreatedBlock.Transform != null)
+                    {
+                        BE2_BlockUtils.RemoveBlock(action.CreatedBlock);
+                        Debug.Log("[Shortcut] Block removed (Undo create/paste)");
+                    }
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Undo 스택에 작업 추가
+        /// </summary>
+        public void PushUndoAction(UndoAction action)
+        {
+            // 스택 크기 제한
+            if (_undoStack.Count >= MAX_UNDO_COUNT)
+            {
+                // 오래된 항목 제거 (Stack을 List로 변환 후 처리)
+                var tempList = new List<UndoAction>(_undoStack);
+                tempList.RemoveAt(tempList.Count - 1);  // 가장 오래된 항목 제거
+                _undoStack.Clear();
+                for (int i = tempList.Count - 1; i >= 0; i--)
+                {
+                    _undoStack.Push(tempList[i]);
+                }
+            }
+
+            _undoStack.Push(action);
+        }
+
+        /// <summary>
+        /// Undo 스택 초기화
+        /// </summary>
+        public void ClearUndoStack()
+        {
+            _undoStack.Clear();
         }
 
         /// <summary>

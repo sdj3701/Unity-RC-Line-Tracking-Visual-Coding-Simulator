@@ -5,6 +5,7 @@ using UnityEngine;
 using MG_BlocksEngine2.Block;
 using MG_BlocksEngine2.UI;
 using MG_BlocksEngine2.Environment;
+using MG_BlocksEngine2.Core;
 
 namespace MG_BlocksEngine2.DragDrop
 {
@@ -21,11 +22,15 @@ namespace MG_BlocksEngine2.DragDrop
 
         public I_BE2_Block Block { get; set; }
 
+        // 블록이 새로 생성된 것인지 추적 (Selection Menu에서 드래그로 생성)
+        private bool _isNewBlock = true;
+
         void Awake()
         {
             _transform = transform;
             _rectTransform = GetComponent<RectTransform>();
             Block = GetComponent<I_BE2_Block>();
+            _isNewBlock = true;  // 처음 생성 시 true
         }
 
         public void OnPointerDown()
@@ -252,6 +257,19 @@ namespace MG_BlocksEngine2.DragDrop
 
             // v2.9 - bugfix: TargetObject of blocks being null
             Block.Instruction.InstructionBase.UpdateTargetObject();
+
+            // 새로 생성된 블록이 프로그래밍 환경에 배치된 경우 Undo 스택에 저장
+            if (_isNewBlock && Transform.parent != null && Transform.parent.GetComponentInParent<I_BE2_ProgrammingEnv>() != null)
+            {
+                if (BE2_KeyboardShortcutManager.Instance != null)
+                {
+                    BE2_KeyboardShortcutManager.Instance.PushUndoAction(
+                        new UndoAction(UndoActionType.Create, null, Block, Transform.localPosition, Transform.parent)
+                    );
+                    Debug.Log($"[Shortcut] New block saved to undo stack for creation: {Block.Instruction.GetType().Name}");
+                }
+                _isNewBlock = false;  // 한 번만 저장
+            }
         }
 
         // v2.11 - added DropTo method to the BE2_DragBlock and BE2_DragOperation classes
