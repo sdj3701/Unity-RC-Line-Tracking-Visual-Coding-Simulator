@@ -8,15 +8,15 @@ public class FollowCamera : MonoBehaviour
     public float smoothTime = 0.2f;
 
     [Header("Fixed View Mode (시점 고정)")]
-    public Vector3 pointOfViewOffset = new Vector3(0f, 5f, 10f);           // 고정 시점 1 위치
+    public Vector3 pointOfViewOffset = new Vector3(0f, 10f, 10f);           // 고정 시점 1 위치
     public Vector3 TopDownViewOffset = new Vector3(0f, 17.5f, -10f);       // 고정 시점 2 위치
-    public Vector3 pointOfViewRotation = new Vector3(10f, 180f, 0f);       // 고정 시점 1 회전
+    public Vector3 pointOfViewRotation = new Vector3(20f, 180f, 0f);       // 고정 시점 1 회전
     public Vector3 TopDownViewRotation = new Vector3(90f, 0f, 0f);         // 고정 시점 2 회전
 
     [Header("TopDown Mode")]
     public float topDownHeight = 15f;     // 탑다운 뷰 높이
     public bool isTopDownView = false;    // 현재 뷰 모드
-    public bool isPointofview = false;    // 고정 시점 모드 활성화
+    public bool isPointofview = true;    // 고정 시점 모드 활성화
     private bool isFixedTopDown = false;  // true: TopDownView 고정, false: PointOfView 고정
 
     Vector3 velocity = Vector3.zero;
@@ -33,15 +33,15 @@ public class FollowCamera : MonoBehaviour
             // Fixed View Mode: 고정된 위치와 회전 사용 (target 따라가지 않음)
             if (isFixedTopDown)
             {
-                // TopDown 고정 시점
-                desiredPos = TopDownViewOffset;
-                desiredRot = Quaternion.Euler(TopDownViewRotation);
-            }
-            else
-            {
                 // PointOfView 고정 시점
                 desiredPos = pointOfViewOffset;
                 desiredRot = Quaternion.Euler(pointOfViewRotation);
+            }
+            else
+            {
+                // TopDown 고정 시점
+                desiredPos = TopDownViewOffset;
+                desiredRot = Quaternion.Euler(TopDownViewRotation);
             }
             
             // 부드럽게 위치 이동

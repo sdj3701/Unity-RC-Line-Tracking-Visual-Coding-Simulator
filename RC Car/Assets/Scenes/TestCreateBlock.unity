@@ -7496,13 +7496,13 @@ MonoBehaviour:
   target: {fileID: 1103646194}
   offset: {x: 0, y: 5, z: -8}
   smoothTime: 0.2
-  pointOfViewOffset: {x: 0, y: 5, z: 10}
+  pointOfViewOffset: {x: 0, y: 10, z: 10}
   TopDownViewOffset: {x: 0, y: 17.5, z: -10}
-  pointOfViewRotation: {x: 25, y: 180, z: 0}
+  pointOfViewRotation: {x: 20, y: 180, z: 0}
   TopDownViewRotation: {x: 90, y: 0, z: 0}
   topDownHeight: 15
   isTopDownView: 0
-  isPointofview: 0
+  isPointofview: 1
 --- !u!20 &123388857
 Camera:
   m_ObjectHideFlags: 0
