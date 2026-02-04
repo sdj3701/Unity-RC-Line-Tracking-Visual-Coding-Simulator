@@ -70982,7 +70982,6 @@ MonoBehaviour:
   fileListContent: {fileID: 133243843}
   fileItemTemplate: {fileID: 8049103239486230645, guid: e57dbec1933effb408c7250e53d1b86a,
     type: 3}
-  toggleGroup: {fileID: 133243844}
   loadButton: {fileID: 1293126930}
   deleteButton: {fileID: 25623379}
   cancelButton: {fileID: 1023797191}

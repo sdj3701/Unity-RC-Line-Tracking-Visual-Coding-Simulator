@@ -16,9 +16,11 @@ namespace MG_BlocksEngine2.Core
     /// </summary>
     public enum UndoActionType
     {
-        Delete,     // 블록 삭제 (Undo 시 복원)
-        Create,     // 블록 생성 (Undo 시 삭제)
-        Paste       // 블록 붙여넣기 (Undo 시 삭제)
+        Delete,       // 블록 삭제 (Undo 시 복원)
+        Create,       // 블록 생성 (Undo 시 삭제)
+        Paste,        // 블록 붙여넣기 (Undo 시 삭제)
+        Move,         // 블록 위치 이동 (Undo 시 원위치로)
+        ValueChange   // 블록 내 값 변경 (Undo 시 이전 값으로)
     }
 
     /// <summary>
@@ -28,17 +30,46 @@ namespace MG_BlocksEngine2.Core
     {
         public UndoActionType ActionType;
         public string BlockXml;           // 삭제된 블록의 XML (Delete 작업용)
-        public I_BE2_Block CreatedBlock;  // 생성된 블록 참조 (Create/Paste 작업용)
+        public I_BE2_Block CreatedBlock;  // 생성된 블록 참조 (Create/Paste/Move 작업용)
         public Vector3 Position;          // 블록 위치
         public Transform Parent;          // 부모 Transform
+        
+        // Move Undo용 추가 필드
+        public Transform OriginalParent;  // Move 전 원래 부모
+        public int SiblingIndex;          // 형제 순서 (블록 연결 순서 복원용)
+        
+        // ValueChange Undo용 추가 필드
+        public Component InputComponent;  // InputField 또는 Dropdown 컴포넌트
+        public string OldValue;           // 변경 전 값
+        public int OldDropdownIndex;      // 드롭다운의 경우 인덱스
 
-        public UndoAction(UndoActionType type, string xml = null, I_BE2_Block block = null, Vector3 pos = default, Transform parent = null)
+        public UndoAction(UndoActionType type, string xml = null, I_BE2_Block block = null, Vector3 pos = default, Transform parent = null, Transform originalParent = null, int siblingIndex = -1)
         {
             ActionType = type;
             BlockXml = xml;
             CreatedBlock = block;
             Position = pos;
             Parent = parent;
+            OriginalParent = originalParent;
+            SiblingIndex = siblingIndex;
+            InputComponent = null;
+            OldValue = null;
+            OldDropdownIndex = -1;
+        }
+        
+        // ValueChange용 생성자
+        public UndoAction(Component inputComponent, string oldValue, int oldDropdownIndex = -1)
+        {
+            ActionType = UndoActionType.ValueChange;
+            BlockXml = null;
+            CreatedBlock = null;
+            Position = default;
+            Parent = null;
+            OriginalParent = null;
+            SiblingIndex = -1;
+            InputComponent = inputComponent;
+            OldValue = oldValue;
+            OldDropdownIndex = oldDropdownIndex;
         }
     }
 
@@ -66,6 +97,10 @@ namespace MG_BlocksEngine2.Core
         // Undo 스택 (최대 50개 작업 저장)
         private Stack<UndoAction> _undoStack = new Stack<UndoAction>();
         private const int MAX_UNDO_COUNT = 50;
+        
+        // Undo 실행 중 플래그 (중복 저장 방지)
+        private bool _isUndoing = false;
+        public bool IsUndoing => _isUndoing;
 
         // 붙여넣기 오프셋 추적
         private int _pasteCount = 0;
@@ -199,6 +234,13 @@ namespace MG_BlocksEngine2.Core
                     // Undo 스택에 붙여넣기 작업 저장
                     PushUndoAction(new UndoAction(UndoActionType.Paste, null, newBlock, newBlock.Transform.localPosition, newBlock.Transform.parent));
                     
+                    // 붙여넣기된 블록을 "기존 블록"으로 표시 (이후 이동 시 Move Undo가 저장되도록)
+                    var dragBlock = newBlock.Transform.GetComponent<DragDrop.BE2_DragBlock>();
+                    if (dragBlock != null)
+                    {
+                        dragBlock.SetAsExistingBlock();
+                    }
+                    
                     Debug.Log($"[Shortcut] Block pasted with offset ({_pasteCount}), Undo stack count: {_undoStack.Count}");
                 }
             }
@@ -262,6 +304,8 @@ namespace MG_BlocksEngine2.Core
                 return;
             }
 
+            _isUndoing = true;  // Undo 실행 중 플래그 설정
+
             UndoAction action = _undoStack.Pop();
 
             switch (action.ActionType)
@@ -300,7 +344,66 @@ namespace MG_BlocksEngine2.Core
                         Debug.Log("[Shortcut] Block removed (Undo create/paste)");
                     }
                     break;
+
+                case UndoActionType.Move:
+                    // 이동된 블록을 원위치로 복원 (위치만)
+                    if (action.CreatedBlock != null && action.CreatedBlock.Transform != null && action.OriginalParent != null)
+                    {
+                        action.CreatedBlock.Transform.SetParent(action.OriginalParent);
+                        action.CreatedBlock.Transform.localPosition = action.Position;
+                        
+                        if (action.SiblingIndex >= 0)
+                        {
+                            action.CreatedBlock.Transform.SetSiblingIndex(action.SiblingIndex);
+                        }
+                        
+                        action.CreatedBlock.Instruction.InstructionBase.UpdateTargetObject();
+                        Debug.Log("[Shortcut] Block moved back to original position (Undo move)");
+                    }
+                    break;
+
+                case UndoActionType.ValueChange:
+                    // 값 변경 되돌리기
+                    if (action.InputComponent != null)
+                    {
+                        // InputField인 경우
+                        var inputField = Utils.BE2_InputField.GetBE2Component(action.InputComponent.transform);
+                        if (inputField != null && !inputField.isNull)
+                        {
+                            inputField.text = action.OldValue;
+                            Debug.Log($"[Shortcut] InputField value restored to: {action.OldValue}");
+                            
+                            // UpdateValues 호출
+                            var headerInput = action.InputComponent.GetComponent<I_BE2_BlockSectionHeaderInput>();
+                            if (headerInput != null)
+                            {
+                                headerInput.UpdateValues();
+                            }
+                            break;
+                        }
+                        
+                        // Dropdown인 경우
+                        var dropdown = Utils.BE2_Dropdown.GetBE2Component(action.InputComponent.transform);
+                        if (dropdown != null && !dropdown.isNull)
+                        {
+                            if (action.OldDropdownIndex >= 0)
+                            {
+                                dropdown.value = action.OldDropdownIndex;
+                            }
+                            Debug.Log($"[Shortcut] Dropdown value restored to index: {action.OldDropdownIndex} ({action.OldValue})");
+                            
+                            // UpdateValues 호출
+                            var headerInput = action.InputComponent.GetComponent<I_BE2_BlockSectionHeaderInput>();
+                            if (headerInput != null)
+                            {
+                                headerInput.UpdateValues();
+                            }
+                        }
+                    }
+                    break;
             }
+            
+            _isUndoing = false;  // Undo 완료
         }
 
         /// <summary>
@@ -308,6 +411,13 @@ namespace MG_BlocksEngine2.Core
         /// </summary>
         public void PushUndoAction(UndoAction action)
         {
+            // Undo 실행 중에는 새로운 Undo 저장 무시
+            if (_isUndoing)
+            {
+                Debug.Log("[Shortcut] Ignoring undo action during undo execution");
+                return;
+            }
+            
             // 스택 크기 제한
             if (_undoStack.Count >= MAX_UNDO_COUNT)
             {

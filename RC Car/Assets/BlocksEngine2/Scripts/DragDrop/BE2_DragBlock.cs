@@ -25,12 +25,26 @@ namespace MG_BlocksEngine2.DragDrop
         // 블록이 새로 생성된 것인지 추적 (Selection Menu에서 드래그로 생성)
         private bool _isNewBlock = true;
 
+        // Move Undo용 - 드래그 시작 전 위치/부모/형제순서 저장
+        private Vector3 _originalPosition;
+        private Transform _originalParent;
+        private int _originalSiblingIndex;
+
         void Awake()
         {
             _transform = transform;
             _rectTransform = GetComponent<RectTransform>();
             Block = GetComponent<I_BE2_Block>();
             _isNewBlock = true;  // 처음 생성 시 true
+        }
+
+        /// <summary>
+        /// 블록을 "기존 블록"으로 표시 (붙여넣기 등으로 생성된 후 호출)
+        /// 이후 이동 시 Move Undo가 저장됨
+        /// </summary>
+        public void SetAsExistingBlock()
+        {
+            _isNewBlock = false;
         }
 
         public void OnPointerDown()
@@ -46,6 +60,14 @@ namespace MG_BlocksEngine2.DragDrop
         // v2.13 - BE2_DragBlock.OnDragStart implements the group drag feature with also the possibility to drag a single block by holding the auxiliary key  
         public void OnDragStart()
         {
+            // Move Undo용 - 드래그 시작 전 원래 위치/부모/형제순서 저장
+            if (!_isNewBlock)
+            {
+                _originalPosition = Transform.localPosition;
+                _originalParent = Transform.parent;
+                _originalSiblingIndex = Transform.GetSiblingIndex();
+            }
+
             BE2_OuterArea outerArea = Block.Layout.OuterArea;
 
             if (!BE2_DragDropManager.disableGroupDrag)
@@ -261,14 +283,40 @@ namespace MG_BlocksEngine2.DragDrop
             // 새로 생성된 블록이 프로그래밍 환경에 배치된 경우 Undo 스택에 저장
             if (_isNewBlock && Transform.parent != null && Transform.parent.GetComponentInParent<I_BE2_ProgrammingEnv>() != null)
             {
-                if (BE2_KeyboardShortcutManager.Instance != null)
+                if (MG_BlocksEngine2.Core.BE2_KeyboardShortcutManager.Instance != null)
                 {
-                    BE2_KeyboardShortcutManager.Instance.PushUndoAction(
-                        new UndoAction(UndoActionType.Create, null, Block, Transform.localPosition, Transform.parent)
+                    MG_BlocksEngine2.Core.BE2_KeyboardShortcutManager.Instance.PushUndoAction(
+                        new MG_BlocksEngine2.Core.UndoAction(MG_BlocksEngine2.Core.UndoActionType.Create, null, Block, Transform.localPosition, Transform.parent)
                     );
                     Debug.Log($"[Shortcut] New block saved to undo stack for creation: {Block.Instruction.GetType().Name}");
                 }
                 _isNewBlock = false;  // 한 번만 저장
+            }
+            // 기존 블록이 이동된 경우 Move Undo 저장
+            else if (!_isNewBlock && _originalParent != null)
+            {
+                // 위치나 부모가 변경된 경우에만 저장
+                bool positionChanged = Vector3.Distance(_originalPosition, Transform.localPosition) > 0.1f;
+                bool parentChanged = _originalParent != Transform.parent;
+                
+                if (positionChanged || parentChanged)
+                {
+                    if (MG_BlocksEngine2.Core.BE2_KeyboardShortcutManager.Instance != null)
+                    {
+                        MG_BlocksEngine2.Core.BE2_KeyboardShortcutManager.Instance.PushUndoAction(
+                            new MG_BlocksEngine2.Core.UndoAction(
+                                MG_BlocksEngine2.Core.UndoActionType.Move, 
+                                null,  // Move는 위치만 저장
+                                Block, 
+                                _originalPosition, 
+                                Transform.parent,
+                                _originalParent,
+                                _originalSiblingIndex
+                            )
+                        );
+                        Debug.Log($"[Shortcut] Block move saved to undo stack: {Block.Instruction.GetType().Name}");
+                    }
+                }
             }
         }
 

@@ -37,18 +37,62 @@ namespace MG_BlocksEngine2.Block
         {
             UpdateValues();
             if (_dropdown != null)
-                _dropdown.onValueChanged.AddListener(delegate { UpdateValues(); });
+                _dropdown.onValueChanged.AddListener(OnDropdownValueChanged);
         }
 
         void OnDisable()
         {
             if (_dropdown != null)
-                _dropdown.onValueChanged.RemoveAllListeners();
+                _dropdown.onValueChanged.RemoveListener(OnDropdownValueChanged);
+            _isInitialized = false;
+        }
+        
+        // 이전 값 저장 (Undo용)
+        private int _previousIndex = -1;
+        private string _previousValue = "";
+        private bool _isInitialized = false;
+        
+        void OnDropdownValueChanged(int newIndex)
+        {
+            // 초기화 전이면 무시
+            if (!_isInitialized) return;
+            
+            // 값이 변경되었으면 Undo 저장
+            if (_previousIndex != newIndex && _previousIndex >= 0)
+            {
+                if (MG_BlocksEngine2.Core.BE2_KeyboardShortcutManager.Instance != null)
+                {
+                    MG_BlocksEngine2.Core.BE2_KeyboardShortcutManager.Instance.PushUndoAction(
+                        new MG_BlocksEngine2.Core.UndoAction(this, _previousValue, _previousIndex)
+                    );
+                    Debug.Log($"[ValueChange] Dropdown undo saved: index {_previousIndex} -> {newIndex}");
+                }
+            }
+            
+            // 현재 값을 이전 값으로 저장
+            _previousIndex = newIndex;
+            _previousValue = _dropdown.GetOptionsCount() > 0 ? _dropdown.GetSelectedOptionText() : "";
+            
+            UpdateValues();
         }
 
         void Start()
         {
             GetComponent<BE2_DropdownDynamicResize>().Resize(0);
+            // 직렬화 완료 후 현재 값을 이전 값으로 저장
+            StartCoroutine(DelayedInit());
+        }
+        
+        IEnumerator DelayedInit()
+        {
+            // 1프레임 대기하여 직렬화 완료 보장
+            yield return null;
+            if (_dropdown != null)
+            {
+                _previousIndex = _dropdown.value;
+                _previousValue = _dropdown.GetOptionsCount() > 0 ? _dropdown.GetSelectedOptionText() : "";
+            }
+            _isInitialized = true;
             UpdateValues();
         }
 

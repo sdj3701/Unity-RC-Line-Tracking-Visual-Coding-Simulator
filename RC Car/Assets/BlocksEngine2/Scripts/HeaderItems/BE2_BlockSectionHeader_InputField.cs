@@ -35,16 +35,52 @@ namespace MG_BlocksEngine2.Block
         void OnEnable()
         {
             UpdateValues();
-            _inputField.onEndEdit.AddListener(delegate { UpdateValues(); });
+            _inputField.onEndEdit.AddListener(OnInputEndEdit);
         }
 
         void OnDisable()
         {
-            _inputField.onEndEdit.RemoveAllListeners();
+            _inputField.onEndEdit.RemoveListener(OnInputEndEdit);
+            _isInitialized = false;  // 재활성화 시 다시 초기화
+        }
+
+        // 이전 값 저장 (Undo용)
+        private string _previousValue;
+        private bool _isInitialized = false;
+        
+        void OnInputEndEdit(string newValue)
+        {
+            // 초기화 전이면 무시
+            if (!_isInitialized) return;
+            
+            // 값이 변경되었으면 Undo 저장
+            if (_previousValue != newValue)
+            {
+                if (MG_BlocksEngine2.Core.BE2_KeyboardShortcutManager.Instance != null)
+                {
+                    MG_BlocksEngine2.Core.BE2_KeyboardShortcutManager.Instance.PushUndoAction(
+                        new MG_BlocksEngine2.Core.UndoAction(this, _previousValue)
+                    );
+                    Debug.Log($"[ValueChange] InputField undo saved: '{_previousValue}' -> '{newValue}'");
+                }
+                // 새 값을 이전 값으로 업데이트
+                _previousValue = newValue;
+            }
+            UpdateValues();
         }
 
         void Start()
         {
+            // 직렬화 완료 후 현재 값을 이전 값으로 저장
+            StartCoroutine(DelayedInit());
+        }
+        
+        IEnumerator DelayedInit()
+        {
+            // 1프레임 대기하여 직렬화 완료 보장
+            yield return null;
+            _previousValue = _inputField.text;
+            _isInitialized = true;
             UpdateValues();
         }
 

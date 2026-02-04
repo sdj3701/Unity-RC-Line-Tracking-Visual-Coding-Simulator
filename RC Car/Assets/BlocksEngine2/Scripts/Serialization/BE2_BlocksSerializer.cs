@@ -701,8 +701,15 @@ namespace MG_BlocksEngine2.Serializer
                 block.Instruction.InstructionBase.BlocksStack.PopulateStack();
             }
 
-            // 7. 사용한 프리팹 언로드 (메모리 해제)
+            // 8. 사용한 프리팹 언로드 (메모리 해제)
             BE2_BlockUtils.UnloadPrefab();
+
+            // 9. 로드된 블록을 "기존 블록"으로 표시 (이후 이동 시 Move Undo가 저장되도록)
+            var dragBlock = blockGo.GetComponent<DragDrop.BE2_DragBlock>();
+            if (dragBlock != null)
+            {
+                dragBlock.SetAsExistingBlock();
+            }
 
             return block;
         }
