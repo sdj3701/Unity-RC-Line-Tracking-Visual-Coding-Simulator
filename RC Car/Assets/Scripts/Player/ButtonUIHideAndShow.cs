@@ -15,7 +15,7 @@ public class ButtonUIHideAndShow : MonoBehaviour
     [Tooltip("활성화/비활성화할 Canvas")]
     public GameObject targetCanvas;
     public GameObject RenderTextureCanvas;
-    public GameObject RenderTextureCanvas2;
+    //public GameObject RenderTextureCanvas2;
     
     [Header("Settings")]
     [Tooltip("UI가 현재 확장되어 있는지 여부")]
@@ -89,7 +89,7 @@ public class ButtonUIHideAndShow : MonoBehaviour
         {
             targetCanvas.SetActive(isExpanded);
             RenderTextureCanvas.SetActive(isExpanded);
-            RenderTextureCanvas2.SetActive(isExpanded);
+            //RenderTextureCanvas2.SetActive(isExpanded);
         }
     }
 

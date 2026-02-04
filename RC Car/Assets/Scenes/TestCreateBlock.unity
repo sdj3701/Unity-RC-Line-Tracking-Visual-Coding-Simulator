@@ -82379,7 +82379,6 @@ MonoBehaviour:
   arrowImage: {fileID: 593180610}
   targetCanvas: {fileID: 1900031262}
   RenderTextureCanvas: {fileID: 1597117131}
-  RenderTextureCanvas2: {fileID: 2136594813}
   isExpanded: 1
   collapsedWidth: 837.7477
   expandedWidth: 1850
