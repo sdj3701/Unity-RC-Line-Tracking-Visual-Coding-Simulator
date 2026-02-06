@@ -164,6 +164,9 @@ public static class BE2XmlToRuntimeJson
             CollectVariablesFromFunctionDefinition(kvp.Value);
         }
         
+        // 2.6단계: 초기화 함수 처리 (SetVariable만 있는 함수의 변수를 init에 추가)
+        ProcessInitializationFunctions(functionDefinitions, initBlocks);
+        
         // 3단계: Loop 블록 처리
         var loopBlocks = new List<LoopBlockNode>();
         ProcessLoopBlocks(mainTriggerBlock, loopBlocks);
@@ -338,6 +341,10 @@ public static class BE2XmlToRuntimeJson
             CollectVariablesFromFunctionDefinition(kvp.Value);
         }
         Debug.Log($"[DEBUG FLOW] 5.5. 함수 내 변수 수집 완료 - 총 {variables.Count}개 변수");
+        
+        // 2.6단계: 초기화 함수 처리 (SetVariable만 있는 함수의 변수를 init에 추가)
+        ProcessInitializationFunctions(functionDefinitions, initBlocks);
+        Debug.Log($"[DEBUG FLOW] 5.6. 초기화 함수 처리 완료 - init 변수: {initBlocks.Count}개");
         
         // ============================================================
         // 3단계: WhenPlayClicked과 연결된 Loop 블록 처리 (함수 호출 추적 포함)
@@ -774,6 +781,101 @@ public static class BE2XmlToRuntimeJson
                                 {
                                     variables[varName] = value;
                                     Debug.Log($"[CollectVariables] {varName} = {value}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 함수가 초기화 함수인지 판별 (본문에 SetVariable 블록만 있는 경우)
+    /// PWM, If, CallFunction 등 동작 블록이 있으면 false 반환
+    /// </summary>
+    static bool IsInitializationFunction(XElement funcBlock)
+    {
+        var sections = funcBlock.Element("sections")?.Elements("Section");
+        if (sections == null) return false;
+        
+        bool hasSetVariable = false;
+        
+        foreach (var section in sections)
+        {
+            var childBlocks = section.Element("childBlocks")?.Elements("Block");
+            if (childBlocks == null) continue;
+            
+            foreach (var child in childBlocks)
+            {
+                var blockName = child.Element("blockName")?.Value?.Trim() ?? "";
+                
+                // SetVariable 블록인 경우
+                if (blockName == "Block Ins SetVariable" || blockName == "Block Cst SetVariable")
+                {
+                    hasSetVariable = true;
+                    continue;
+                }
+                
+                // 동작 블록이 있으면 초기화 함수가 아님
+                if (blockName.Contains("pWM") || blockName.Contains("PWM") ||
+                    blockName.Contains("If") || blockName.Contains("CallFunction") ||
+                    blockName.Contains("FunctionBlock") || blockName.Contains("Loop") ||
+                    blockName.Contains("Read") || blockName.Contains("Write"))
+                {
+                    return false;
+                }
+            }
+        }
+        
+        return hasSetVariable;
+    }
+    
+    /// <summary>
+    /// 초기화 함수들을 찾아 그 안의 SetVariable을 initBlocks에 추가
+    /// </summary>
+    static void ProcessInitializationFunctions(Dictionary<string, XElement> funcDefs, List<VariableNode> initBlocks)
+    {
+        foreach (var kvp in funcDefs)
+        {
+            var funcName = kvp.Key;
+            var funcBlock = kvp.Value;
+            
+            if (IsInitializationFunction(funcBlock))
+            {
+                Debug.Log($"[ProcessInitFunctions] 초기화 함수 발견: '{funcName}'");
+                
+                // 함수 내의 SetVariable 블록들을 수집
+                var sections = funcBlock.Element("sections")?.Elements("Section");
+                if (sections != null)
+                {
+                    foreach (var section in sections)
+                    {
+                        var childBlocks = section.Element("childBlocks")?.Elements("Block");
+                        if (childBlocks == null) continue;
+                        
+                        foreach (var child in childBlocks)
+                        {
+                            var blockName = child.Element("blockName")?.Value?.Trim();
+                            if (blockName == "Block Ins SetVariable" || blockName == "Block Cst SetVariable")
+                            {
+                                // 직접 inputs에서만 값 추출 (중첩 방지)
+                                var sectionInputs = child.Element("sections")?.Element("Section")?.Element("inputs")?.Elements("Input").ToList();
+                                if (sectionInputs != null && sectionInputs.Count >= 2)
+                                {
+                                    string varName = sectionInputs[0].Element("value")?.Value?.Trim();
+                                    string valStr = sectionInputs[1].Element("value")?.Value?.Trim();
+                                    
+                                    if (!string.IsNullOrEmpty(varName) && float.TryParse(valStr, out float value))
+                                    {
+                                        // 중복 체크
+                                        if (!initBlocks.Any(v => v.name.Equals(varName, StringComparison.OrdinalIgnoreCase)))
+                                        {
+                                            variables[varName] = value;
+                                            initBlocks.Add(new VariableNode { name = varName, value = value });
+                                            Debug.Log($"[ProcessInitFunctions] 변수 추가: {varName} = {value}");
+                                        }
+                                    }
                                 }
                             }
                         }
