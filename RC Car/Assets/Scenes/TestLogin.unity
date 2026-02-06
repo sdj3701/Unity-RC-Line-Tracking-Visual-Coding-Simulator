@@ -411,12 +411,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5d30cf1bca0988b459cec29ac22d38dd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _serverBaseUrl: https://your-api-server.com
+  _serverBaseUrl: http://ioteacher.com/api/users/me-by-token
   _validateEndpoint: /api/auth/validate
   _loginSceneName: TestLogin
   _gameSceneName: TestCreateBlock
   _useTestTokenInEditor: 1
-  _testToken: test-token-12345
+  _testToken: http://ioteacher.com/api/users/me-by-token
 --- !u!4 &1831112859
 Transform:
   m_ObjectHideFlags: 0

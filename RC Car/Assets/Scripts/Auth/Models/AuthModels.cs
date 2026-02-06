@@ -15,15 +15,25 @@ namespace Auth.Models
     }
 
     /// <summary>
-    /// 로그인한 사용자 정보
+    /// 로그인한 사용자 정보 (서버 응답 형식에 맞춤)
     /// </summary>
     [Serializable]
     public class UserInfo
     {
         public string userId;
-        public string username;
         public string email;
-        // 필요에 따라 추가
+        public string name;           // 서버에서 name으로 반환
+        public string username;       // 호환성 유지
+        public string role;
+        public string status;
+        public string profileImageUrl;
+        public string phone;
+        public string roadAddress;
+        public string detailAddress;
+        public string zipCode;
+        public bool agreeMarketing;
+        public string createdAt;
+        public string lastLogin;
     }
 
     /// <summary>
