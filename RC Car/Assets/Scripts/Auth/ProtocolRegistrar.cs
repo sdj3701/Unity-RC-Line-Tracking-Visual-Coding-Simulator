@@ -1,10 +1,6 @@
 // Assets/Scripts/Auth/ProtocolRegistrar.cs
 using UnityEngine;
 
-#if UNITY_STANDALONE_WIN && !UNITY_EDITOR
-using Microsoft.Win32;
-#endif
-
 namespace Auth
 {
     /// <summary>
@@ -27,20 +23,20 @@ namespace Auth
             {
                 // 현재 실행 중인 exe 파일의 경로
                 string appPath = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
-                
-                // Windows 레지스트리에 등록
-                using (var key = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{PROTOCOL_NAME}"))
+
+                using (var currentUser = GetCurrentUserRegistryKey())
+                using (var key = CreateSubKey(currentUser, $@"Software\Classes\{PROTOCOL_NAME}"))
                 {
-                    key.SetValue("", $"URL:{PROTOCOL_NAME} Protocol");
-                    key.SetValue("URL Protocol", "");
-                    
-                    using (var commandKey = key.CreateSubKey(@"shell\open\command"))
+                    SetRegistryValue(key, "", $"URL:{PROTOCOL_NAME} Protocol");
+                    SetRegistryValue(key, "URL Protocol", "");
+
+                    using (var commandKey = CreateSubKey(key, @"shell\open\command"))
                     {
                         // 이 앱을 URL과 함께 실행하도록 등록
-                        commandKey.SetValue("", $"\"{appPath}\" \"%1\"");
+                        SetRegistryValue(commandKey, "", $"\"{appPath}\" \"%1\"");
                     }
                 }
-                
+
                 Debug.Log($"✅ 프로토콜 '{PROTOCOL_NAME}://' 등록 완료");
             }
             catch (System.Exception e)
@@ -60,7 +56,11 @@ namespace Auth
 #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
             try
             {
-                Registry.CurrentUser.DeleteSubKeyTree($@"Software\Classes\{PROTOCOL_NAME}", false);
+                using (var currentUser = GetCurrentUserRegistryKey())
+                {
+                    DeleteSubKeyTree(currentUser, $@"Software\Classes\{PROTOCOL_NAME}");
+                }
+
                 Debug.Log($"✅ 프로토콜 '{PROTOCOL_NAME}://' 등록 해제 완료");
             }
             catch (System.Exception e)
@@ -68,6 +68,81 @@ namespace Auth
                 Debug.LogError($"❌ 프로토콜 등록 해제 실패: {e.Message}");
             }
 #endif
+        }
+
+        private static System.IDisposable GetCurrentUserRegistryKey()
+        {
+            var registryType =
+                System.Type.GetType("Microsoft.Win32.Registry, Microsoft.Win32.Registry") ??
+                System.Type.GetType("Microsoft.Win32.Registry, mscorlib");
+
+            if (registryType == null)
+            {
+                throw new System.PlatformNotSupportedException("Registry API is not available in this runtime.");
+            }
+
+            var currentUserProperty = registryType.GetProperty(
+                "CurrentUser",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+            if (currentUserProperty == null)
+            {
+                throw new System.MissingMemberException("Microsoft.Win32.Registry.CurrentUser");
+            }
+
+            var currentUser = currentUserProperty.GetValue(null, null);
+            if (currentUser is System.IDisposable disposable)
+            {
+                return disposable;
+            }
+
+            throw new System.InvalidOperationException("Could not access HKCU registry key.");
+        }
+
+        private static System.IDisposable CreateSubKey(object parentKey, string subKeyPath)
+        {
+            var createSubKeyMethod = parentKey.GetType().GetMethod("CreateSubKey", new[] { typeof(string) });
+            if (createSubKeyMethod == null)
+            {
+                throw new System.MissingMethodException(parentKey.GetType().FullName, "CreateSubKey(string)");
+            }
+
+            var subKey = createSubKeyMethod.Invoke(parentKey, new object[] { subKeyPath });
+            if (subKey is System.IDisposable disposable)
+            {
+                return disposable;
+            }
+
+            throw new System.InvalidOperationException($"Could not create registry key: {subKeyPath}");
+        }
+
+        private static void SetRegistryValue(object key, string name, string value)
+        {
+            var setValueMethod = key.GetType().GetMethod("SetValue", new[] { typeof(string), typeof(object) });
+            if (setValueMethod == null)
+            {
+                throw new System.MissingMethodException(key.GetType().FullName, "SetValue(string, object)");
+            }
+
+            setValueMethod.Invoke(key, new object[] { name, value });
+        }
+
+        private static void DeleteSubKeyTree(object parentKey, string subKeyPath)
+        {
+            var deleteWithThrowMethod = parentKey.GetType().GetMethod("DeleteSubKeyTree", new[] { typeof(string), typeof(bool) });
+            if (deleteWithThrowMethod != null)
+            {
+                deleteWithThrowMethod.Invoke(parentKey, new object[] { subKeyPath, false });
+                return;
+            }
+
+            var deleteMethod = parentKey.GetType().GetMethod("DeleteSubKeyTree", new[] { typeof(string) });
+            if (deleteMethod == null)
+            {
+                throw new System.MissingMethodException(parentKey.GetType().FullName, "DeleteSubKeyTree(string)");
+            }
+
+            deleteMethod.Invoke(parentKey, new object[] { subKeyPath });
         }
     }
 }

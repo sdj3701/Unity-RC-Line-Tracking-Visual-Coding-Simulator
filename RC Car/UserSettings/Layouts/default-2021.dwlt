@@ -121,7 +121,7 @@ MonoBehaviour:
   m_MinSize: {x: 400, y: 200}
   m_MaxSize: {x: 32384, y: 16192}
   vertical: 0
-  controlID: 92
+  controlID: 133
 --- !u!114 &6
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -172,7 +172,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 200}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 93
+  controlID: 134
 --- !u!114 &8
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -183,7 +183,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 12006, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: SceneView
+  m_Name: GameView
   m_EditorClassIdentifier: 
   m_Children: []
   m_Position:
@@ -194,13 +194,13 @@ MonoBehaviour:
     height: 865
   m_MinSize: {x: 102, y: 121}
   m_MaxSize: {x: 4002, y: 4021}
-  m_ActualView: {fileID: 15}
+  m_ActualView: {fileID: 12}
   m_Panes:
   - {fileID: 14}
   - {fileID: 15}
   - {fileID: 12}
-  m_Selected: 1
-  m_LastSelected: 2
+  m_Selected: 2
+  m_LastSelected: 1
 --- !u!114 &9
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -340,10 +340,10 @@ MonoBehaviour:
     m_VAllowExceedBaseRangeMin: 1
     m_VAllowExceedBaseRangeMax: 1
     m_ScaleWithWindow: 0
-    m_HSlider: 0
+    m_HSlider: 1
     m_VSlider: 0
     m_IgnoreScrollWheelUntilClicked: 0
-    m_EnableMouseInput: 0
+    m_EnableMouseInput: 1
     m_EnableSliderZoomHorizontal: 0
     m_EnableSliderZoomVertical: 0
     m_UniformScale: 1
@@ -1775,9 +1775,9 @@ MonoBehaviour:
   m_PlayAudio: 0
   m_AudioPlay: 0
   m_Position:
-    m_Target: {x: 863.1764, y: 665.1083, z: 33.379883}
+    m_Target: {x: 7.0638804, y: 1.2110412, z: -12.41284}
     speed: 2
-    m_Value: {x: 863.1764, y: 665.1083, z: 33.379883}
+    m_Value: {x: 7.0638804, y: 1.2110412, z: -12.41284}
   m_RenderMode: 0
   m_CameraMode:
     drawMode: 0
@@ -1824,13 +1824,13 @@ MonoBehaviour:
     m_GridAxis: 1
     m_gridOpacity: 0.5
   m_Rotation:
-    m_Target: {x: 0.04079429, y: 0.009637624, z: 0.0001318532, w: 0.99898666}
+    m_Target: {x: 0.003379183, y: 0.945781, z: -0.3242734, w: 0.008006996}
     speed: 2
-    m_Value: {x: 0.04079977, y: 0.009638919, z: 0.00013187091, w: 0.99912083}
+    m_Value: {x: 0.0033796383, y: 0.9459085, z: -0.32431713, w: 0.008008075}
   m_Size:
-    m_Target: 654.70966
+    m_Target: 1.6545056
     speed: 2
-    m_Value: 654.70966
+    m_Value: 1.6545056
   m_Ortho:
     m_Target: 0
     speed: 2
@@ -1896,14 +1896,14 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 1
     m_Folders:
-    - Assets/Scenes
+    - Assets/Scripts/Auth
     m_Globs: []
     m_OriginalText: 
     m_FilterByTypeIntersection: 0
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Scenes
+  - Assets/Scripts/Auth
   m_LastFoldersGridSize: -1
   m_LastProjectPath: D:\Unity\Unity RC Line\Unity-RC-Line-Tracking-Visual-Coding-Simulator\RC
     Car
@@ -1911,8 +1911,8 @@ MonoBehaviour:
     m_IsLocked: 0
   m_FolderTreeState:
     scrollPos: {x: 0, y: 0}
-    m_SelectedIDs: de6a0000
-    m_LastClickedID: 27358
+    m_SelectedIDs: e06a0000
+    m_LastClickedID: 27360
     m_ExpandedIDs: 00000000a86a0000aa6a0000ac6a0000ae6a0000b06a0000b26a0000b46a0000b66a0000b86a0000ba6a0000bc6a0000be6a0000c06a0000c26a0000c46a0000c66a0000c86a0000ca6a0000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
@@ -1972,18 +1972,18 @@ MonoBehaviour:
     m_ExpandedInstanceIDs: 62c20000ac70000072670000ec6b0000be6d0000f2570100f0630000c06d0000ac8c000044e10800e28d00009e720900de990b0000000000086c0400
     m_RenameOverlay:
       m_UserAcceptedRename: 0
-      m_Name: 
-      m_OriginalName: 
+      m_Name: TestCreateBlock
+      m_OriginalName: TestCreateBlock
       m_EditFieldRect:
         serializedVersion: 2
         x: 0
         y: 0
         width: 0
         height: 0
-      m_UserData: 0
+      m_UserData: 27380
       m_IsWaitingForDelay: 0
       m_IsRenaming: 0
-      m_OriginalEventType: 11
+      m_OriginalEventType: 0
       m_IsRenamingFilename: 1
       m_ClientGUIView: {fileID: 9}
     m_CreateAssetUtility:
@@ -2032,7 +2032,7 @@ MonoBehaviour:
       scrollPos: {x: 0, y: 0}
       m_SelectedIDs: 
       m_LastClickedID: 0
-      m_ExpandedIDs: c43fffffa641fffff041fffff644ffff72c8ffffbcc8ffffc2cbffff06faffff36fbffff
+      m_ExpandedIDs: 3064f9ff6c64f9ff7267f9ffe4d4fbff36fbffff
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 
