@@ -416,7 +416,7 @@ MonoBehaviour:
   _loginSceneName: TestLogin
   _gameSceneName: TestCreateBlock
   _useTestTokenInEditor: 1
-  _testToken: http://ioteacher.com/api/users/me-by-token
+  _testToken: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZGozNzAxIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3NzAzNjQ4NDMsImV4cCI6MTc3MDk2OTY0M30.tcuZd9DGo3rcjCG7FOEE29alFEltK_wbmvKCgIFJXYg
 --- !u!4 &1831112859
 Transform:
   m_ObjectHideFlags: 0

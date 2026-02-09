@@ -1313,7 +1313,9 @@ public static class BE2XmlToRuntimeJson
     
     static LoopBlockNode ParseIfBlock(XElement block, string type)
     {
-        var node = new LoopBlockNode { type = type };
+        // If header/section does not provide an explicit comparison value,
+        // treat sensor condition as "if (sensor == true)" by default.
+        var node = new LoopBlockNode { type = type, conditionValue = 1 };
         
         // 1. headerInputs에서 조건 추출 (digitalRead 또는 Block_Read 블록)
         var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
@@ -1550,6 +1552,8 @@ public static class BE2XmlToRuntimeJson
     static int ResolveInt(string token)
     {
         if (string.IsNullOrEmpty(token)) return 0;
+        if (string.Equals(token, "true", StringComparison.OrdinalIgnoreCase)) return 1;
+        if (string.Equals(token, "false", StringComparison.OrdinalIgnoreCase)) return 0;
         if (variables.TryGetValue(token, out var v)) return Mathf.RoundToInt(v);
         int.TryParse(token, out var i);
         return i;
