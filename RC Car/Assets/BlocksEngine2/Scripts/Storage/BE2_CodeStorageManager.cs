@@ -1,11 +1,12 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace MG_BlocksEngine2.Storage
 {
     /// <summary>
-    /// 코드 저장소 매니저 - 싱글톤
-    /// Storage Provider를 관리하고, UI와 저장소 사이의 중간 레이어 역할
+    /// UI에서 사용하는 저장소 매니저 게이트웨이입니다.
+    /// 로컬 저장소와 원격 DB 저장소 제공자 사이를 전환할 수 있습니다.
     /// </summary>
     public class BE2_CodeStorageManager : MonoBehaviour
     {
@@ -28,19 +29,25 @@ namespace MG_BlocksEngine2.Storage
             }
         }
 
-        // 현재 사용 중인 저장소 Provider
-        private ICodeStorageProvider _storageProvider;
+        [Header("Storage")]
+        [SerializeField] private bool _useRemoteStorage = true;
 
-        void Awake()
+        private ICodeStorageProvider _storageProvider;
+        private ICodeStorageProvider _localStorageProvider;
+
+        private void Awake()
         {
             if (_instance == null)
             {
                 _instance = this;
                 DontDestroyOnLoad(gameObject);
-                
-                // 기본값: 로컬 저장소
-                _storageProvider = new LocalStorageProvider();
-                Debug.Log("[BE2_CodeStorageManager] 초기화 완료 (LocalStorageProvider)");
+
+                _localStorageProvider = new LocalStorageProvider();
+                _storageProvider = _useRemoteStorage
+                    ? new DatabaseStorageProvider(_localStorageProvider)
+                    : _localStorageProvider;
+
+                Debug.Log($"[BE2_CodeStorageManager] Initialized with provider: {_storageProvider.GetType().Name}");
             }
             else if (_instance != this)
             {
@@ -49,81 +56,94 @@ namespace MG_BlocksEngine2.Storage
         }
 
         /// <summary>
-        /// 저장소 Provider 교체
-        /// TODO: [향후 확장] DB 연결 시 DatabaseStorageProvider로 교체
-        /// 예시: BE2_CodeStorageManager.Instance.SetStorageProvider(new DatabaseStorageProvider());
+        /// 런타임에 저장소 제공자를 교체합니다(예: 로컬 강제/커스텀 원격 제공자).
         /// </summary>
         public void SetStorageProvider(ICodeStorageProvider provider)
         {
             _storageProvider = provider;
-            Debug.Log($"[BE2_CodeStorageManager] StorageProvider 변경: {provider.GetType().Name}");
+            Debug.Log($"[BE2_CodeStorageManager] StorageProvider changed: {provider.GetType().Name}");
         }
 
-        /// <summary>
-        /// 현재 Provider 반환
-        /// </summary>
         public ICodeStorageProvider GetStorageProvider() => _storageProvider;
 
-        #region Storage Operations (Provider에 위임)
-
         /// <summary>
-        /// 코드 저장
+        /// 현재 활성화된 제공자를 통해 XML + JSON을 저장합니다.
         /// </summary>
-        public bool SaveCode(string fileName, string xmlContent, string jsonContent)
+        public async Task<bool> SaveCodeAsync(string fileName, string xmlContent, string jsonContent, bool isModified)
         {
             if (_storageProvider == null)
             {
-                Debug.LogError("[BE2_CodeStorageManager] StorageProvider가 설정되지 않음");
+                Debug.LogError("[BE2_CodeStorageManager] StorageProvider is not set.");
                 return false;
             }
-            return _storageProvider.SaveCode(fileName, xmlContent, jsonContent);
+
+            return await _storageProvider.SaveCodeAsync(fileName, xmlContent, jsonContent, isModified);
         }
 
         /// <summary>
-        /// XML 불러오기
+        /// 현재 활성화된 제공자를 통해 XML을 불러옵니다.
         /// </summary>
-        public string LoadXml(string fileName)
+        public async Task<string> LoadXmlAsync(string fileName)
         {
-            if (_storageProvider == null) return null;
-            return _storageProvider.LoadXml(fileName);
+            if (_storageProvider == null)
+            {
+                return null;
+            }
+
+            return await _storageProvider.LoadXmlAsync(fileName);
         }
 
         /// <summary>
-        /// JSON 불러오기
+        /// 현재 활성화된 제공자를 통해 JSON을 불러옵니다.
         /// </summary>
-        public string LoadJson(string fileName)
+        public async Task<string> LoadJsonAsync(string fileName)
         {
-            if (_storageProvider == null) return null;
-            return _storageProvider.LoadJson(fileName);
+            if (_storageProvider == null)
+            {
+                return null;
+            }
+
+            return await _storageProvider.LoadJsonAsync(fileName);
         }
 
         /// <summary>
-        /// 저장된 파일 목록
+        /// 현재 활성화된 제공자를 통해 저장 파일 목록을 가져옵니다.
         /// </summary>
-        public List<string> GetFileList()
+        public async Task<List<string>> GetFileListAsync()
         {
-            if (_storageProvider == null) return new List<string>();
-            return _storageProvider.GetFileList();
+            if (_storageProvider == null)
+            {
+                return new List<string>();
+            }
+
+            return await _storageProvider.GetFileListAsync();
         }
 
         /// <summary>
-        /// 파일 존재 확인
+        /// 현재 활성화된 제공자를 통해 파일 존재 여부를 확인합니다.
         /// </summary>
-        public bool FileExists(string fileName)
+        public async Task<bool> FileExistsAsync(string fileName)
         {
-            if (_storageProvider == null) return false;
-            return _storageProvider.FileExists(fileName);
+            if (_storageProvider == null)
+            {
+                return false;
+            }
+
+            return await _storageProvider.FileExistsAsync(fileName);
         }
 
         /// <summary>
-        /// 파일 삭제
+        /// 현재 활성화된 제공자를 통해 파일을 삭제합니다.
         /// </summary>
-        public bool DeleteCode(string fileName)
+        public async Task<bool> DeleteCodeAsync(string fileName)
         {
-            if (_storageProvider == null) return false;
-            return _storageProvider.DeleteCode(fileName);
-        }
+            if (_storageProvider == null)
+            {
+                return false;
+            }
 
-        #endregion
+            return await _storageProvider.DeleteCodeAsync(fileName);
+        }
     }
 }
+

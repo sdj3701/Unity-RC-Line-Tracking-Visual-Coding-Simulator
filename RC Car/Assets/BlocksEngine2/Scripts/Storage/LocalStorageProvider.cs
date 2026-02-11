@@ -1,14 +1,15 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace MG_BlocksEngine2.Storage
 {
     /// <summary>
-    /// 로컬 파일 시스템 저장소 구현
-    /// persistentDataPath/SavedCodes/ 폴더에 XML + JSON 파일로 저장
+    /// 로컬 파일 저장소 구현체입니다.
+    /// persistentDataPath/SavedCodes 경로에 XML + JSON을 저장합니다.
     /// </summary>
     public class LocalStorageProvider : ICodeStorageProvider
     {
@@ -31,146 +32,157 @@ namespace MG_BlocksEngine2.Storage
             if (!Directory.Exists(_basePath))
             {
                 Directory.CreateDirectory(_basePath);
-                Debug.Log($"[LocalStorageProvider] 저장 폴더 생성: {_basePath}");
+                Debug.Log($"[LocalStorageProvider] Save directory created: {_basePath}");
             }
         }
 
         private string GetXmlPath(string fileName) => Path.Combine(_basePath, $"{fileName}.xml");
         private string GetJsonPath(string fileName) => Path.Combine(_basePath, $"{fileName}.json");
 
-        public bool SaveCode(string fileName, string xmlContent, string jsonContent)
+        /// <summary>
+        /// XML + JSON을 로컬에 저장하고 실행기에서 사용하는 런타임 파일을 갱신합니다.
+        /// </summary>
+        public async Task<bool> SaveCodeAsync(string fileName, string xmlContent, string jsonContent, bool isModified)
         {
             try
             {
                 EnsureDirectoryExists();
-                
+
                 string xmlPath = GetXmlPath(fileName);
                 string jsonPath = GetJsonPath(fileName);
 
-                File.WriteAllText(xmlPath, xmlContent);
-                Debug.Log($"[LocalStorageProvider] XML 저장 완료: {xmlPath}");
+                string safeXml = xmlContent ?? string.Empty;
+                string safeJson = jsonContent ?? "{}";
 
-                File.WriteAllText(jsonPath, jsonContent);
-                Debug.Log($"[LocalStorageProvider] JSON 저장 완료: {jsonPath}");
+                await Task.Run(() => File.WriteAllText(xmlPath, safeXml));
+                await Task.Run(() => File.WriteAllText(jsonPath, safeJson));
 
-                // ★ BlocksRuntime.json/xml도 함께 업데이트하여 BlockCodeExecutor가 바로 로드할 수 있게 함
+                // BlockCodeExecutor가 즉시 다시 로드할 수 있도록 런타임 파일을 동기화합니다.
                 string runtimeJsonPath = Path.Combine(Application.persistentDataPath, "BlocksRuntime.json");
                 string runtimeXmlPath = Path.Combine(Application.persistentDataPath, "BlocksRuntime.xml");
-                
-                File.WriteAllText(runtimeJsonPath, jsonContent);
-                File.WriteAllText(runtimeXmlPath, xmlContent);
-                Debug.Log($"[LocalStorageProvider] ★ 런타임 파일 갱신 완료: {runtimeJsonPath}");
 
+                await Task.Run(() => File.WriteAllText(runtimeJsonPath, safeJson));
+                await Task.Run(() => File.WriteAllText(runtimeXmlPath, safeXml));
+
+                Debug.Log($"[LocalStorageProvider] Saved '{fileName}' (isModified={isModified})");
                 return true;
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[LocalStorageProvider] 저장 실패: {ex.Message}");
+                Debug.LogError($"[LocalStorageProvider] Save failed: {ex.Message}");
                 return false;
             }
         }
 
-        public string LoadXml(string fileName)
+        /// <summary>
+        /// 로컬 저장소에서 XML을 불러옵니다.
+        /// </summary>
+        public async Task<string> LoadXmlAsync(string fileName)
         {
             try
             {
                 string path = GetXmlPath(fileName);
-                if (File.Exists(path))
+                if (!File.Exists(path))
                 {
-                    return File.ReadAllText(path);
+                    Debug.LogWarning($"[LocalStorageProvider] XML not found: {path}");
+                    return null;
                 }
-                Debug.LogWarning($"[LocalStorageProvider] XML 파일 없음: {path}");
-                return null;
+
+                return await Task.Run(() => File.ReadAllText(path));
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[LocalStorageProvider] XML 로드 실패: {ex.Message}");
+                Debug.LogError($"[LocalStorageProvider] XML load failed: {ex.Message}");
                 return null;
             }
         }
 
-        public string LoadJson(string fileName)
+        /// <summary>
+        /// 로컬 저장소에서 JSON을 불러옵니다.
+        /// </summary>
+        public async Task<string> LoadJsonAsync(string fileName)
         {
             try
             {
                 string path = GetJsonPath(fileName);
-                if (File.Exists(path))
+                if (!File.Exists(path))
                 {
-                    return File.ReadAllText(path);
+                    Debug.LogWarning($"[LocalStorageProvider] JSON not found: {path}");
+                    return null;
                 }
-                Debug.LogWarning($"[LocalStorageProvider] JSON 파일 없음: {path}");
-                return null;
+
+                return await Task.Run(() => File.ReadAllText(path));
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[LocalStorageProvider] JSON 로드 실패: {ex.Message}");
+                Debug.LogError($"[LocalStorageProvider] JSON load failed: {ex.Message}");
                 return null;
             }
         }
 
-        public List<string> GetFileList()
+        /// <summary>
+        /// 확장자를 제외한 XML 파일 목록을 반환합니다.
+        /// </summary>
+        public Task<List<string>> GetFileListAsync()
         {
             try
             {
                 EnsureDirectoryExists();
-                
+
                 DirectoryInfo dirInfo = new DirectoryInfo(_basePath);
                 FileInfo[] xmlFiles = dirInfo.GetFiles("*.xml");
-
-                // 확장자 제외한 파일명 반환
-                return xmlFiles.Select(f => Path.GetFileNameWithoutExtension(f.Name)).ToList();
+                List<string> fileList = xmlFiles.Select(f => Path.GetFileNameWithoutExtension(f.Name)).ToList();
+                return Task.FromResult(fileList);
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[LocalStorageProvider] 파일 목록 조회 실패: {ex.Message}");
-                return new List<string>();
+                Debug.LogError($"[LocalStorageProvider] File list load failed: {ex.Message}");
+                return Task.FromResult(new List<string>());
             }
         }
 
-        public bool FileExists(string fileName)
+        /// <summary>
+        /// 로컬 XML 파일 존재 여부를 확인합니다.
+        /// </summary>
+        public Task<bool> FileExistsAsync(string fileName)
         {
-            return File.Exists(GetXmlPath(fileName));
+            bool exists = File.Exists(GetXmlPath(fileName));
+            return Task.FromResult(exists);
         }
 
-        public bool DeleteCode(string fileName)
+        /// <summary>
+        /// 로컬 XML + JSON 쌍을 삭제합니다.
+        /// </summary>
+        public Task<bool> DeleteCodeAsync(string fileName)
         {
             try
             {
                 string xmlPath = GetXmlPath(fileName);
                 string jsonPath = GetJsonPath(fileName);
-
                 bool deleted = false;
 
                 if (File.Exists(xmlPath))
                 {
                     File.Delete(xmlPath);
-                    Debug.Log($"[LocalStorageProvider] XML 삭제: {xmlPath}");
                     deleted = true;
                 }
 
                 if (File.Exists(jsonPath))
                 {
                     File.Delete(jsonPath);
-                    Debug.Log($"[LocalStorageProvider] JSON 삭제: {jsonPath}");
                     deleted = true;
                 }
 
-                return deleted;
+                return Task.FromResult(deleted);
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[LocalStorageProvider] 삭제 실패: {ex.Message}");
-                return false;
+                Debug.LogError($"[LocalStorageProvider] Delete failed: {ex.Message}");
+                return Task.FromResult(false);
             }
         }
 
-        /// <summary>
-        /// 저장 폴더 경로 반환
-        /// </summary>
         public string GetBasePath() => _basePath;
     }
-
-    // TODO: [향후 확장] DatabaseStorageProvider 구현 시 참고
-    // - 이 클래스와 동일한 인터페이스 구현
-    // - BE2_CodeStorageManager.SetStorageProvider()로 교체
 }
+

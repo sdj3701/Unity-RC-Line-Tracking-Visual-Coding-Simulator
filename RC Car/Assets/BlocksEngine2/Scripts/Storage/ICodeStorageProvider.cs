@@ -1,73 +1,43 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace MG_BlocksEngine2.Storage
 {
     /// <summary>
-    /// 코드 저장소 인터페이스 - 저장소 추상화 레이어
-    /// 로컬 파일, DB, 클라우드 등 다양한 저장소 구현 가능
+    /// 코드 저장/불러오기 제공자용 저장소 추상화 인터페이스입니다.
+    /// 로컬 파일 I/O와 원격 HTTP I/O를 모두 지원하므로 모든 API를 비동기로 제공합니다.
     /// </summary>
     public interface ICodeStorageProvider
     {
         /// <summary>
-        /// 코드 저장 (XML + JSON)
+        /// XML + JSON 쌍을 저장합니다. `isModified`는 기존 XML과 다를 때만 true입니다.
         /// </summary>
-        /// <param name="fileName">파일명 (확장자 제외)</param>
-        /// <param name="xmlContent">XML 내용</param>
-        /// <param name="jsonContent">JSON 내용</param>
-        /// <returns>저장 성공 여부</returns>
-        bool SaveCode(string fileName, string xmlContent, string jsonContent);
+        Task<bool> SaveCodeAsync(string fileName, string xmlContent, string jsonContent, bool isModified);
 
         /// <summary>
-        /// XML 코드 불러오기
+        /// 단일 파일의 XML 내용을 불러옵니다.
         /// </summary>
-        /// <param name="fileName">파일명</param>
-        /// <returns>XML 내용 (없으면 null)</returns>
-        string LoadXml(string fileName);
+        Task<string> LoadXmlAsync(string fileName);
 
         /// <summary>
-        /// JSON 코드 불러오기
+        /// 단일 파일의 JSON 내용을 불러옵니다.
         /// </summary>
-        /// <param name="fileName">파일명</param>
-        /// <returns>JSON 내용 (없으면 null)</returns>
-        string LoadJson(string fileName);
+        Task<string> LoadJsonAsync(string fileName);
 
         /// <summary>
-        /// 저장된 파일 목록 반환 (확장자 제외된 파일명)
+        /// 확장자를 제외한 저장 파일 목록을 반환합니다.
         /// </summary>
-        /// <returns>파일명 리스트</returns>
-        List<string> GetFileList();
+        Task<List<string>> GetFileListAsync();
 
         /// <summary>
-        /// 파일 존재 여부 확인
+        /// 파일 존재 여부를 확인합니다.
         /// </summary>
-        /// <param name="fileName">파일명</param>
-        /// <returns>존재하면 true</returns>
-        bool FileExists(string fileName);
+        Task<bool> FileExistsAsync(string fileName);
 
         /// <summary>
-        /// 저장된 코드 삭제 (XML + JSON 모두)
+        /// XML + JSON 쌍을 삭제합니다.
         /// </summary>
-        /// <param name="fileName">파일명</param>
-        /// <returns>삭제 성공 여부</returns>
-        bool DeleteCode(string fileName);
+        Task<bool> DeleteCodeAsync(string fileName);
     }
-
-    // TODO: [향후 확장] DatabaseStorageProvider 구현
-    // DB 연결 시 이 인터페이스를 구현하는 DatabaseStorageProvider 클래스 생성
-    // 예시:
-    // public class DatabaseStorageProvider : ICodeStorageProvider
-    // {
-    //     private string _apiEndpoint;
-    //     private string _userId;
-    //     
-    //     public bool SaveCode(string fileName, string xmlContent, string jsonContent)
-    //     {
-    //         // HTTP POST to server
-    //     }
-    //     
-    //     public List<string> GetFileList()
-    //     {
-    //         // HTTP GET from server
-    //     }
-    // }
 }
+

@@ -1,5 +1,7 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -12,16 +14,16 @@ namespace MG_BlocksEngine2.UI
 {
     public class BE2_UI_ContextMenuManager : MonoBehaviour
     {
-        I_BE2_UI_ContextMenu[] _contextMenuArray;
-        I_BE2_UI_ContextMenu currentContextMenu;
+        private I_BE2_UI_ContextMenu[] _contextMenuArray;
+        private I_BE2_UI_ContextMenu currentContextMenu;
+
         /// <summary>
-        /// 코드 생성 완료 시 발생하는 이벤트
-        /// BlockCodeExecutor, VirtualArduinoMicro 등에서 구독하여 재로드
+        /// 코드 생성/저장/불러오기가 완료되면 발생하는 이벤트입니다.
         /// </summary>
         public static event System.Action OnCodeGenerated;
 
-        // v2.6.2 - bugfix: fixed changes on BE2 Inspector paths not perssiting 
-        // UI ContextMenuManager instance changed to property to avoid null exception
+        // v2.6.2 - 버그 수정: BE2 Inspector 경로 변경사항이 유지되지 않던 문제 수정
+        // Null 예외를 피하기 위해 UI ContextMenuManager 인스턴스 접근을 프로퍼티로 변경
         static BE2_UI_ContextMenuManager _instance;
         public static BE2_UI_ContextMenuManager instance
         {
@@ -40,19 +42,20 @@ namespace MG_BlocksEngine2.UI
         public bool isActive = false;
         public Image image;
 
-        // === 저장/불러오기 UI 패널 참조 ===
         [Header("Save/Load UI Panels")]
         public BE2_UI_CodeSavePanel codeSavePanel;
         public BE2_UI_CodeLoadPanel codeLoadPanel;
 
-        void Start()
+        private void Start()
         {
             _contextMenuArray = new I_BE2_UI_ContextMenu[0];
             foreach (Transform child in transform)
             {
                 I_BE2_UI_ContextMenu context = child.GetComponent<I_BE2_UI_ContextMenu>();
                 if (context != null)
+                {
                     BE2_ArrayUtils.Add(ref _contextMenuArray, context);
+                }
             }
 
             CloseContextMenu();
@@ -78,16 +81,14 @@ namespace MG_BlocksEngine2.UI
                     currentContextMenu.Close();
                     currentContextMenu = null;
                 }
+
                 isActive = false;
                 panelCancel.transform.gameObject.SetActive(false);
             }
         }
 
-        #region 새 저장/불러오기 시스템
+        #region New Save/Load
 
-        /// <summary>
-        /// 저장 패널 열기 (기존 SaveButton에서 호출)
-        /// </summary>
         public void OpenSavePanel()
         {
             if (codeSavePanel != null)
@@ -96,14 +97,11 @@ namespace MG_BlocksEngine2.UI
             }
             else
             {
-                Debug.LogWarning("[ContextMenuManager] CodeSavePanel이 연결되지 않았습니다. 기존 방식으로 저장합니다.");
+                Debug.LogWarning("[ContextMenuManager] CodeSavePanel is not assigned. Using legacy save.");
                 CodeGenerated();
             }
         }
 
-        /// <summary>
-        /// 불러오기 패널 열기 (기존 LoadXMLButton에서 호출)
-        /// </summary>
         public void OpenLoadPanel()
         {
             if (codeLoadPanel != null)
@@ -112,17 +110,17 @@ namespace MG_BlocksEngine2.UI
             }
             else
             {
-                Debug.LogWarning("[ContextMenuManager] CodeLoadPanel이 연결되지 않았습니다. 기존 방식으로 불러옵니다.");
+                Debug.LogWarning("[ContextMenuManager] CodeLoadPanel is not assigned. Using legacy load.");
                 XMLCodeGenerated();
             }
         }
 
         /// <summary>
-        /// 사용자 지정 이름으로 코드 저장 (XML + JSON)
+        /// 비동기 저장소 제공자를 통해 XML + JSON을 저장합니다.
+        /// isModified는 기존 XML과 현재 XML이 다를 때만 true입니다.
         /// </summary>
-        public bool SaveCodeWithName(string fileName)
+        public async Task<bool> SaveCodeWithNameAsync(string fileName)
         {
-            // XML 생성
             var exporter = GameObject.FindObjectOfType<BE2_CodeExporter>();
             bool created = false;
             if (exporter == null)
@@ -133,7 +131,7 @@ namespace MG_BlocksEngine2.UI
             }
 
             string xmlContent = exporter.GenerateXmlFromAllEnvs();
-            
+
             if (created && exporter != null)
             {
                 DestroyImmediate(exporter.gameObject);
@@ -141,58 +139,56 @@ namespace MG_BlocksEngine2.UI
 
             if (string.IsNullOrEmpty(xmlContent))
             {
-                Debug.LogWarning("[SaveCodeWithName] XML 생성 실패 또는 블록 없음");
+                Debug.LogWarning("[SaveCodeWithNameAsync] XML generation failed or no blocks found.");
                 return false;
             }
 
-            // JSON 생성
             string jsonContent = BE2XmlToRuntimeJson.ExportToString(xmlContent);
             if (string.IsNullOrEmpty(jsonContent))
             {
-                Debug.LogWarning("[SaveCodeWithName] JSON 생성 실패");
+                Debug.LogWarning("[SaveCodeWithNameAsync] JSON generation failed.");
                 return false;
             }
 
-            // StorageManager를 통해 저장
-            bool success = BE2_CodeStorageManager.Instance.SaveCode(fileName, xmlContent, jsonContent);
-            
+            string existingXml = await BE2_CodeStorageManager.Instance.LoadXmlAsync(fileName);
+            bool isModified = !string.IsNullOrEmpty(existingXml) &&
+                              !string.Equals(existingXml, xmlContent, StringComparison.Ordinal);
+
+            bool success = await BE2_CodeStorageManager.Instance.SaveCodeAsync(fileName, xmlContent, jsonContent, isModified);
+
             if (success)
             {
-                Debug.Log($"[SaveCodeWithName] 저장 완료: {fileName}");
-                
-                // 이벤트 발생
+                Debug.Log($"[SaveCodeWithNameAsync] Saved: {fileName}, isModified={isModified}");
                 OnCodeGenerated?.Invoke();
-                
-                // 완료 UI 표시
+
                 if (image != null)
+                {
                     image.gameObject.SetActive(true);
+                }
             }
 
             return success;
         }
 
         /// <summary>
-        /// 파일에서 코드 불러오기 (기존 블록 삭제 후 로드)
+        /// 비동기 저장소에서 XML을 불러와 블록을 재구성하고 런타임 JSON을 다시 생성합니다.
         /// </summary>
-        public bool LoadCodeFromFile(string fileName)
+        public async Task<bool> LoadCodeFromFileAsync(string fileName)
         {
-            // XML 불러오기
-            string xmlContent = BE2_CodeStorageManager.Instance.LoadXml(fileName);
+            string xmlContent = await BE2_CodeStorageManager.Instance.LoadXmlAsync(fileName);
             if (string.IsNullOrEmpty(xmlContent))
             {
-                Debug.LogWarning($"[LoadCodeFromFile] XML 파일을 찾을 수 없음: {fileName}");
+                Debug.LogWarning($"[LoadCodeFromFileAsync] XML not found: {fileName}");
                 return false;
             }
 
-            // Programming Environment 찾기
             var envs = GameObject.FindObjectsOfType<BE2_ProgrammingEnv>();
             if (envs == null || envs.Length == 0)
             {
-                Debug.LogWarning("[LoadCodeFromFile] BE2_ProgrammingEnv를 찾을 수 없습니다.");
+                Debug.LogWarning("[LoadCodeFromFileAsync] No BE2_ProgrammingEnv found.");
                 return false;
             }
 
-            // 활성화된 env 찾기
             BE2_ProgrammingEnv targetEnv = null;
             foreach (var env in envs)
             {
@@ -202,53 +198,49 @@ namespace MG_BlocksEngine2.UI
                     break;
                 }
             }
-            if (targetEnv == null) targetEnv = envs[0];
 
-            // 기존 블록 삭제
+            if (targetEnv == null)
+            {
+                targetEnv = envs[0];
+            }
+
             targetEnv.ClearBlocks();
-            Debug.Log("[LoadCodeFromFile] 기존 블록 삭제 완료");
-
-            // XML에서 블록 로드
             BE2_BlocksSerializer.XMLToBlocksCode(xmlContent, targetEnv);
-            Debug.Log($"[LoadCodeFromFile] 블록 로드 완료: {fileName}");
-
-            // JSON 재생성 (런타임용)
             BE2XmlToRuntimeJson.Export(xmlContent);
-            Debug.Log("[LoadCodeFromFile] JSON 재생성 완료");
 
-            // 이벤트 발생
             OnCodeGenerated?.Invoke();
+            Debug.Log($"[LoadCodeFromFileAsync] Loaded: {fileName}");
 
             return true;
         }
 
         /// <summary>
-        /// 저장된 파일 삭제
+        /// 비동기 저장소 제공자를 통해 저장 파일을 삭제합니다.
         /// </summary>
-        public bool DeleteSaveFile(string fileName)
+        public Task<bool> DeleteSaveFileAsync(string fileName)
         {
-            return BE2_CodeStorageManager.Instance.DeleteCode(fileName);
+            return BE2_CodeStorageManager.Instance.DeleteCodeAsync(fileName);
         }
 
         /// <summary>
-        /// 저장된 파일 목록 반환
+        /// 비동기 저장소 제공자를 통해 저장 파일 목록을 가져옵니다.
         /// </summary>
-        public List<string> GetSavedFileList()
+        public Task<List<string>> GetSavedFileListAsync()
         {
-            return BE2_CodeStorageManager.Instance.GetFileList();
+            return BE2_CodeStorageManager.Instance.GetFileListAsync();
         }
 
         /// <summary>
-        /// 파일 존재 여부 확인
+        /// 비동기 저장소 제공자를 통해 파일 존재 여부를 확인합니다.
         /// </summary>
-        public bool FileExists(string fileName)
+        public Task<bool> FileExistsAsync(string fileName)
         {
-            return BE2_CodeStorageManager.Instance.FileExists(fileName);
+            return BE2_CodeStorageManager.Instance.FileExistsAsync(fileName);
         }
 
         #endregion
 
-        #region 기존 저장/불러오기 (호환성 유지)
+        #region Legacy Save/Load (Compatibility)
 
         public void CodeGenerated()
         {
@@ -261,9 +253,8 @@ namespace MG_BlocksEngine2.UI
                 created = true;
             }
 
-            // XML 생성
             string xmlContent = exporter.GenerateXmlFromAllEnvs();
-            
+
             if (created && exporter != null)
             {
                 DestroyImmediate(exporter.gameObject);
@@ -276,73 +267,67 @@ namespace MG_BlocksEngine2.UI
                 return;
             }
 
-            // persistentDataPath에 XML 파일 저장
             string path = System.IO.Path.Combine(Application.persistentDataPath, "BlocksRuntime.xml");
             try
             {
-                // 기존 파일이 있으면 변경 사항 비교
                 if (System.IO.File.Exists(path))
                 {
                     string oldContent = System.IO.File.ReadAllText(path);
                     if (oldContent != xmlContent)
                     {
-                        Debug.Log("[XML 변경 감지] XML 파일이 수정되었습니다!");
+                        Debug.Log("[XML Change Detected] XML has been modified.");
                         LogXmlChanges(oldContent, xmlContent);
                     }
                     else
                     {
-                        Debug.Log("[XML] 변경 사항 없음 - 기존 파일과 동일합니다.");
+                        Debug.Log("[XML] No changes detected.");
                     }
                 }
                 else
                 {
-                    Debug.Log("[XML] 새 파일 생성됨");
+                    Debug.Log("[XML] New file created.");
                 }
 
                 System.IO.File.WriteAllText(path, xmlContent);
                 Debug.Log($"XML generated and saved to: {path}");
-                
-                // JSON 생성 (XML을 직접 전달하여 중복 생성 방지)
+
                 BE2XmlToRuntimeJson.Export(xmlContent);
                 Debug.Log("[CodeGenerated] JSON also generated and saved.");
-                
-                // 이벤트 발생: BlockCodeExecutor 등에서 구독하여 재로드
+
                 OnCodeGenerated?.Invoke();
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 Debug.LogError($"Failed to save XML: {ex.Message}");
             }
 
-            image.gameObject.SetActive(true);
+            if (image != null)
+            {
+                image.gameObject.SetActive(true);
+            }
 
             CloseContextMenu();
         }
-        
 
-        // XML Code Generated 코드 임포트
         public void XMLCodeGenerated()
         {
-            // persistentDataPath에서 XML 파일 경로
             string path = System.IO.Path.Combine(Application.persistentDataPath, "BlocksRuntime.xml");
-            
+
             if (!System.IO.File.Exists(path))
             {
-                Debug.LogWarning($"[XMLCodeGenerated] XML 파일을 찾을 수 없습니다: {path}");
+                Debug.LogWarning($"[XMLCodeGenerated] XML file not found: {path}");
                 CloseContextMenu();
                 return;
             }
 
-            // Programming Environment 찾기
             var envs = GameObject.FindObjectsOfType<BE2_ProgrammingEnv>();
             if (envs == null || envs.Length == 0)
             {
-                Debug.LogWarning("[XMLCodeGenerated] BE2_ProgrammingEnv를 찾을 수 없습니다.");
+                Debug.LogWarning("[XMLCodeGenerated] No BE2_ProgrammingEnv found.");
                 CloseContextMenu();
                 return;
             }
 
-            // 활성화된 env 찾기
             BE2_ProgrammingEnv targetEnv = null;
             foreach (var env in envs)
             {
@@ -352,18 +337,20 @@ namespace MG_BlocksEngine2.UI
                     break;
                 }
             }
-            if (targetEnv == null) targetEnv = envs[0];
 
-            // XML 로드
+            if (targetEnv == null)
+            {
+                targetEnv = envs[0];
+            }
+
             bool success = BE2_BlocksSerializer.LoadCode(path, targetEnv);
-            
             if (success)
             {
-                Debug.Log($"[XMLCodeGenerated] XML 로드 성공: {path}");
+                Debug.Log($"[XMLCodeGenerated] XML load success: {path}");
             }
             else
             {
-                Debug.LogWarning($"[XMLCodeGenerated] XML 로드 실패: {path}");
+                Debug.LogWarning($"[XMLCodeGenerated] XML load failed: {path}");
             }
 
             CloseContextMenu();
@@ -371,24 +358,27 @@ namespace MG_BlocksEngine2.UI
 
         #endregion
 
-        public void CloseCompletedUI(){
-            image.gameObject.SetActive(false);
+        public void CloseCompletedUI()
+        {
+            if (image != null)
+            {
+                image.gameObject.SetActive(false);
+            }
         }
 
         /// <summary>
-        /// 기존 XML과 새 XML의 변경 사항을 라인별로 비교하여 Debug.Log로 출력
+        /// 기존 XML과 새 XML을 줄 단위로 비교해 변경 내역을 출력합니다.
         /// </summary>
         private void LogXmlChanges(string oldXml, string newXml)
         {
-            string[] oldLines = oldXml.Split(new[] { '\r', '\n' }, System.StringSplitOptions.RemoveEmptyEntries);
-            string[] newLines = newXml.Split(new[] { '\r', '\n' }, System.StringSplitOptions.RemoveEmptyEntries);
+            string[] oldLines = oldXml.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            string[] newLines = newXml.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine("=== XML 변경 상세 내역 ===");
+            sb.AppendLine("=== XML Change Details ===");
 
-            // 추가된 라인 찾기
-            var oldSet = new System.Collections.Generic.HashSet<string>(oldLines);
-            var newSet = new System.Collections.Generic.HashSet<string>(newLines);
+            var oldSet = new HashSet<string>(oldLines);
+            var newSet = new HashSet<string>(newLines);
 
             int addedCount = 0;
             int removedCount = 0;
@@ -397,7 +387,7 @@ namespace MG_BlocksEngine2.UI
             {
                 if (!oldSet.Contains(line))
                 {
-                    sb.AppendLine($"[+추가] {line.Trim()}");
+                    sb.AppendLine($"[+Added] {line.Trim()}");
                     addedCount++;
                 }
             }
@@ -406,14 +396,14 @@ namespace MG_BlocksEngine2.UI
             {
                 if (!newSet.Contains(line))
                 {
-                    sb.AppendLine($"[-삭제] {line.Trim()}");
+                    sb.AppendLine($"[-Removed] {line.Trim()}");
                     removedCount++;
                 }
             }
 
-            sb.AppendLine($"=== 총 변경: +{addedCount}줄 추가, -{removedCount}줄 삭제 ===");
-            
+            sb.AppendLine($"=== Total changes: +{addedCount}, -{removedCount} ===");
             Debug.Log(sb.ToString());
         }
     }
 }
+
