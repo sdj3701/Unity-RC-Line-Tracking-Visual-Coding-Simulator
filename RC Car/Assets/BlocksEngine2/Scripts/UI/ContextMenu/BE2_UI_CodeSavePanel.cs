@@ -2,6 +2,7 @@
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using MG_BlocksEngine2.Storage;
 
 namespace MG_BlocksEngine2.UI
 {
@@ -24,6 +25,9 @@ namespace MG_BlocksEngine2.UI
         [SerializeField] private GameObject overwriteConfirmPanel;
         [SerializeField] private Button overwriteConfirmButton;
         [SerializeField] private Button overwriteCancelButton;
+
+        [Header("DB Connection")]
+        [SerializeField] private bool _isDBConnected = false;
 
         private BE2_UI_ContextMenuManager _contextMenuManager;
         private string _pendingFileName;
@@ -92,6 +96,9 @@ namespace MG_BlocksEngine2.UI
                 return;
             }
 
+            // DB 연결 상태에 맞춰 원격/로컬 저장소를 전환
+            ApplyStorageModeByConnection();
+
             if (_contextMenuManager != null && await _contextMenuManager.FileExistsAsync(fileName))
             {
                 _pendingFileName = fileName;
@@ -144,6 +151,13 @@ namespace MG_BlocksEngine2.UI
                 Debug.LogError($"[CodeSavePanel] Save failed: {fileName}");
             }
         }
+
+        private void ApplyStorageModeByConnection()
+        {
+            if (BE2_CodeStorageManager.Instance == null)
+                return;
+
+            BE2_CodeStorageManager.Instance.SetRemoteStorageEnabled(_isDBConnected);
+        }
     }
 }
-

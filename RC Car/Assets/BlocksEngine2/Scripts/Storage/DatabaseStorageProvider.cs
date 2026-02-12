@@ -70,35 +70,52 @@ namespace MG_BlocksEngine2.Storage
         /// </summary>
         public async Task<bool> SaveCodeAsync(string fileName, string xmlContent, string jsonContent, bool isModified)
         {
+            // URL 정상적이지 못하면 로컬에 저장
             if (!IsConfigured(_saveCodePostUrl))
             {
                 Debug.LogWarning("[DatabaseStorageProvider] Save URL is not configured. Fallback provider is used.");
                 return await SaveWithFallbackAsync(fileName, xmlContent, jsonContent, isModified);
             }
 
+            // Auth 정보를 찾지 못하면 로컬에 저장
             if (!TryGetAuthInfo(out string userId, out string accessToken))
             {
                 Debug.LogWarning("[DatabaseStorageProvider] Auth info is missing. Fallback provider is used.");
                 return await SaveWithFallbackAsync(fileName, xmlContent, jsonContent, isModified);
             }
 
+            // DB에 전송용 string 데이터
             string payload = BuildSaveRequestJson(userId, fileName, xmlContent, jsonContent, isModified);
 
+            // POST 요청을 생성해서 DB 저장 API에 보냅니다.
             using (var request = new UnityWebRequest(_saveCodePostUrl, UnityWebRequest.kHttpVerbPOST))
             {
+                // JSON 문자열(payload)을 HTTP 본문으로 보내기 위해 UTF-8 바이트로 변환합니다.
                 byte[] body = Encoding.UTF8.GetBytes(payload);
+
+                // 업로드 본문(요청 바디) 설정
                 request.uploadHandler = new UploadHandlerRaw(body);
+
+                // 다운로드 본문(응답 바디) 수신 버퍼 설정
                 request.downloadHandler = new DownloadHandlerBuffer();
+
+                // JWT AccessToken을 Bearer 인증 헤더로 전달
                 request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+
+                // 서버에 본문 타입이 JSON임을 명시
                 request.SetRequestHeader("Content-Type", "application/json");
 
+                // 요청 전송 후 성공 여부(네트워크 + HTTP 2xx)를 판정 실제 전송하는곳
                 bool ok = await SendRequestAsync(request, "SaveCode");
                 if (ok)
                 {
                     if (_fallbackProvider != null)
                     {
+                        // DB 저장 성공 시에도 로컬을 최신 상태로 동기화(백업 목적)
                         await _fallbackProvider.SaveCodeAsync(fileName, xmlContent, jsonContent, isModified);
                     }
+
+                    // DB 저장이 성공했으므로 최종 성공 반환
                     return true;
                 }
             }
@@ -625,4 +642,3 @@ namespace MG_BlocksEngine2.Storage
         }
     }
 }
-

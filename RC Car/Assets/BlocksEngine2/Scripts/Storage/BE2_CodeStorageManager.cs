@@ -34,6 +34,7 @@ namespace MG_BlocksEngine2.Storage
 
         private ICodeStorageProvider _storageProvider;
         private ICodeStorageProvider _localStorageProvider;
+        private ICodeStorageProvider _remoteStorageProvider;
 
         private void Awake()
         {
@@ -43,8 +44,9 @@ namespace MG_BlocksEngine2.Storage
                 DontDestroyOnLoad(gameObject);
 
                 _localStorageProvider = new LocalStorageProvider();
+                _remoteStorageProvider = new DatabaseStorageProvider(_localStorageProvider);
                 _storageProvider = _useRemoteStorage
-                    ? new DatabaseStorageProvider(_localStorageProvider)
+                    ? _remoteStorageProvider
                     : _localStorageProvider;
 
                 Debug.Log($"[BE2_CodeStorageManager] Initialized with provider: {_storageProvider.GetType().Name}");
@@ -65,6 +67,25 @@ namespace MG_BlocksEngine2.Storage
         }
 
         public ICodeStorageProvider GetStorageProvider() => _storageProvider;
+
+        /// <summary>
+        /// DB 연결 상태에 맞춰 원격/로컬 저장소를 전환합니다.
+        /// </summary>
+        public void SetRemoteStorageEnabled(bool enabled)
+        {
+            if (_localStorageProvider == null)
+            {
+                _localStorageProvider = new LocalStorageProvider();
+            }
+
+            if (_remoteStorageProvider == null)
+            {
+                _remoteStorageProvider = new DatabaseStorageProvider(_localStorageProvider);
+            }
+
+            _storageProvider = enabled ? _remoteStorageProvider : _localStorageProvider;
+            Debug.Log($"[BE2_CodeStorageManager] Remote storage enabled: {enabled}. Active provider: {_storageProvider.GetType().Name}");
+        }
 
         /// <summary>
         /// 현재 활성화된 제공자를 통해 XML + JSON을 저장합니다.

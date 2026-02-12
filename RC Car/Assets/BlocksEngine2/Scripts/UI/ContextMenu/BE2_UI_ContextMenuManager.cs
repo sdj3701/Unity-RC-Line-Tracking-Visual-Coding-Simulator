@@ -130,6 +130,7 @@ namespace MG_BlocksEngine2.UI
                 created = true;
             }
 
+            // XML 문자열 메모리 생성/검증 단계
             string xmlContent = exporter.GenerateXmlFromAllEnvs();
 
             if (created && exporter != null)
@@ -143,6 +144,7 @@ namespace MG_BlocksEngine2.UI
                 return false;
             }
 
+            // XML -> JSON 문자열 메모리 생성
             string jsonContent = BE2XmlToRuntimeJson.ExportToString(xmlContent);
             if (string.IsNullOrEmpty(jsonContent))
             {
@@ -150,10 +152,12 @@ namespace MG_BlocksEngine2.UI
                 return false;
             }
 
+            // 기존 저장본 대비 수정됐느지 판단
             string existingXml = await BE2_CodeStorageManager.Instance.LoadXmlAsync(fileName);
             bool isModified = !string.IsNullOrEmpty(existingXml) &&
                               !string.Equals(existingXml, xmlContent, StringComparison.Ordinal);
 
+            // 파일 생성 및 저장
             bool success = await BE2_CodeStorageManager.Instance.SaveCodeAsync(fileName, xmlContent, jsonContent, isModified);
 
             if (success)

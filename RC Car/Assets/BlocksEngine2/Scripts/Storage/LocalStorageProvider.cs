@@ -54,6 +54,7 @@ namespace MG_BlocksEngine2.Storage
                 string safeXml = xmlContent ?? string.Empty;
                 string safeJson = jsonContent ?? "{}";
 
+                // 실제 파일 생성 부분
                 await Task.Run(() => File.WriteAllText(xmlPath, safeXml));
                 await Task.Run(() => File.WriteAllText(jsonPath, safeJson));
 
