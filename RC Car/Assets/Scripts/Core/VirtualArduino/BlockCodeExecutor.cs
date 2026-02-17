@@ -16,6 +16,11 @@ public class BlockCodeExecutor : MonoBehaviour
     
     [Header("Debug")]
     [SerializeField] bool showDebugLogs = true;
+
+    [Header("Both Sensors True")]
+    [Tooltip("leftSensor/rightSensor가 모두 true일 때 좌/우 분기를 번갈아 실행하는 간격(초)")]
+    [Min(0.02f)]
+    [SerializeField] float bothTrueSwitchInterval = 0.12f;
     
     // 런타임 변수 저장소 (변수 이름 → 값)
     Dictionary<string, float> variables = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
@@ -71,6 +76,11 @@ public class BlockCodeExecutor : MonoBehaviour
     public VirtualArduinoMicro arduino;
     
     bool hasRunInit = false;
+    bool preferLeftWhenBothTrue = true;
+    float nextBothTrueSwitchTime = 0f;
+    bool bothTrueSideResolvedThisTick = false;
+    bool runLeftThisTickWhenBothTrue = true;
+    bool bothTrueBranchExecutedThisTick = false;
     
     /// <summary>
     /// JSON 파일에서 프로그램 로드
@@ -113,6 +123,9 @@ public class BlockCodeExecutor : MonoBehaviour
     public void Tick()
     {
         if (!isLoaded || program == null) return;
+
+        bothTrueSideResolvedThisTick = false;
+        bothTrueBranchExecutedThisTick = false;
         
         // init 블록 한 번만 실행
         if (!hasRunInit && program.init != null)
@@ -359,6 +372,11 @@ public class BlockCodeExecutor : MonoBehaviour
         
         if (condition)
         {
+            if (ShouldSkipByBothSensorAlternation(node))
+            {
+                return;
+            }
+
             // then body 실행
             if (node.body != null)
             {
@@ -385,6 +403,52 @@ public class BlockCodeExecutor : MonoBehaviour
         {
             Debug.Log($"<color=gray>[3] ExecuteIfBlock: Condition is false, skipping body</color>");
         }
+    }
+
+    bool ShouldSkipByBothSensorAlternation(BlockNode node)
+    {
+        if (arduino == null || string.IsNullOrEmpty(node.conditionSensorFunction))
+            return false;
+
+        bool isLeftBranch = node.conditionSensorFunction.Equals("leftSensor", StringComparison.OrdinalIgnoreCase);
+        bool isRightBranch = node.conditionSensorFunction.Equals("rightSensor", StringComparison.OrdinalIgnoreCase);
+        if (!isLeftBranch && !isRightBranch)
+            return false;
+
+        bool leftNow = arduino.FunctionDigitalRead("leftSensor");
+        bool rightNow = arduino.FunctionDigitalRead("rightSensor");
+        if (!(leftNow && rightNow))
+            return false;
+
+        if (!bothTrueSideResolvedThisTick)
+        {
+            // 현재 tick에 실행할 쪽을 먼저 확정한 뒤, 다음 전환 시점을 예약
+            runLeftThisTickWhenBothTrue = preferLeftWhenBothTrue;
+
+            if (Time.time >= nextBothTrueSwitchTime)
+            {
+                preferLeftWhenBothTrue = !preferLeftWhenBothTrue;
+                nextBothTrueSwitchTime = Time.time + bothTrueSwitchInterval;
+            }
+
+            bothTrueSideResolvedThisTick = true;
+        }
+
+        bool shouldRunThisBranch = runLeftThisTickWhenBothTrue ? isLeftBranch : isRightBranch;
+        if (!shouldRunThisBranch)
+        {
+            Debug.Log($"<color=gray>[3] ExecuteIfBlock: both sensors true, skipping '{node.conditionSensorFunction}' this tick</color>");
+            return true;
+        }
+
+        if (bothTrueBranchExecutedThisTick)
+        {
+            Debug.Log("<color=gray>[3] ExecuteIfBlock: both sensors true, branch already executed this tick</color>");
+            return true;
+        }
+
+        bothTrueBranchExecutedThisTick = true;
+        return false;
     }
     
     /// <summary>

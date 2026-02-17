@@ -71008,6 +71008,7 @@ MonoBehaviour:
   overwriteConfirmPanel: {fileID: 1867055387}
   overwriteConfirmButton: {fileID: 359352525}
   overwriteCancelButton: {fileID: 1889416341}
+  _isDBConnected: 0
 --- !u!1 &1275587615
 GameObject:
   m_ObjectHideFlags: 0

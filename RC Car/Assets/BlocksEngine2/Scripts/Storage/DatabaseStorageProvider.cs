@@ -84,7 +84,7 @@ namespace MG_BlocksEngine2.Storage
                 return await SaveWithFallbackAsync(fileName, xmlContent, jsonContent, isModified);
             }
 
-            // DB에 전송용 string 데이터
+            // DB에 전송용 string 데이터(사용자ID, 파일명, XML, JSON, 수정여부)를 만들어서 JSON 문자열로 변환
             string payload = BuildSaveRequestJson(userId, fileName, xmlContent, jsonContent, isModified);
 
             // POST 요청을 생성해서 DB 저장 API에 보냅니다.
