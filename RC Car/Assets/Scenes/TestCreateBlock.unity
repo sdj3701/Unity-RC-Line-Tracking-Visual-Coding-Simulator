@@ -62451,6 +62451,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   runtimeJsonFile: BlocksRuntime.json
   showDebugLogs: 1
+  bothTrueSwitchInterval: 0.12
   arduino: {fileID: 1103646192}
 --- !u!114 &1103646190
 MonoBehaviour:
@@ -71008,7 +71009,7 @@ MonoBehaviour:
   overwriteConfirmPanel: {fileID: 1867055387}
   overwriteConfirmButton: {fileID: 359352525}
   overwriteCancelButton: {fileID: 1889416341}
-  _isDBConnected: 0
+  _isDBConnected: 1
 --- !u!1 &1275587615
 GameObject:
   m_ObjectHideFlags: 0

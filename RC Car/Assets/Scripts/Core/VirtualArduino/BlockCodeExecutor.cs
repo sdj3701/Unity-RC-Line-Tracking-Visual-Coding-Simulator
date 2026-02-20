@@ -13,6 +13,8 @@ public class BlockCodeExecutor : MonoBehaviour
     [Header("Program File")]
     [Tooltip("런타임 JSON 파일 이름")]
     [SerializeField] string runtimeJsonFile = "BlocksRuntime.json";
+    [Tooltip("메모리 JSON이 없을 때 로컬 파일 로드를 허용합니다. DB-only 모드에서는 끄세요.")]
+    [SerializeField] bool allowFileFallbackWhenMemoryEmpty = false;
     
     [Header("Debug")]
     [SerializeField] bool showDebugLogs = true;
@@ -88,16 +90,30 @@ public class BlockCodeExecutor : MonoBehaviour
     public void LoadProgram()
     {
         var path = Path.Combine(Application.persistentDataPath, runtimeJsonFile);
-        
-        if (!File.Exists(path))
+
+        // DB 저장/불러오기 흐름에서 제공된 최신 메모리 JSON을 우선 사용합니다.
+        string json = BE2_UI_ContextMenuManager.LatestRuntimeJson;
+        bool fromMemory = !string.IsNullOrEmpty(json);
+
+        if (!fromMemory)
         {
-            Debug.LogWarning($"[BlockCodeExecutor] Program file not found: {path}");
-            return;
+            if (!allowFileFallbackWhenMemoryEmpty)
+            {
+                Debug.LogWarning("[BlockCodeExecutor] Program source not found in memory. File fallback is disabled.");
+                return;
+            }
+
+            if (!File.Exists(path))
+            {
+                Debug.LogWarning($"[BlockCodeExecutor] Program source not found. memory=empty, file={path}");
+                return;
+            }
+
+            json = File.ReadAllText(path);
         }
         
         try
         {
-            var json = File.ReadAllText(path);
             program = ParseJsonProgram(json);
             
             // 초기화 블록에서 변수 수집
@@ -109,7 +125,7 @@ public class BlockCodeExecutor : MonoBehaviour
             
             isLoaded = true;
             hasRunInit = false;
-            LogDebug($"Program loaded. Variables: {variables.Count}, Loop blocks: {program?.loop?.Count ?? 0}");
+            LogDebug($"Program loaded from {(fromMemory ? "memory" : "file")}. Variables: {variables.Count}, Loop blocks: {program?.loop?.Count ?? 0}");
         }
         catch (Exception ex)
         {

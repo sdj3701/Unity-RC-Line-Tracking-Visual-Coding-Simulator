@@ -10,6 +10,22 @@ namespace MG_BlocksEngine2.Storage
     /// </summary>
     public class BE2_CodeStorageManager : MonoBehaviour
     {
+        private static void LogDbInfo(string message)
+        {
+            Debug.Log($"<color=cyan>{message}</color>");
+        }
+
+        private static void LogStorageInfo(string message, ICodeStorageProvider provider)
+        {
+            if (provider is DatabaseStorageProvider)
+            {
+                LogDbInfo(message);
+                return;
+            }
+
+            Debug.Log(message);
+        }
+
         private static BE2_CodeStorageManager _instance;
         public static BE2_CodeStorageManager Instance
         {
@@ -54,7 +70,9 @@ namespace MG_BlocksEngine2.Storage
                     ? _remoteStorageProvider
                     : _localStorageProvider;
 
-                Debug.Log($"[BE2_CodeStorageManager] Initialized with provider: {_storageProvider.GetType().Name}");
+                LogStorageInfo(
+                    $"[BE2_CodeStorageManager] Initialized with provider: {_storageProvider.GetType().Name}",
+                    _storageProvider);
             }
             else if (_instance != this)
             {
@@ -68,7 +86,9 @@ namespace MG_BlocksEngine2.Storage
         public void SetStorageProvider(ICodeStorageProvider provider)
         {
             _storageProvider = provider;
-            Debug.Log($"[BE2_CodeStorageManager] StorageProvider changed: {provider.GetType().Name}");
+            LogStorageInfo(
+                $"[BE2_CodeStorageManager] StorageProvider changed: {provider.GetType().Name}",
+                provider);
         }
 
         public ICodeStorageProvider GetStorageProvider() => _storageProvider;
@@ -89,7 +109,8 @@ namespace MG_BlocksEngine2.Storage
             }
 
             _storageProvider = enabled ? _remoteStorageProvider : _localStorageProvider;
-            Debug.Log($"[BE2_CodeStorageManager] Remote storage enabled: {enabled}. Active provider: {_storageProvider.GetType().Name}");
+            string message = $"[BE2_CodeStorageManager] Remote storage enabled: {enabled}. Active provider: {_storageProvider.GetType().Name}";
+            LogStorageInfo(message, _storageProvider);
         }
 
         private ICodeStorageProvider CreateRemoteStorageProvider()

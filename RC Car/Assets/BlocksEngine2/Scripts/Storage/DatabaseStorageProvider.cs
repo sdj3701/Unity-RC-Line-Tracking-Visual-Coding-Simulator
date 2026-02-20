@@ -12,16 +12,21 @@ namespace MG_BlocksEngine2.Storage
     /// user-level REST API 연동 저장소 구현체입니다.
     /// 내부 인터페이스는 fileName 기반이므로 원격 저장 시 fileName을 level(int)로 해석합니다.
     /// </summary>
-    public class DatabaseStorageProvider : ICodeStorageProvider
-    {
+        public class DatabaseStorageProvider : ICodeStorageProvider
+        {
         private const string DefaultApiBaseUrl = "http://ioteacher.com";
         private const string DefaultUserLevelPath = "/api/user-level";
         private const string DefaultUserLevelMePath = "/api/user-level/me";
 
         private readonly string _apiBaseUrl;
         private readonly string _userLevelPath;
-        private readonly string _userLevelMePath;
-        private readonly ICodeStorageProvider _fallbackProvider;
+            private readonly string _userLevelMePath;
+            private readonly ICodeStorageProvider _fallbackProvider;
+
+            private static void LogDbInfo(string message)
+            {
+                Debug.Log($"<color=cyan>{message}</color>");
+            }
 
         public DatabaseStorageProvider(ICodeStorageProvider fallbackProvider = null)
             : this(DefaultApiBaseUrl, DefaultUserLevelPath, DefaultUserLevelMePath, fallbackProvider)
@@ -47,19 +52,19 @@ namespace MG_BlocksEngine2.Storage
         {
             if (!IsConfigured(_apiBaseUrl))
             {
-                Debug.LogWarning("[DatabaseStorageProvider] API base URL is not configured. Fallback provider is used.");
+                Debug.LogWarning("[DatabaseStorageProvider] API base URL is not configured. Save aborted (local save fallback disabled).");
                 return await SaveWithFallbackAsync(fileName, xmlContent, jsonContent, isModified);
             }
 
             if (!TryGetAuthInfo(out string _, out string accessToken))
             {
-                Debug.LogWarning("[DatabaseStorageProvider] Auth info is missing. Fallback provider is used.");
+                Debug.LogWarning("[DatabaseStorageProvider] Auth info is missing. Save aborted (local save fallback disabled).");
                 return await SaveWithFallbackAsync(fileName, xmlContent, jsonContent, isModified);
             }
 
             if (!TryParseLevel(fileName, out int level))
             {
-                Debug.LogWarning($"[DatabaseStorageProvider] fileName '{fileName}' is not a numeric level. Fallback provider is used.");
+                Debug.LogWarning($"[DatabaseStorageProvider] fileName '{fileName}' is not a numeric level. Save aborted (local save fallback disabled).");
                 return await SaveWithFallbackAsync(fileName, xmlContent, jsonContent, isModified);
             }
 
@@ -67,11 +72,6 @@ namespace MG_BlocksEngine2.Storage
             bool saved = await SaveOrUpdateRemoteAsync(existing, level, xmlContent, jsonContent, accessToken);
             if (saved)
             {
-                if (_fallbackProvider != null)
-                {
-                    await _fallbackProvider.SaveCodeAsync(fileName, xmlContent, jsonContent, isModified);
-                }
-
                 return true;
             }
 
@@ -106,6 +106,7 @@ namespace MG_BlocksEngine2.Storage
 
             if (!string.IsNullOrEmpty(entry.Xml))
             {
+                LogDbInfo($"[DatabaseStorageProvider] LoadXmlAsync success from DB. level={level}, len={entry.Xml.Length}");
                 return entry.Xml;
             }
 
@@ -114,6 +115,7 @@ namespace MG_BlocksEngine2.Storage
                 UserLevelEntry detail = await GetEntryBySeqAsync(entry.Seq, accessToken);
                 if (detail != null && !string.IsNullOrEmpty(detail.Xml))
                 {
+                    LogDbInfo($"[DatabaseStorageProvider] LoadXmlAsync success from DB detail. level={level}, seq={entry.Seq}, len={detail.Xml.Length}");
                     return detail.Xml;
                 }
             }
@@ -149,6 +151,7 @@ namespace MG_BlocksEngine2.Storage
 
             if (!string.IsNullOrEmpty(entry.Json))
             {
+                LogDbInfo($"[DatabaseStorageProvider] LoadJsonAsync success from DB. level={level}, len={entry.Json.Length}");
                 return entry.Json;
             }
 
@@ -157,6 +160,7 @@ namespace MG_BlocksEngine2.Storage
                 UserLevelEntry detail = await GetEntryBySeqAsync(entry.Seq, accessToken);
                 if (detail != null && !string.IsNullOrEmpty(detail.Json))
                 {
+                    LogDbInfo($"[DatabaseStorageProvider] LoadJsonAsync success from DB detail. level={level}, seq={entry.Seq}, len={detail.Json.Length}");
                     return detail.Json;
                 }
             }
@@ -208,6 +212,7 @@ namespace MG_BlocksEngine2.Storage
                 fileNames.Add(level.ToString());
             }
 
+            LogDbInfo($"[DatabaseStorageProvider] GetFileListAsync success from DB. count={fileNames.Count}");
             return fileNames;
         }
 
@@ -311,7 +316,7 @@ namespace MG_BlocksEngine2.Storage
                 request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
                 request.SetRequestHeader("Content-Type", "application/json");
 
-                Debug.Log($"[DatabaseStorageProvider][DebugGetMe] Request: GET {url}, userId={userId}");
+                LogDbInfo($"[DatabaseStorageProvider][DebugGetMe] Request: GET {url}, userId={userId}");
 
                 UnityWebRequestAsyncOperation op = request.SendWebRequest();
                 while (!op.isDone)
@@ -322,17 +327,17 @@ namespace MG_BlocksEngine2.Storage
                 string body = request.downloadHandler?.text ?? string.Empty;
                 bool success = request.result == UnityWebRequest.Result.Success && request.responseCode >= 200 && request.responseCode < 300;
 
-                Debug.Log($"[DatabaseStorageProvider][DebugGetMe] Response: status={request.responseCode}, success={success}, body={body}");
+                LogDbInfo($"[DatabaseStorageProvider][DebugGetMe] Response: status={request.responseCode}, success={success}, body={body}");
 
                 List<UserLevelEntry> entries = ParseUserLevelEntries(body);
-                Debug.Log($"[DatabaseStorageProvider][DebugGetMe] Parsed entries count={entries.Count}");
+                LogDbInfo($"[DatabaseStorageProvider][DebugGetMe] Parsed entries count={entries.Count}");
 
                 for (int i = 0; i < entries.Count; i++)
                 {
                     UserLevelEntry entry = entries[i];
                     int xmlLen = entry.Xml == null ? 0 : entry.Xml.Length;
                     int jsonLen = entry.Json == null ? 0 : entry.Json.Length;
-                    Debug.Log(
+                    LogDbInfo(
                         $"[DatabaseStorageProvider][DebugGetMe] item[{i}] seq={(entry.HasSeq ? entry.Seq.ToString() : "n/a")}, " +
                         $"level={(entry.HasLevel ? entry.Level.ToString() : "n/a")}, xmlLen={xmlLen}, jsonLen={jsonLen}");
                 }
@@ -341,44 +346,61 @@ namespace MG_BlocksEngine2.Storage
 
         private async Task<bool> SaveOrUpdateRemoteAsync(UserLevelEntry existing, int level, string xmlContent, string jsonContent, string accessToken)
         {
-            var fields = new Dictionary<string, string>
+            var payload = new SaveCodeRequest
             {
-                { "level", level.ToString() },
-                { "xml", xmlContent ?? string.Empty },
-                { "json", NormalizeRawJson(jsonContent) }
+                level = level,
+                xml = xmlContent ?? string.Empty,
+                json = NormalizeRawJson(jsonContent),
+                xmlLongText = xmlContent ?? string.Empty,
+                jsonLongText = NormalizeRawJson(jsonContent)
             };
 
             if (existing != null && existing.HasSeq)
             {
                 string updateUrl = BuildUserLevelDetailUrl(existing.Seq);
 
-                bool patched = await SendMultipartAsync(updateUrl, "PATCH", fields, accessToken, "UpdateCode(PATCH)");
+                bool patched = await SendMultipartAsync(updateUrl, "PATCH", payload, accessToken, "UpdateCode(PATCH)");
                 if (patched)
                 {
                     return true;
                 }
 
-                bool put = await SendMultipartAsync(updateUrl, "PUT", fields, accessToken, "UpdateCode(PUT)");
+                bool put = await SendMultipartAsync(updateUrl, "PUT", payload, accessToken, "UpdateCode(PUT)");
                 return put;
             }
 
             string createUrl = BuildUserLevelCollectionUrl();
-            return await SendMultipartAsync(createUrl, UnityWebRequest.kHttpVerbPOST, fields, accessToken, "SaveCode(POST)");
+            return await SendMultipartAsync(createUrl, UnityWebRequest.kHttpVerbPOST, payload, accessToken, "SaveCode(POST)");
         }
 
-        private async Task<bool> SendMultipartAsync(string url, string method, Dictionary<string, string> fields, string accessToken, string logTag)
+        private async Task<bool> SendMultipartAsync(string url, string method, SaveCodeRequest payload, string accessToken, string logTag)
         {
-            WWWForm form = new WWWForm();
-            foreach (KeyValuePair<string, string> field in fields)
+            List<IMultipartFormSection> sections = new List<IMultipartFormSection>();
+            foreach (KeyValuePair<string, string> field in BuildSaveFields(payload))
             {
-                form.AddField(field.Key, field.Value ?? string.Empty);
+                sections.Add(new MultipartFormDataSection(field.Key, field.Value ?? string.Empty));
             }
 
-            using (var request = BuildFormRequest(url, method, form))
+            using (var request = UnityWebRequest.Post(url, sections))
             {
+                request.method = method;
+                request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                request.SetRequestHeader("Accept", "application/json");
                 return await SendRequestAsync(request, logTag);
             }
+        }
+
+        private static List<KeyValuePair<string, string>> BuildSaveFields(SaveCodeRequest payload)
+        {
+            return new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string, string>("level", payload.level.ToString()),
+                new KeyValuePair<string, string>("xml", payload.xml ?? string.Empty),
+                new KeyValuePair<string, string>("json", payload.json ?? string.Empty),
+                new KeyValuePair<string, string>("xmlLongText", payload.xmlLongText ?? string.Empty),
+                new KeyValuePair<string, string>("jsonLongText", payload.jsonLongText ?? string.Empty)
+            };
         }
 
         private async Task<List<UserLevelEntry>> GetMyEntriesAsync(string accessToken)
@@ -437,20 +459,6 @@ namespace MG_BlocksEngine2.Storage
             }
 
             return null;
-        }
-
-        private static UnityWebRequest BuildFormRequest(string url, string method, WWWForm form)
-        {
-            var request = new UnityWebRequest(url, method);
-            request.uploadHandler = new UploadHandlerRaw(form.data);
-            request.downloadHandler = new DownloadHandlerBuffer();
-
-            foreach (KeyValuePair<string, string> header in form.headers)
-            {
-                request.SetRequestHeader(header.Key, header.Value);
-            }
-
-            return request;
         }
 
         private static async Task<bool> SendRequestAsync(UnityWebRequest request, string logTag)
@@ -859,52 +867,37 @@ namespace MG_BlocksEngine2.Storage
 
         private async Task<bool> SaveWithFallbackAsync(string fileName, string xmlContent, string jsonContent, bool isModified)
         {
-            if (_fallbackProvider == null)
-            {
-                return false;
-            }
-
-            return await _fallbackProvider.SaveCodeAsync(fileName, xmlContent, jsonContent, isModified);
+            // Intentionally disabled: remote save must not write to local storage.
+            await Task.CompletedTask;
+            return false;
         }
 
         private async Task<string> LoadXmlWithFallbackAsync(string fileName)
         {
-            if (_fallbackProvider == null)
-            {
-                return null;
-            }
-
-            return await _fallbackProvider.LoadXmlAsync(fileName);
+            // Intentionally disabled: remote load must not read from local storage.
+            await Task.CompletedTask;
+            return null;
         }
 
         private async Task<string> LoadJsonWithFallbackAsync(string fileName)
         {
-            if (_fallbackProvider == null)
-            {
-                return null;
-            }
-
-            return await _fallbackProvider.LoadJsonAsync(fileName);
+            // Intentionally disabled: remote load must not read from local storage.
+            await Task.CompletedTask;
+            return null;
         }
 
         private async Task<List<string>> GetFileListWithFallbackAsync()
         {
-            if (_fallbackProvider == null)
-            {
-                return new List<string>();
-            }
-
-            return await _fallbackProvider.GetFileListAsync();
+            // Intentionally disabled: remote file-list load must not read from local storage.
+            await Task.CompletedTask;
+            return new List<string>();
         }
 
         private async Task<bool> FileExistsWithFallbackAsync(string fileName)
         {
-            if (_fallbackProvider == null)
-            {
-                return false;
-            }
-
-            return await _fallbackProvider.FileExistsAsync(fileName);
+            // Intentionally disabled: remote existence check must not read from local storage.
+            await Task.CompletedTask;
+            return false;
         }
 
         private async Task<bool> DeleteWithFallbackAsync(string fileName)
@@ -915,6 +908,16 @@ namespace MG_BlocksEngine2.Storage
             }
 
             return await _fallbackProvider.DeleteCodeAsync(fileName);
+        }
+
+        [Serializable]
+        private sealed class SaveCodeRequest
+        {
+            public int level;
+            public string xml;
+            public string json;
+            public string xmlLongText;
+            public string jsonLongText;
         }
 
         private sealed class UserLevelEntry

@@ -14,6 +14,28 @@ namespace MG_BlocksEngine2.UI
 {
     public class BE2_UI_ContextMenuManager : MonoBehaviour
     {
+        private static void LogDbInfo(string message)
+        {
+            Debug.Log($"<color=cyan>{message}</color>");
+        }
+
+        private static bool IsDatabaseStorageActive()
+        {
+            var manager = BE2_CodeStorageManager.Instance;
+            return manager != null && manager.GetStorageProvider() is DatabaseStorageProvider;
+        }
+
+        private static void LogInfoByStorageMode(string message)
+        {
+            if (IsDatabaseStorageActive())
+            {
+                LogDbInfo(message);
+                return;
+            }
+
+            Debug.Log(message);
+        }
+
         private I_BE2_UI_ContextMenu[] _contextMenuArray;
         private I_BE2_UI_ContextMenu currentContextMenu;
 
@@ -21,6 +43,12 @@ namespace MG_BlocksEngine2.UI
         /// 코드 생성/저장/불러오기가 완료되면 발생하는 이벤트입니다.
         /// </summary>
         public static event System.Action OnCodeGenerated;
+
+        /// <summary>
+        /// 런타임 실행기에 전달할 최신 JSON 캐시입니다.
+        /// 저장/불러오기 흐름에서 파일 I/O 없이 즉시 사용할 수 있습니다.
+        /// </summary>
+        public static string LatestRuntimeJson { get; private set; }
 
         // v2.6.2 - 버그 수정: BE2 Inspector 경로 변경사항이 유지되지 않던 문제 수정
         // Null 예외를 피하기 위해 UI ContextMenuManager 인스턴스 접근을 프로퍼티로 변경
@@ -152,6 +180,9 @@ namespace MG_BlocksEngine2.UI
                 return false;
             }
 
+            // Save 완료 이벤트 이후 실행기에서 메모리 JSON을 우선 사용하도록 갱신
+            LatestRuntimeJson = jsonContent;
+
             // 기존 저장본 대비 수정됐느지 판단
             string existingXml = await BE2_CodeStorageManager.Instance.LoadXmlAsync(fileName);
             bool isModified = !string.IsNullOrEmpty(existingXml) &&
@@ -162,7 +193,7 @@ namespace MG_BlocksEngine2.UI
 
             if (success)
             {
-                Debug.Log($"[SaveCodeWithNameAsync] Saved: {fileName}, isModified={isModified}");
+                LogInfoByStorageMode($"[SaveCodeWithNameAsync] Saved: {fileName}, isModified={isModified}");
                 OnCodeGenerated?.Invoke();
 
                 if (image != null)
@@ -210,10 +241,20 @@ namespace MG_BlocksEngine2.UI
 
             targetEnv.ClearBlocks();
             BE2_BlocksSerializer.XMLToBlocksCode(xmlContent, targetEnv);
-            BE2XmlToRuntimeJson.Export(xmlContent);
+
+            string jsonContent = BE2XmlToRuntimeJson.ExportToString(xmlContent);
+            if (string.IsNullOrEmpty(jsonContent))
+            {
+                Debug.LogWarning($"[LoadCodeFromFileAsync] JSON generation failed: {fileName}");
+                return false;
+            }
+
+            // DB에서 가져온 XML로 생성한 JSON을 메모리에 보관 (로컬 파일 의존 제거)
+            LatestRuntimeJson = jsonContent;
+            LogInfoByStorageMode($"[LoadCodeFromFileAsync] Runtime JSON updated from DB XML: {fileName}, len={jsonContent.Length}");
 
             OnCodeGenerated?.Invoke();
-            Debug.Log($"[LoadCodeFromFileAsync] Loaded: {fileName}");
+            LogInfoByStorageMode($"[LoadCodeFromFileAsync] Loaded: {fileName}");
 
             return true;
         }
@@ -410,4 +451,3 @@ namespace MG_BlocksEngine2.UI
         }
     }
 }
-

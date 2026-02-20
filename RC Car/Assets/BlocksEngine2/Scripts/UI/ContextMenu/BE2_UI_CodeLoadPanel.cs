@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using MG_BlocksEngine2.Storage;
 
 namespace MG_BlocksEngine2.UI
 {
@@ -12,6 +13,28 @@ namespace MG_BlocksEngine2.UI
     /// </summary>
     public class BE2_UI_CodeLoadPanel : MonoBehaviour
     {
+        private static void LogDbInfo(string message)
+        {
+            Debug.Log($"<color=cyan>{message}</color>");
+        }
+
+        private static bool IsDatabaseStorageActive()
+        {
+            var manager = BE2_CodeStorageManager.Instance;
+            return manager != null && manager.GetStorageProvider() is DatabaseStorageProvider;
+        }
+
+        private static void LogInfoByStorageMode(string message)
+        {
+            if (IsDatabaseStorageActive())
+            {
+                LogDbInfo(message);
+                return;
+            }
+
+            Debug.Log(message);
+        }
+
         [Header("Main Panel")]
         [SerializeField] private GameObject mainPanel;
 
@@ -132,7 +155,7 @@ namespace MG_BlocksEngine2.UI
             }
 
             UpdateButtonStates();
-            Debug.Log($"[CodeLoadPanel] Refreshed - {files.Count} files found");
+            LogInfoByStorageMode($"[CodeLoadPanel] Refreshed - {files.Count} files found");
         }
 
         private void CreateFileItem(string fileName)
@@ -216,7 +239,7 @@ namespace MG_BlocksEngine2.UI
             if (success)
             {
                 _lastLoadedFileName = fileToLoad;
-                Debug.Log($"[CodeLoadPanel] Load completed: {fileToLoad}");
+                LogInfoByStorageMode($"[CodeLoadPanel] Load completed: {fileToLoad}");
                 Close();
             }
             else
