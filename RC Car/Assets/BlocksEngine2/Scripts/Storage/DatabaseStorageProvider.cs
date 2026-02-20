@@ -62,9 +62,9 @@ namespace MG_BlocksEngine2.Storage
                 return await SaveWithFallbackAsync(fileName, xmlContent, jsonContent, isModified);
             }
 
-            if (!TryParseLevel(fileName, out int level))
+            if (!TryNormalizeLevel(fileName, out string level))
             {
-                Debug.LogWarning($"[DatabaseStorageProvider] fileName '{fileName}' is not a numeric level. Save aborted (local save fallback disabled).");
+                Debug.LogWarning($"[DatabaseStorageProvider] fileName '{fileName}' is empty. Save aborted (local save fallback disabled).");
                 return await SaveWithFallbackAsync(fileName, xmlContent, jsonContent, isModified);
             }
 
@@ -93,7 +93,7 @@ namespace MG_BlocksEngine2.Storage
                 return await LoadXmlWithFallbackAsync(fileName);
             }
 
-            if (!TryParseLevel(fileName, out int level))
+            if (!TryNormalizeLevel(fileName, out string level))
             {
                 return await LoadXmlWithFallbackAsync(fileName);
             }
@@ -106,7 +106,7 @@ namespace MG_BlocksEngine2.Storage
 
             if (!string.IsNullOrEmpty(entry.Xml))
             {
-                LogDbInfo($"[DatabaseStorageProvider] LoadXmlAsync success from DB. level={level}, len={entry.Xml.Length}");
+                LogDbInfo($"[DatabaseStorageProvider] LoadXmlAsync success from DB. level='{level}', len={entry.Xml.Length}");
                 return entry.Xml;
             }
 
@@ -115,7 +115,7 @@ namespace MG_BlocksEngine2.Storage
                 UserLevelEntry detail = await GetEntryBySeqAsync(entry.Seq, accessToken);
                 if (detail != null && !string.IsNullOrEmpty(detail.Xml))
                 {
-                    LogDbInfo($"[DatabaseStorageProvider] LoadXmlAsync success from DB detail. level={level}, seq={entry.Seq}, len={detail.Xml.Length}");
+                    LogDbInfo($"[DatabaseStorageProvider] LoadXmlAsync success from DB detail. level='{level}', seq={entry.Seq}, len={detail.Xml.Length}");
                     return detail.Xml;
                 }
             }
@@ -138,7 +138,7 @@ namespace MG_BlocksEngine2.Storage
                 return await LoadJsonWithFallbackAsync(fileName);
             }
 
-            if (!TryParseLevel(fileName, out int level))
+            if (!TryNormalizeLevel(fileName, out string level))
             {
                 return await LoadJsonWithFallbackAsync(fileName);
             }
@@ -151,7 +151,7 @@ namespace MG_BlocksEngine2.Storage
 
             if (!string.IsNullOrEmpty(entry.Json))
             {
-                LogDbInfo($"[DatabaseStorageProvider] LoadJsonAsync success from DB. level={level}, len={entry.Json.Length}");
+                LogDbInfo($"[DatabaseStorageProvider] LoadJsonAsync success from DB. level='{level}', len={entry.Json.Length}");
                 return entry.Json;
             }
 
@@ -160,7 +160,7 @@ namespace MG_BlocksEngine2.Storage
                 UserLevelEntry detail = await GetEntryBySeqAsync(entry.Seq, accessToken);
                 if (detail != null && !string.IsNullOrEmpty(detail.Json))
                 {
-                    LogDbInfo($"[DatabaseStorageProvider] LoadJsonAsync success from DB detail. level={level}, seq={entry.Seq}, len={detail.Json.Length}");
+                    LogDbInfo($"[DatabaseStorageProvider] LoadJsonAsync success from DB detail. level='{level}', seq={entry.Seq}, len={detail.Json.Length}");
                     return detail.Json;
                 }
             }
@@ -189,12 +189,12 @@ namespace MG_BlocksEngine2.Storage
                 return await GetFileListWithFallbackAsync();
             }
 
-            var levelSet = new HashSet<int>();
+            var levelSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (UserLevelEntry entry in entries)
             {
-                if (entry.HasLevel)
+                if (entry.HasLevel && TryNormalizeLevel(entry.Level, out string level))
                 {
-                    levelSet.Add(entry.Level);
+                    levelSet.Add(level);
                 }
             }
 
@@ -203,14 +203,8 @@ namespace MG_BlocksEngine2.Storage
                 return await GetFileListWithFallbackAsync();
             }
 
-            List<int> levels = new List<int>(levelSet);
-            levels.Sort();
-
-            List<string> fileNames = new List<string>(levels.Count);
-            foreach (int level in levels)
-            {
-                fileNames.Add(level.ToString());
-            }
+            List<string> fileNames = new List<string>(levelSet);
+            fileNames.Sort(StringComparer.OrdinalIgnoreCase);
 
             LogDbInfo($"[DatabaseStorageProvider] GetFileListAsync success from DB. count={fileNames.Count}");
             return fileNames;
@@ -231,7 +225,7 @@ namespace MG_BlocksEngine2.Storage
                 return await FileExistsWithFallbackAsync(fileName);
             }
 
-            if (!TryParseLevel(fileName, out int level))
+            if (!TryNormalizeLevel(fileName, out string level))
             {
                 return await FileExistsWithFallbackAsync(fileName);
             }
@@ -260,7 +254,7 @@ namespace MG_BlocksEngine2.Storage
                 return await DeleteWithFallbackAsync(fileName);
             }
 
-            if (!TryParseLevel(fileName, out int level))
+            if (!TryNormalizeLevel(fileName, out string level))
             {
                 return await DeleteWithFallbackAsync(fileName);
             }
@@ -339,12 +333,12 @@ namespace MG_BlocksEngine2.Storage
                     int jsonLen = entry.Json == null ? 0 : entry.Json.Length;
                     LogDbInfo(
                         $"[DatabaseStorageProvider][DebugGetMe] item[{i}] seq={(entry.HasSeq ? entry.Seq.ToString() : "n/a")}, " +
-                        $"level={(entry.HasLevel ? entry.Level.ToString() : "n/a")}, xmlLen={xmlLen}, jsonLen={jsonLen}");
+                        $"level={(entry.HasLevel ? entry.Level : "n/a")}, xmlLen={xmlLen}, jsonLen={jsonLen}");
                 }
             }
         }
 
-        private async Task<bool> SaveOrUpdateRemoteAsync(UserLevelEntry existing, int level, string xmlContent, string jsonContent, string accessToken)
+        private async Task<bool> SaveOrUpdateRemoteAsync(UserLevelEntry existing, string level, string xmlContent, string jsonContent, string accessToken)
         {
             var payload = new SaveCodeRequest
             {
@@ -395,7 +389,7 @@ namespace MG_BlocksEngine2.Storage
         {
             return new List<KeyValuePair<string, string>>
             {
-                new KeyValuePair<string, string>("level", payload.level.ToString()),
+                new KeyValuePair<string, string>("level", payload.level ?? string.Empty),
                 new KeyValuePair<string, string>("xml", payload.xml ?? string.Empty),
                 new KeyValuePair<string, string>("json", payload.json ?? string.Empty),
                 new KeyValuePair<string, string>("xmlLongText", payload.xmlLongText ?? string.Empty),
@@ -447,12 +441,12 @@ namespace MG_BlocksEngine2.Storage
             }
         }
 
-        private async Task<UserLevelEntry> FindEntryByLevelAsync(int level, string accessToken)
+        private async Task<UserLevelEntry> FindEntryByLevelAsync(string level, string accessToken)
         {
             List<UserLevelEntry> entries = await GetMyEntriesAsync(accessToken);
             foreach (UserLevelEntry entry in entries)
             {
-                if (entry.HasLevel && entry.Level == level)
+                if (entry.HasLevel && AreSameLevel(entry.Level, level))
                 {
                     return entry;
                 }
@@ -534,15 +528,20 @@ namespace MG_BlocksEngine2.Storage
             return !string.IsNullOrEmpty(userId) && !string.IsNullOrEmpty(accessToken);
         }
 
-        private static bool TryParseLevel(string fileName, out int level)
+        private static bool TryNormalizeLevel(string fileName, out string level)
         {
-            level = 0;
-            if (string.IsNullOrWhiteSpace(fileName))
+            level = fileName?.Trim();
+            if (string.IsNullOrEmpty(level))
             {
                 return false;
             }
 
-            return int.TryParse(fileName.Trim(), out level);
+            return true;
+        }
+
+        private static bool AreSameLevel(string left, string right)
+        {
+            return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string NormalizeRawJson(string jsonContent)
@@ -714,7 +713,7 @@ namespace MG_BlocksEngine2.Storage
             }
 
             bool hasSeq = TryExtractJsonLongValue(json, "seq", out long seq) || TryExtractJsonLongValue(json, "id", out seq);
-            bool hasLevel = TryExtractJsonIntValue(json, "level", out int level);
+            bool hasLevel = TryExtractJsonStringOrNumberValue(json, "level", out string level);
 
             string xml = null;
             bool hasXml = TryExtractJsonStringValue(json, "xml", out xml) || TryExtractJsonStringValue(json, "xmlLongText", out xml);
@@ -740,6 +739,29 @@ namespace MG_BlocksEngine2.Storage
             return true;
         }
 
+        private static bool TryExtractJsonStringOrNumberValue(string json, string fieldName, out string value)
+        {
+            value = null;
+            if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            if (TryExtractJsonStringValue(json, fieldName, out string stringValue))
+            {
+                value = stringValue?.Trim();
+                return !string.IsNullOrEmpty(value);
+            }
+
+            if (TryExtractJsonLongValue(json, fieldName, out long longValue))
+            {
+                value = longValue.ToString();
+                return true;
+            }
+
+            return false;
+        }
+
         private static bool TryExtractJsonStringValue(string json, string fieldName, out string value)
         {
             value = null;
@@ -756,23 +778,6 @@ namespace MG_BlocksEngine2.Storage
 
             value = Regex.Unescape(match.Groups["value"].Value).Replace("\\/", "/");
             return true;
-        }
-
-        private static bool TryExtractJsonIntValue(string json, string fieldName, out int value)
-        {
-            value = 0;
-            if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(fieldName))
-            {
-                return false;
-            }
-
-            Match match = Regex.Match(json, $"\"{Regex.Escape(fieldName)}\"\\s*:\\s*\"?(?<value>-?\\d+)\"?");
-            if (!match.Success)
-            {
-                return false;
-            }
-
-            return int.TryParse(match.Groups["value"].Value, out value);
         }
 
         private static bool TryExtractJsonLongValue(string json, string fieldName, out long value)
@@ -913,7 +918,7 @@ namespace MG_BlocksEngine2.Storage
         [Serializable]
         private sealed class SaveCodeRequest
         {
-            public int level;
+            public string level;
             public string xml;
             public string json;
             public string xmlLongText;
@@ -924,7 +929,7 @@ namespace MG_BlocksEngine2.Storage
         {
             public long Seq;
             public bool HasSeq;
-            public int Level;
+            public string Level;
             public bool HasLevel;
             public string Xml;
             public string Json;
