@@ -11,11 +11,6 @@ namespace MG_BlocksEngine2.UI
     /// </summary>
     public class BE2_UI_CodeSavePanel : MonoBehaviour
     {
-        private static void LogDbInfo(string message)
-        {
-            Debug.Log($"<color=cyan>{message}</color>");
-        }
-
         [Header("Main Panel")]
         [SerializeField] private GameObject mainPanel;
 
@@ -104,16 +99,18 @@ namespace MG_BlocksEngine2.UI
             // DB 연결 상태에 맞춰 원격/로컬 저장소를 전환
             ApplyStorageModeByConnection();
 
-            // 임시 테스트용: 원격 저장은 level=1로 고정합니다.
+            // 원격 DB 저장은 fileName을 level 값으로 사용하므로 숫자만 허용합니다.
             if (_isDBConnected)
             {
-                fileName = "1";
-                if (fileNameInput != null)
+                if (!int.TryParse(fileName, out int level))
                 {
-                    fileNameInput.text = fileName;
+                    Debug.LogWarning("[CodeSavePanel] Remote DB mode requires numeric level (e.g. 1, 2, 3).");
+                    return;
                 }
 
-                LogDbInfo("[CodeSavePanel] Remote DB mode: level is forced to 1.");
+                fileName = level.ToString();
+                if (fileNameInput != null)
+                    fileNameInput.text = fileName;
             }
 
             if (_contextMenuManager != null && await _contextMenuManager.FileExistsAsync(fileName))
