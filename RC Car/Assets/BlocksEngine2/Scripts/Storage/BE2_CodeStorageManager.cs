@@ -32,6 +32,11 @@ namespace MG_BlocksEngine2.Storage
         [Header("Storage")]
         [SerializeField] private bool _useRemoteStorage = true;
 
+        [Header("Remote API")]
+        [SerializeField] private string _apiBaseUrl = "http://ioteacher.com";
+        [SerializeField] private string _userLevelPath = "/api/user-level";
+        [SerializeField] private string _userLevelMePath = "/api/user-level/me";
+
         private ICodeStorageProvider _storageProvider;
         private ICodeStorageProvider _localStorageProvider;
         private ICodeStorageProvider _remoteStorageProvider;
@@ -44,7 +49,7 @@ namespace MG_BlocksEngine2.Storage
                 DontDestroyOnLoad(gameObject);
 
                 _localStorageProvider = new LocalStorageProvider();
-                _remoteStorageProvider = new DatabaseStorageProvider(_localStorageProvider);
+                _remoteStorageProvider = CreateRemoteStorageProvider();
                 _storageProvider = _useRemoteStorage
                     ? _remoteStorageProvider
                     : _localStorageProvider;
@@ -80,11 +85,42 @@ namespace MG_BlocksEngine2.Storage
 
             if (_remoteStorageProvider == null)
             {
-                _remoteStorageProvider = new DatabaseStorageProvider(_localStorageProvider);
+                _remoteStorageProvider = CreateRemoteStorageProvider();
             }
 
             _storageProvider = enabled ? _remoteStorageProvider : _localStorageProvider;
             Debug.Log($"[BE2_CodeStorageManager] Remote storage enabled: {enabled}. Active provider: {_storageProvider.GetType().Name}");
+        }
+
+        private ICodeStorageProvider CreateRemoteStorageProvider()
+        {
+            return new DatabaseStorageProvider(
+                _apiBaseUrl,
+                _userLevelPath,
+                _userLevelMePath,
+                _localStorageProvider);
+        }
+
+        [ContextMenu("Debug GET /api/user-level/me")]
+        private void DebugGetMyEntriesContextMenu()
+        {
+            _ = DebugGetMyEntriesAsync();
+        }
+
+        public async Task DebugGetMyEntriesAsync()
+        {
+            if (_remoteStorageProvider == null)
+            {
+                _remoteStorageProvider = CreateRemoteStorageProvider();
+            }
+
+            if (_remoteStorageProvider is DatabaseStorageProvider databaseProvider)
+            {
+                await databaseProvider.DebugLogGetMyEntriesAsync();
+                return;
+            }
+
+            Debug.LogWarning("[BE2_CodeStorageManager] Remote provider is not DatabaseStorageProvider.");
         }
 
         /// <summary>

@@ -99,6 +99,13 @@ namespace MG_BlocksEngine2.UI
             // DB 연결 상태에 맞춰 원격/로컬 저장소를 전환
             ApplyStorageModeByConnection();
 
+            // 원격 user-level 저장소는 fileName을 level(int)로 해석합니다.
+            if (_isDBConnected && !int.TryParse(fileName, out _))
+            {
+                Debug.LogWarning("[CodeSavePanel] Remote DB mode requires a numeric level (e.g., 1, 2, 3).");
+                return;
+            }
+
             if (_contextMenuManager != null && await _contextMenuManager.FileExistsAsync(fileName))
             {
                 _pendingFileName = fileName;
