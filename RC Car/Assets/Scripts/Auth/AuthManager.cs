@@ -25,10 +25,10 @@ namespace Auth
 
         [Header("씬 설정")]
         [Tooltip("인증 실패 시 이동할 씬")]
-        [SerializeField] private string _loginSceneName = "LoginScene";
+        [SerializeField] private string _loginSceneName = "Login";
         
         [Tooltip("인증 성공 시 이동할 씬")]
-        [SerializeField] private string _gameSceneName = "GameScene";
+        [SerializeField] private string _gameSceneName = "CreateBlock";
 
         [Header("디버그")]
         [Tooltip("에디터에서 테스트용 토큰으로 자동 인증")]

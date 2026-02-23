@@ -413,8 +413,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _serverBaseUrl: http://ioteacher.com/api/users/me-by-token
   _validateEndpoint: /api/auth/validate
-  _loginSceneName: TestLogin
-  _gameSceneName: TestCreateBlock
+  _loginSceneName: Login
+  _gameSceneName: CreateBlock
   _useTestTokenInEditor: 1
   _testToken: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZGozNzAxIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3NzE1NjQwNTMsImV4cCI6MTc3MjE2ODg1M30.Rj22gbIR1iEBgziCyfeVpNO0J9K6g7DV0jFLWX8ioLQ
 --- !u!4 &1831112859
