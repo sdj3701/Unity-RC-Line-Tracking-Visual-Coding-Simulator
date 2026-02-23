@@ -240,6 +240,7 @@ namespace MG_BlocksEngine2.UI
             }
 
             targetEnv.ClearBlocks();
+            await Task.Yield();
             BE2_BlocksSerializer.XMLToBlocksCode(xmlContent, targetEnv);
 
             string jsonContent = BE2XmlToRuntimeJson.ExportToString(xmlContent);
