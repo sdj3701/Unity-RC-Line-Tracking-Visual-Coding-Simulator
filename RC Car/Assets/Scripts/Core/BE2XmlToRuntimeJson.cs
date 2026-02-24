@@ -1367,122 +1367,45 @@ public static class BE2XmlToRuntimeJson
         if (opBlock != null)
         {
             var opName = opBlock.Element("blockName")?.Value?.Trim();
-                
-                // Block_Read (센서 읽기) 블록 처리
-                if (opName != null && (opName.Contains("Block_Read") || opName.Contains("Block Cst Block_Read") || opName.Contains("Block Ins Block_Read")))
+
+            // Block Op And / Or (복합 조건) 처리
+            if (TryParseLogicalCondition(opBlock, node))
+            {
+                // logical condition recognized
+            }
+            // 단일 센서 조건 처리 (Block_Read / Block Op Variable)
+            else if (TryExtractConditionSensorFunction(opBlock, out string sensorFunction))
+            {
+                node.conditionSensorFunction = sensorFunction;
+            }
+            // digitalRead 블록 처리 (기존 로직)
+            else if (opName != null && opName.Contains("digitalRead"))
+            {
+                // digitalRead 블록에서 핀 추출
+                var pinVarName = opBlock.Element("varName")?.Value;
+                if (!string.IsNullOrEmpty(pinVarName))
                 {
-                    
-                    // Block_Read 내부의 operation/Block에서 센서 변수 찾기
-                    var innerOpBlocks = opBlock.Descendants("operation")
-                        .SelectMany(op => op.Elements("Block"))
-                        .ToList();
-                    
-                    foreach (var innerBlock in innerOpBlocks)
-                    {
-                        var innerBlockName = innerBlock.Element("blockName")?.Value?.Trim();
-                        
-                        if (innerBlockName != null && (innerBlockName.Contains("Variable") || innerBlockName.Contains("Op Variable")))
-                        {
-                            var sensorVarName = innerBlock.Element("varName")?.Value?.Trim();
-                            
-                            if (!string.IsNullOrEmpty(sensorVarName))
-                            {
-                                // sensor_left -> leftSensor, sensor_right -> rightSensor 변환
-                                if (sensorVarName.Contains("sensor"))
-                                {
-                                    if (sensorVarName.Contains("left"))
-                                        node.conditionSensorFunction = "leftSensor";
-                                    else if (sensorVarName.Contains("right"))
-                                        node.conditionSensorFunction = "rightSensor";
-                                    else
-                                        node.conditionSensorFunction = sensorVarName;
-                                }
-                                else
-                                {
-                                    node.conditionSensorFunction = sensorVarName;
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    
-                    // 1. headerInputs에서 센서 함수 이름 추출 시도 (fallback)
-                    if (string.IsNullOrEmpty(node.conditionSensorFunction))
-                    {
-                        var readHeaderInputs = opBlock.Element("headerInputs")?.Elements("Input").ToList();
-                        if (readHeaderInputs != null && readHeaderInputs.Count > 0)
-                        {
-                            node.conditionSensorFunction = readHeaderInputs[0].Element("value")?.Value?.Trim();
-                        }
-                    }
-                    
-                    // 2. varName에서 검색 (fallback)
-                    if (string.IsNullOrEmpty(node.conditionSensorFunction))
-                    {
-                        var varName = opBlock.Element("varName")?.Value?.Trim();
-                        if (!string.IsNullOrEmpty(varName))
-                        {
-                            node.conditionSensorFunction = varName;
-                        }
-                    }
-                    
+                    node.conditionPin = ResolveInt(pinVarName);
                 }
-                // Block Op Variable (변수 참조 블록) 처리 - 센서 변수 참조
-                else if (opName != null && (opName.Contains("Block Op Variable") || opName.Contains("Op Variable")))
+                else
                 {
-                    // varName에서 변수 이름 추출
-                    var varName = opBlock.Element("varName")?.Value?.Trim();
-                    
-                    if (!string.IsNullOrEmpty(varName))
+                    // 내부 inputs에서 핀 값 추출
+                    var innerInputs = opBlock.Descendants("Input").ToList();
+                    if (innerInputs.Count > 0)
                     {
-                        // sensor_left/sensor_right 같은 센서 변수인지 확인
-                        if (varName.Contains("sensor"))
+                        var innerOpBlock = innerInputs[0].Element("operation")?.Element("Block");
+                        if (innerOpBlock != null)
                         {
-                            // 변수 이름을 센서 함수 이름으로 변환
-                            // sensor_left -> leftSensor, sensor_right -> rightSensor
-                            if (varName.Contains("left"))
-                                node.conditionSensorFunction = "leftSensor";
-                            else if (varName.Contains("right"))
-                                node.conditionSensorFunction = "rightSensor";
-                            else
-                                node.conditionSensorFunction = varName; // 다른 센서 이름은 그대로 사용
-                                
+                            var innerVarName = innerOpBlock.Element("varName")?.Value;
+                            node.conditionPin = ResolveInt(innerVarName);
                         }
                         else
                         {
-                            // 센서 변수가 아닌 경우 일반 조건 변수로 처리
-                            node.conditionSensorFunction = varName;
+                            node.conditionPin = ResolveInt(innerInputs[0].Element("value")?.Value);
                         }
                     }
                 }
-                // digitalRead 블록 처리 (기존 로직)
-                else if (opName != null && opName.Contains("digitalRead"))
-                {
-                    // digitalRead 블록에서 핀 추출
-                    var pinVarName = opBlock.Element("varName")?.Value;
-                    if (!string.IsNullOrEmpty(pinVarName))
-                    {
-                        node.conditionPin = ResolveInt(pinVarName);
-                    }
-                    else
-                    {
-                        // 내부 inputs에서 핀 값 추출
-                        var innerInputs = opBlock.Descendants("Input").ToList();
-                        if (innerInputs.Count > 0)
-                        {
-                            var innerOpBlock = innerInputs[0].Element("operation")?.Element("Block");
-                            if (innerOpBlock != null)
-                            {
-                                var innerVarName = innerOpBlock.Element("varName")?.Value;
-                                node.conditionPin = ResolveInt(innerVarName);
-                            }
-                            else
-                            {
-                                node.conditionPin = ResolveInt(innerInputs[0].Element("value")?.Value);
-                            }
-                        }
-                    }
-                }
+            }
         }
         
         // 2. sections 처리 - body와 conditionValue 추출
@@ -1546,7 +1469,158 @@ public static class BE2XmlToRuntimeJson
         }
         return result;
     }
-    
+
+    static bool TryParseLogicalCondition(XElement opBlock, LoopBlockNode node)
+    {
+        if (opBlock == null || node == null)
+            return false;
+
+        var opName = opBlock.Element("blockName")?.Value?.Trim();
+        if (string.IsNullOrEmpty(opName))
+            return false;
+
+        string logicalOp = null;
+        if (opName.IndexOf("Block Op And", StringComparison.OrdinalIgnoreCase) >= 0)
+            logicalOp = "and";
+        else if (opName.IndexOf("Block Op Or", StringComparison.OrdinalIgnoreCase) >= 0)
+            logicalOp = "or";
+
+        if (logicalOp == null)
+            return false;
+
+        node.conditionLogicalOp = logicalOp;
+
+        var logicalInputs = opBlock.Element("sections")?
+            .Element("Section")?
+            .Element("inputs")?
+            .Elements("Input")
+            .ToList();
+
+        if (logicalInputs == null || logicalInputs.Count == 0)
+            return true;
+
+        if (logicalInputs.Count > 0)
+        {
+            var leftOperand = logicalInputs[0].Element("operation")?.Element("Block");
+            if (TryExtractConditionSensorFunction(leftOperand, out string leftSensor))
+            {
+                node.conditionLeftSensorFunction = leftSensor;
+            }
+            else
+            {
+                var leftToken = logicalInputs[0].Element("value")?.Value?.Trim();
+                if (!string.IsNullOrEmpty(leftToken))
+                {
+                    node.conditionLeftSensorFunction = NormalizeSensorFunctionName(leftToken);
+                }
+            }
+        }
+
+        if (logicalInputs.Count > 1)
+        {
+            var rightOperand = logicalInputs[1].Element("operation")?.Element("Block");
+            if (TryExtractConditionSensorFunction(rightOperand, out string rightSensor))
+            {
+                node.conditionRightSensorFunction = rightSensor;
+            }
+            else
+            {
+                var rightToken = logicalInputs[1].Element("value")?.Value?.Trim();
+                if (!string.IsNullOrEmpty(rightToken))
+                {
+                    node.conditionRightSensorFunction = NormalizeSensorFunctionName(rightToken);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    static bool TryExtractConditionSensorFunction(XElement conditionBlock, out string sensorFunction)
+    {
+        sensorFunction = null;
+        if (conditionBlock == null)
+            return false;
+
+        var blockName = conditionBlock.Element("blockName")?.Value?.Trim();
+        if (string.IsNullOrEmpty(blockName))
+            return false;
+
+        // Block_Read 계열: 내부 operation(variable) 또는 header value에서 센서명 추출
+        if (blockName.IndexOf("Block_Read", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            var innerOpBlocks = conditionBlock.Descendants("operation")
+                .SelectMany(op => op.Elements("Block"))
+                .ToList();
+
+            foreach (var innerBlock in innerOpBlocks)
+            {
+                var innerBlockName = innerBlock.Element("blockName")?.Value?.Trim();
+                if (string.IsNullOrEmpty(innerBlockName))
+                    continue;
+
+                if (innerBlockName.IndexOf("Variable", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    var sensorVarName = innerBlock.Element("varName")?.Value?.Trim();
+                    if (!string.IsNullOrEmpty(sensorVarName))
+                    {
+                        sensorFunction = NormalizeSensorFunctionName(sensorVarName);
+                        return true;
+                    }
+                }
+            }
+
+            var readHeaderInputs = conditionBlock.Element("headerInputs")?.Elements("Input").ToList();
+            if (readHeaderInputs != null && readHeaderInputs.Count > 0)
+            {
+                var fromHeader = readHeaderInputs[0].Element("value")?.Value?.Trim();
+                if (!string.IsNullOrEmpty(fromHeader))
+                {
+                    sensorFunction = NormalizeSensorFunctionName(fromHeader);
+                    return true;
+                }
+            }
+
+            var fromVarName = conditionBlock.Element("varName")?.Value?.Trim();
+            if (!string.IsNullOrEmpty(fromVarName))
+            {
+                sensorFunction = NormalizeSensorFunctionName(fromVarName);
+                return true;
+            }
+        }
+
+        // Block Op Variable 계열
+        if (blockName.IndexOf("Block Op Variable", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            blockName.IndexOf("Op Variable", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            var varName = conditionBlock.Element("varName")?.Value?.Trim();
+            if (!string.IsNullOrEmpty(varName))
+            {
+                sensorFunction = NormalizeSensorFunctionName(varName);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static string NormalizeSensorFunctionName(string rawName)
+    {
+        if (string.IsNullOrEmpty(rawName))
+            return rawName;
+
+        var name = rawName.Trim();
+        if (name.IndexOf("sensor", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            if (name.IndexOf("left", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "leftSensor";
+            if (name.IndexOf("right", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "rightSensor";
+        }
+
+        return name;
+    }
+
     // ===== 헬퍼 함수 =====
     
     static int ResolveInt(string token)
@@ -1687,8 +1761,17 @@ public static class BE2XmlToRuntimeJson
                 
             case "if":
             case "ifElse":
+                // logical condition (And/Or)
+                if (!string.IsNullOrEmpty(node.conditionLogicalOp))
+                {
+                    parts.Add($"\"conditionLogicalOp\": \"{EscapeJson(node.conditionLogicalOp)}\"");
+                    if (!string.IsNullOrEmpty(node.conditionLeftSensorFunction))
+                        parts.Add($"\"conditionLeftSensorFunction\": \"{EscapeJson(node.conditionLeftSensorFunction)}\"");
+                    if (!string.IsNullOrEmpty(node.conditionRightSensorFunction))
+                        parts.Add($"\"conditionRightSensorFunction\": \"{EscapeJson(node.conditionRightSensorFunction)}\"");
+                }
                 // conditionSensorFunction이 있으면 센서 기반 조건, 아니면 핀 기반 조건
-                if (!string.IsNullOrEmpty(node.conditionSensorFunction))
+                else if (!string.IsNullOrEmpty(node.conditionSensorFunction))
                     parts.Add($"\"conditionSensorFunction\": \"{EscapeJson(node.conditionSensorFunction)}\"");
                 else
                     parts.Add($"\"conditionPin\": {node.conditionPin}");
@@ -1757,6 +1840,9 @@ public static class BE2XmlToRuntimeJson
         // For if/ifElse
         public int conditionPin;
         public string conditionSensorFunction;  // 센서 기반 조건 (예: "leftSensor", "rightSensor")
+        public string conditionLogicalOp;       // "and" | "or"
+        public string conditionLeftSensorFunction;
+        public string conditionRightSensorFunction;
         public int conditionValue;  // Section의 inputs에서 추출한 조건 값
         public List<LoopBlockNode> body;
         public List<LoopBlockNode> elseBody;

@@ -356,9 +356,43 @@ public class BlockCodeExecutor : MonoBehaviour
     void ExecuteIfBlock(BlockNode node, bool hasElse)
     {
         bool condition;
-        
+
+        // conditionLogicalOp가 있으면 And/Or 복합 조건을 먼저 평가
+        if (!string.IsNullOrEmpty(node.conditionLogicalOp))
+        {
+            if (arduino == null)
+            {
+                Debug.LogWarning("<color=red>[3] ExecuteIfBlock: arduino is NULL for logical condition!</color>");
+                condition = false;
+            }
+            else
+            {
+                bool leftOk = TryReadSensorAsInt(node.conditionLeftSensorFunction, out int leftValue);
+                bool rightOk = TryReadSensorAsInt(node.conditionRightSensorFunction, out int rightValue);
+
+                bool logicalResult = false;
+                string logicalOp = node.conditionLogicalOp.ToLowerInvariant();
+                if (logicalOp == "and")
+                {
+                    logicalResult = leftValue == 1 && rightValue == 1;
+                }
+                else if (logicalOp == "or")
+                {
+                    logicalResult = leftValue == 1 || rightValue == 1;
+                }
+                else
+                {
+                    Debug.LogWarning($"<color=red>[3] ExecuteIfBlock: Unknown logical op '{node.conditionLogicalOp}'</color>");
+                }
+
+                int expected = Mathf.RoundToInt(node.conditionValue);
+                condition = leftOk && rightOk && ((logicalResult ? 1 : 0) == expected);
+
+                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} logical={logicalOp}, left={leftValue}, right={rightValue}, conditionValue={expected}, condition={condition}</color>");
+            }
+        }
         // conditionSensorFunction이 있으면 센서 값을 읽어서 조건 판단
-        if (!string.IsNullOrEmpty(node.conditionSensorFunction))
+        else if (!string.IsNullOrEmpty(node.conditionSensorFunction))
         {
             if (arduino == null)
             {
@@ -368,15 +402,21 @@ public class BlockCodeExecutor : MonoBehaviour
             else
             {
                 // 센서 값 읽기 (swap 없이 그대로 사용)
-                bool sensorValue = arduino.FunctionDigitalRead(node.conditionSensorFunction);
-                
-                // conditionValue와 비교하여 조건 판단
-                // sensorValue: true = 흰색, false = 검은색
-                // conditionValue: 0 = 검은색 감지 시 실행, 1 = 흰색 감지 시 실행
-                int sensorAsInt = sensorValue ? 1 : 0;
-                condition = (sensorAsInt == (int)node.conditionValue);
-                    
-                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} sensor={node.conditionSensorFunction}, sensorValue={sensorAsInt}, conditionValue={node.conditionValue}, condition={condition}</color>");
+                bool readOk = TryReadSensorAsInt(node.conditionSensorFunction, out int sensorAsInt);
+                if (!readOk)
+                {
+                    condition = false;
+                    Debug.LogWarning("<color=red>[3] ExecuteIfBlock: failed to read sensor condition.</color>");
+                }
+                else
+                {
+                    // conditionValue와 비교하여 조건 판단
+                    // sensorValue: true = 흰색, false = 검은색
+                    // conditionValue: 0 = 검은색 감지 시 실행, 1 = 흰색 감지 시 실행
+                    condition = (sensorAsInt == (int)node.conditionValue);
+                        
+                    Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} sensor={node.conditionSensorFunction}, sensorValue={sensorAsInt}, conditionValue={node.conditionValue}, condition={condition}</color>");
+                }
             }
         }
         else
@@ -385,7 +425,6 @@ public class BlockCodeExecutor : MonoBehaviour
             condition = ConvertToBoolean(node.conditionValue);
             Debug.Log($"<color=magenta>[3] ExecuteNode: {node.type} conditionValue={node.conditionValue} → {condition}</color>");
         }
-        
         if (condition)
         {
             if (ShouldSkipByBothSensorAlternation(node))
@@ -419,6 +458,48 @@ public class BlockCodeExecutor : MonoBehaviour
         {
             Debug.Log($"<color=gray>[3] ExecuteIfBlock: Condition is false, skipping body</color>");
         }
+    }
+
+    bool TryReadSensorAsInt(string sensorFunction, out int sensorAsInt)
+    {
+        sensorAsInt = 0;
+
+        if (string.IsNullOrEmpty(sensorFunction))
+            return false;
+
+        // 1) literal bool/string 처리
+        if (sensorFunction.Equals("true", StringComparison.OrdinalIgnoreCase))
+        {
+            sensorAsInt = 1;
+            return true;
+        }
+        if (sensorFunction.Equals("false", StringComparison.OrdinalIgnoreCase))
+        {
+            sensorAsInt = 0;
+            return true;
+        }
+
+        // 2) literal numeric 처리
+        if (float.TryParse(sensorFunction, out float literalValue))
+        {
+            sensorAsInt = literalValue > 0f ? 1 : 0;
+            return true;
+        }
+
+        // 3) 런타임 변수 처리 (예: flag 변수)
+        if (variables.TryGetValue(sensorFunction, out float variableValue))
+        {
+            sensorAsInt = variableValue > 0f ? 1 : 0;
+            return true;
+        }
+
+        // 4) 센서 함수 처리
+        if (arduino == null)
+            return false;
+
+        bool sensorValue = arduino.FunctionDigitalRead(sensorFunction);
+        sensorAsInt = sensorValue ? 1 : 0;
+        return true;
     }
 
     bool ShouldSkipByBothSensorAlternation(BlockNode node)
@@ -666,6 +747,9 @@ public class BlockCodeExecutor : MonoBehaviour
                     case "conditionPin": node.conditionPin = (int)ParseFloat(json, ref idx); break;
                     case "conditionValue": node.conditionValue = ParseFloat(json, ref idx); break;
                     case "conditionSensorFunction": node.conditionSensorFunction = ParseString(json, ref idx); break;
+                    case "conditionLogicalOp": node.conditionLogicalOp = ParseString(json, ref idx); break;
+                    case "conditionLeftSensorFunction": node.conditionLeftSensorFunction = ParseString(json, ref idx); break;
+                    case "conditionRightSensorFunction": node.conditionRightSensorFunction = ParseString(json, ref idx); break;
                     case "sensorFunction": node.sensorFunction = ParseString(json, ref idx); break;
                     case "targetVar": node.targetVar = ParseString(json, ref idx); break;
                     case "name": node.name = ParseString(json, ref idx); break;
@@ -907,6 +991,9 @@ public class BlockCodeExecutor : MonoBehaviour
         public string conditionVar;
         public int conditionPin;      // if/ifElse용 조건 핀
         public string conditionSensorFunction; // if/ifElse용 센서 기반 조건 (예: "leftSensor")
+        public string conditionLogicalOp; // if/ifElse용 논리 조건 ("and" | "or")
+        public string conditionLeftSensorFunction;  // 논리 조건 좌항 센서
+        public string conditionRightSensorFunction; // 논리 조건 우항 센서
         public float conditionValue;  // if/ifElse용 조건 값 (숫자)
         public string sensorFunction; // analogRead용 센서 기능 이름
         public string targetVar;      // analogRead 결과를 저장할 변수 이름
