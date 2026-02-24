@@ -87,6 +87,10 @@ public class BlockCodeExecutor : MonoBehaviour
     bool bothTrueSideResolvedThisTick = false;
     bool runLeftThisTickWhenBothTrue = true;
     bool bothTrueBranchExecutedThisTick = false;
+    float waitUntilTime = -1f;
+    bool waitTriggeredThisTick = false;
+    int initExecutionIndex = 0;
+    int loopExecutionIndex = 0;
     
     /// <summary>
     /// JSON 파일에서 프로그램 로드
@@ -129,6 +133,10 @@ public class BlockCodeExecutor : MonoBehaviour
             
             isLoaded = true;
             hasRunInit = false;
+            waitUntilTime = -1f;
+            waitTriggeredThisTick = false;
+            initExecutionIndex = 0;
+            loopExecutionIndex = 0;
             LogDebug($"Program loaded from {(fromMemory ? "memory" : "file")}. Variables: {variables.Count}, Loop blocks: {program?.loop?.Count ?? 0}");
         }
         catch (Exception ex)
@@ -144,18 +152,44 @@ public class BlockCodeExecutor : MonoBehaviour
     {
         if (!isLoaded || program == null) return;
 
+        // Wait 블록으로 대기 중이면 loop 실행을 잠시 멈춘다.
+        if (waitUntilTime > Time.time)
+        {
+            Debug.Log($"<color=gray>[2] BlockCodeExecutor.Tick() - Waiting {(waitUntilTime - Time.time):F2}s</color>");
+            return;
+        }
+
+        if (waitUntilTime >= 0f)
+        {
+            waitUntilTime = -1f;
+        }
+
         bothTrueSideResolvedThisTick = false;
         bothTrueBranchExecutedThisTick = false;
+        waitTriggeredThisTick = false;
         
-        // init 블록 한 번만 실행
+        // init 블록 한 번만 실행 (wait를 만나면 다음 tick에 이어서 실행)
         if (!hasRunInit && program.init != null)
         {
-            Debug.Log("<color=orange>[1] BlockCodeExecutor.Tick() - Running INIT blocks</color>");
-            foreach (var node in program.init)
+            if (initExecutionIndex == 0)
             {
-                ExecuteNode(node);
+                Debug.Log("<color=orange>[1] BlockCodeExecutor.Tick() - Running INIT blocks</color>");
             }
+
+            while (initExecutionIndex < program.init.Count)
+            {
+                var node = program.init[initExecutionIndex];
+                initExecutionIndex++;
+                ExecuteNode(node);
+
+                if (waitTriggeredThisTick)
+                {
+                    return;
+                }
+            }
+
             hasRunInit = true;
+            initExecutionIndex = 0;
         }
 
         Debug.Log($"<color=yellow>[2] BlockCodeExecutor.Tick() - Running LOOP ({program.loop.Count} blocks)</color>");
@@ -166,11 +200,21 @@ public class BlockCodeExecutor : MonoBehaviour
             ApplyDefaultMotorStopState();
         }
 
-        // Loop 블록 실행 (if 조건이 참이면 함수가 기본값 덮어씀)
-        foreach (var node in program.loop)
+        // Loop 블록 실행 (wait를 만나면 다음 tick에 이어서 실행)
+        while (loopExecutionIndex < program.loop.Count)
         {
+            var node = program.loop[loopExecutionIndex];
+            loopExecutionIndex++;
             ExecuteNode(node);
+            if (waitTriggeredThisTick)
+            {
+                // Wait가 시작되면 이번 tick의 나머지 블록은 실행하지 않는다.
+                return;
+            }
         }
+
+        // 한 바퀴 완료했으면 다음 tick에 처음부터 다시 실행
+        loopExecutionIndex = 0;
                 // loop 블록 매번 실행
         // if (program.loop != null && program.loop.Count > 0)
         // {
@@ -261,6 +305,10 @@ public class BlockCodeExecutor : MonoBehaviour
                 
             case "analogRead":
                 ExecuteAnalogRead(node);
+                break;
+
+            case "wait":
+                ExecuteWait(node);
                 break;
                 
             default:
@@ -356,6 +404,8 @@ public class BlockCodeExecutor : MonoBehaviour
             foreach (var childNode in funcDef.body)
             {
                 ExecuteNode(childNode);
+                if (waitTriggeredThisTick)
+                    return;
             }
         }
     }
@@ -451,6 +501,8 @@ public class BlockCodeExecutor : MonoBehaviour
                 foreach (var childNode in node.body)
                 {
                     ExecuteNode(childNode);
+                    if (waitTriggeredThisTick)
+                        return;
                 }
             }
         }
@@ -463,6 +515,8 @@ public class BlockCodeExecutor : MonoBehaviour
                 foreach (var childNode in node.elseBody)
                 {
                     ExecuteNode(childNode);
+                    if (waitTriggeredThisTick)
+                        return;
                 }
             }
         }
@@ -616,6 +670,31 @@ public class BlockCodeExecutor : MonoBehaviour
             Debug.Log($"<color=cyan>[3] ExecuteAnalogRead: Stored in variable '{node.targetVar}' = {sensorValue}</color>");
         }
     }
+
+    /// <summary>
+    /// Wait 블록 실행: 입력 초(second)만큼 loop 실행을 일시 중지합니다.
+    /// </summary>
+    void ExecuteWait(BlockNode node)
+    {
+        float seconds = node.number;
+        if (!string.IsNullOrEmpty(node.valueVar))
+        {
+            seconds = GetVariable(node.valueVar, node.number);
+        }
+
+        if (seconds < 0f)
+            seconds = 0f;
+
+        if (seconds <= 0f)
+        {
+            Debug.Log("<color=gray>[3] ExecuteWait: seconds <= 0, skip waiting</color>");
+            return;
+        }
+
+        waitUntilTime = Time.time + seconds;
+        waitTriggeredThisTick = true;
+        Debug.Log($"<color=yellow>[3] ExecuteWait: waiting for {seconds:F2}s</color>");
+    }
     
     /// <summary>
     /// 문자열을 Boolean으로 변환
@@ -685,6 +764,10 @@ public class BlockCodeExecutor : MonoBehaviour
         ClearVariables();
         isLoaded = false;
         hasRunInit = false;
+        waitUntilTime = -1f;
+        waitTriggeredThisTick = false;
+        initExecutionIndex = 0;
+        loopExecutionIndex = 0;
         program = null;
         LoadProgram();
     }

@@ -52,6 +52,10 @@ public static class BE2XmlToRuntimeJson
         // Block_Read 블록 (센서 읽기)
         { "Block Cst Block_Read", ParseBlockReadBlock },
         { "Block Ins Block_Read", ParseBlockReadBlock },
+
+        // Wait 블록
+        { "Block Ins Wait", ParseWaitBlock },
+        { "Block Cst Wait", ParseWaitBlock },
     };
 
     /// <summary>
@@ -157,6 +161,10 @@ public static class BE2XmlToRuntimeJson
         var initBlocks = new List<VariableNode>();
         ProcessVariableDefinitions(mainTriggerBlock, initBlocks);
         Debug.Log($"[DEBUG FLOW] ExportToString - 변수 {initBlocks.Count}개 발견");
+
+        // 2.1단계: init에서 wait 블록 수집 (loop 내부는 제외)
+        var initActionBlocks = new List<LoopBlockNode>();
+        ProcessInitWaitBlocks(mainTriggerBlock, initActionBlocks);
         
         // 2.5단계: 함수 정의 내의 변수 수집
         foreach (var kvp in functionDefinitions)
@@ -186,7 +194,7 @@ public static class BE2XmlToRuntimeJson
             }
         }
         
-        var result = BuildJson(initBlocks, loopBlocks, functionNodes);
+        var result = BuildJson(initBlocks, loopBlocks, functionNodes, initActionBlocks);
         Debug.Log($"[DEBUG FLOW] ExportToString 완료 - JSON 길이: {result.Length}자");
         return result;
     }
@@ -332,6 +340,10 @@ public static class BE2XmlToRuntimeJson
         {
             Debug.Log($"    - {v.name} = {v.value}");
         }
+
+        // 5.1단계: init에서 wait 블록 수집 (loop 내부는 제외)
+        var initActionBlocks = new List<LoopBlockNode>();
+        ProcessInitWaitBlocks(mainTriggerBlock, initActionBlocks);
         
         // ============================================================
         // 2.5단계: 함수 정의 내의 변수들을 미리 수집 (ResolveFloat에서 사용)
@@ -383,7 +395,7 @@ public static class BE2XmlToRuntimeJson
 
         // JSON 빌드
         Debug.Log($"[DEBUG FLOW] 8. JSON 빌드 시작 - init: {initBlocks.Count}, loop: {loopBlocks.Count}, functions: {functionNodes.Count}");
-        var json = BuildJson(initBlocks, loopBlocks, functionNodes);
+        var json = BuildJson(initBlocks, loopBlocks, functionNodes, initActionBlocks);
         Debug.Log($"[DEBUG FLOW] 8. JSON 빌드 완료 - 길이: {json.Length}자");
         Debug.Log($"[DEBUG FLOW] JSON 미리보기:\n{json.Substring(0, Math.Min(500, json.Length))}...");
         File.WriteAllText(jsonPath, json);
@@ -751,6 +763,64 @@ public static class BE2XmlToRuntimeJson
             }
         }
     }
+
+    /// <summary>
+    /// Loop 바깥 init 영역에서 실행 블록(setVariable/wait)을 수집합니다.
+    /// </summary>
+    static void ProcessInitWaitBlocks(XElement block, List<LoopBlockNode> initActionBlocks)
+    {
+        if (block == null || initActionBlocks == null) return;
+
+        var name = block.Element("blockName")?.Value?.Trim();
+
+        // Loop 내부는 init 영역이 아니므로 진입하지 않음
+        if (name == "Block Cst Loop" || name == "Block Ins Loop")
+            return;
+
+        // SetVariable 블록 수집
+        if (name == "Block Ins SetVariable" || name == "Block Cst SetVariable")
+        {
+            var setNode = ParseSetVariableBlock(block);
+            if (setNode != null)
+            {
+                initActionBlocks.Add(setNode);
+            }
+        }
+        // Wait 블록 수집
+        else if (name == "Block Ins Wait" || name == "Block Cst Wait")
+        {
+            var waitNode = ParseWaitBlock(block);
+            if (waitNode != null)
+            {
+                initActionBlocks.Add(waitNode);
+            }
+        }
+
+        // sections의 childBlocks 재귀 탐색
+        var sections = block.Element("sections")?.Elements("Section");
+        if (sections != null)
+        {
+            foreach (var section in sections)
+            {
+                var childBlocks = section.Element("childBlocks")?.Elements("Block");
+                if (childBlocks == null) continue;
+                foreach (var child in childBlocks)
+                {
+                    ProcessInitWaitBlocks(child, initActionBlocks);
+                }
+            }
+        }
+
+        // OuterArea 체인 재귀 탐색
+        var outerChildBlocks = block.Element("OuterArea")?.Element("childBlocks")?.Elements("Block");
+        if (outerChildBlocks != null)
+        {
+            foreach (var child in outerChildBlocks)
+            {
+                ProcessInitWaitBlocks(child, initActionBlocks);
+            }
+        }
+    }
     
     /// <summary>
     /// 함수 정의 블록에서 변수들을 미리 수집 (ResolveFloat에서 사용하기 위해)
@@ -821,7 +891,8 @@ public static class BE2XmlToRuntimeJson
                 if (blockName.Contains("pWM") || blockName.Contains("PWM") ||
                     blockName.Contains("If") || blockName.Contains("CallFunction") ||
                     blockName.Contains("FunctionBlock") || blockName.Contains("Loop") ||
-                    blockName.Contains("Read") || blockName.Contains("Write"))
+                    blockName.Contains("Read") || blockName.Contains("Write") ||
+                    blockName.Contains("Wait"))
                 {
                     return false;
                 }
@@ -1037,6 +1108,64 @@ public static class BE2XmlToRuntimeJson
             node.targetVar = headerInputs[1].Element("value")?.Value?.Trim();
         }
         
+        return node;
+    }
+
+    /// <summary>
+    /// Wait 블록 파싱
+    /// 입력값은 숫자(초) 또는 변수명(valueVar)로 처리합니다.
+    /// </summary>
+    static LoopBlockNode ParseWaitBlock(XElement block)
+    {
+        var node = new LoopBlockNode { type = "wait", number = 0f };
+
+        // Wait 입력은 보통 sections/Section/inputs[0]에 존재
+        var inputs = block.Element("sections")?.Element("Section")?.Element("inputs")?.Elements("Input").ToList();
+        if (inputs == null || inputs.Count == 0)
+        {
+            // 일부 경우 headerInputs를 사용할 수 있어 fallback 제공
+            inputs = block.Element("headerInputs")?.Elements("Input").ToList();
+        }
+
+        if (inputs == null || inputs.Count == 0)
+            return node;
+
+        var firstInput = inputs[0];
+
+        // 1) operation 블록 내 varName 우선 확인 (변수 참조 입력)
+        var opBlock = firstInput.Element("operation")?.Element("Block");
+        if (opBlock != null)
+        {
+            var varName = opBlock.Element("varName")?.Value?.Trim();
+            if (string.IsNullOrEmpty(varName))
+            {
+                varName = opBlock.Descendants("varName").FirstOrDefault()?.Value?.Trim();
+            }
+
+            if (!string.IsNullOrEmpty(varName))
+            {
+                node.valueVar = varName;
+                node.number = ResolveFloat(varName); // fallback default
+                return node;
+            }
+        }
+
+        // 2) 직접 value 처리 (숫자 또는 변수명)
+        var rawValue = firstInput.Element("value")?.Value?.Trim();
+        if (string.IsNullOrEmpty(rawValue))
+            return node;
+
+        if (float.TryParse(rawValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float seconds) ||
+            float.TryParse(rawValue, out seconds))
+        {
+            node.number = seconds;
+        }
+        else
+        {
+            node.valueVar = rawValue;
+            node.number = ResolveFloat(rawValue); // fallback default
+        }
+
         return node;
     }
     
@@ -1648,18 +1777,57 @@ public static class BE2XmlToRuntimeJson
     
     // ===== JSON Building =====
     
-    static string BuildJson(List<VariableNode> variables, List<LoopBlockNode> loopBlocks, List<FunctionNode> functions)
+    static string BuildJson(List<VariableNode> variables, List<LoopBlockNode> loopBlocks, List<FunctionNode> functions, List<LoopBlockNode> initActionBlocks = null)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("{");
         
         // init 배열 (변수 설정)
         sb.AppendLine("  \"init\": [");
-        for (int i = 0; i < variables.Count; i++)
+
+        var initParts = new List<string>();
+
+        // init 실행 순서를 보존하기 위해 수집된 initActionBlocks를 우선 사용
+        if (initActionBlocks != null && initActionBlocks.Count > 0)
         {
-            var v = variables[i];
-            sb.Append($"    {{ \"type\": \"setVariable\", \"setVarName\": \"{EscapeJson(v.name)}\", \"setVarValue\": {v.value} }}");
-            if (i < variables.Count - 1) sb.Append(",");
+            var initSetVars = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var initNode in initActionBlocks)
+            {
+                initParts.Add(LoopBlockNodeToJson(initNode));
+
+                if (string.Equals(initNode.type, "setVariable", StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrEmpty(initNode.setVarName))
+                {
+                    initSetVars.Add(initNode.setVarName);
+                }
+            }
+
+            // initActionBlocks에 포함되지 않은 변수 정의(예: 초기화 함수에서 수집된 변수)를 보강
+            for (int i = 0; i < variables.Count; i++)
+            {
+                var v = variables[i];
+                if (string.IsNullOrEmpty(v.name) || initSetVars.Contains(v.name))
+                    continue;
+
+                initParts.Add($"{{ \"type\": \"setVariable\", \"setVarName\": \"{EscapeJson(v.name)}\", \"setVarValue\": {v.value} }}");
+            }
+        }
+        else
+        {
+            // fallback: 기존 변수 정의 기반 init 생성
+            for (int i = 0; i < variables.Count; i++)
+            {
+                var v = variables[i];
+                initParts.Add($"{{ \"type\": \"setVariable\", \"setVarName\": \"{EscapeJson(v.name)}\", \"setVarValue\": {v.value} }}");
+            }
+        }
+
+        for (int i = 0; i < initParts.Count; i++)
+        {
+            sb.Append("    ");
+            sb.Append(initParts[i]);
+            if (i < initParts.Count - 1) sb.Append(",");
             sb.AppendLine();
         }
         sb.AppendLine("  ],");
@@ -1809,6 +1977,12 @@ public static class BE2XmlToRuntimeJson
                     parts.Add($"\"setVarName\": \"{EscapeJson(node.setVarName)}\"");
                 parts.Add($"\"setVarValue\": {node.setVarValue}");
                 break;
+
+            case "wait":
+                parts.Add($"\"number\": {node.number}");
+                if (!string.IsNullOrEmpty(node.valueVar))
+                    parts.Add($"\"valueVar\": \"{EscapeJson(node.valueVar)}\"");
+                break;
         }
         
         return $"{{ {string.Join(", ", parts)} }}";
@@ -1830,7 +2004,10 @@ public static class BE2XmlToRuntimeJson
     
     class LoopBlockNode
     {
-        public string type;        // "analogWrite", "analogRead", "if", "ifElse", "callFunction"
+        public string type;        // "analogWrite", "analogRead", "if", "ifElse", "callFunction", "wait"
+        
+        // For wait
+        public float number;       // wait seconds
         
         // For analogWrite
         public int pin;
