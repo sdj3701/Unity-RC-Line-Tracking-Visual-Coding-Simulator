@@ -23,6 +23,10 @@ public class BlockCodeExecutor : MonoBehaviour
     [Tooltip("leftSensor/rightSensor가 모두 true일 때 좌/우 분기를 번갈아 실행하는 간격(초)")]
     [Min(0.02f)]
     [SerializeField] float bothTrueSwitchInterval = 0.12f;
+
+    [Header("Motor Output Policy")]
+    [Tooltip("매 Tick 시작 시 모터 출력을 stop 값으로 초기화합니다. 조건이 false면 자연스럽게 정지합니다.")]
+    [SerializeField] bool resetMotorOutputsToStopEachTick = true;
     
     // 런타임 변수 저장소 (변수 이름 → 값)
     Dictionary<string, float> variables = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
@@ -155,6 +159,12 @@ public class BlockCodeExecutor : MonoBehaviour
         }
 
         Debug.Log($"<color=yellow>[2] BlockCodeExecutor.Tick() - Running LOOP ({program.loop.Count} blocks)</color>");
+
+        // 이전 Tick의 모터 출력이 유지되지 않도록 기본 정지 상태를 먼저 적용
+        if (resetMotorOutputsToStopEachTick)
+        {
+            ApplyDefaultMotorStopState();
+        }
 
         // Loop 블록 실행 (if 조건이 참이면 함수가 기본값 덮어씀)
         foreach (var node in program.loop)
@@ -385,10 +395,12 @@ public class BlockCodeExecutor : MonoBehaviour
                     Debug.LogWarning($"<color=red>[3] ExecuteIfBlock: Unknown logical op '{node.conditionLogicalOp}'</color>");
                 }
 
-                int expected = Mathf.RoundToInt(node.conditionValue);
-                condition = leftOk && rightOk && ((logicalResult ? 1 : 0) == expected);
+                // 논리 연산(and/or)은 자체 결과를 if 조건으로 사용한다.
+                // 기존 conditionValue(0/1) 비교는 센서 단일 비교용 legacy 동작이어서
+                // 논리식에서는 무시해야 사용자가 기대한 "AND/OR 본연의 의미"와 일치한다.
+                condition = leftOk && rightOk && logicalResult;
 
-                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} logical={logicalOp}, left={leftValue}, right={rightValue}, conditionValue={expected}, condition={condition}</color>");
+                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} logical={logicalOp}, left={leftValue}, right={rightValue}, logicalResult={logicalResult}, condition={condition}</color>");
             }
         }
         // conditionSensorFunction이 있으면 센서 값을 읽어서 조건 판단
@@ -500,6 +512,24 @@ public class BlockCodeExecutor : MonoBehaviour
         bool sensorValue = arduino.FunctionDigitalRead(sensorFunction);
         sensorAsInt = sensorValue ? 1 : 0;
         return true;
+    }
+
+    void ApplyDefaultMotorStopState()
+    {
+        if (arduino == null)
+            return;
+
+        float stopSpeed = GetVariable("stop", 0f);
+
+        int pinRightForward = (int)GetVariable("pin_wheel_right_forward", 6);
+        int pinLeftForward = (int)GetVariable("pin_wheel_left_forward", 9);
+        int pinRightBack = (int)GetVariable("pin_wheel_right_back", 10);
+        int pinLeftBack = (int)GetVariable("pin_wheel_left_back", 11);
+
+        arduino.AnalogWrite(pinRightForward, stopSpeed);
+        arduino.AnalogWrite(pinLeftForward, stopSpeed);
+        arduino.AnalogWrite(pinRightBack, stopSpeed);
+        arduino.AnalogWrite(pinLeftBack, stopSpeed);
     }
 
     bool ShouldSkipByBothSensorAlternation(BlockNode node)

@@ -1421,14 +1421,19 @@ public static class BE2XmlToRuntimeJson
                 node.body = ParseSectionBlocks(firstSection);
                 
                 // inputs에서 conditionValue 추출 (childBlocks 이후에 있는 값)
-                var sectionInputs = firstSection.Element("inputs")?.Elements("Input").ToList();
-                if (sectionInputs != null && sectionInputs.Count > 0)
+                // 단, logical(and/or) 조건은 conditionValue 비교를 사용하지 않으므로
+                // 기본값(1)을 유지한다.
+                if (string.IsNullOrEmpty(node.conditionLogicalOp))
                 {
-                    var lastInput = sectionInputs[sectionInputs.Count - 1];
-                    var valueStr = lastInput.Element("value")?.Value;
-                    if (!string.IsNullOrEmpty(valueStr))
+                    var sectionInputs = firstSection.Element("inputs")?.Elements("Input").ToList();
+                    if (sectionInputs != null && sectionInputs.Count > 0)
                     {
-                        node.conditionValue = ResolveInt(valueStr);
+                        var lastInput = sectionInputs[sectionInputs.Count - 1];
+                        var valueStr = lastInput.Element("value")?.Value;
+                        if (!string.IsNullOrEmpty(valueStr))
+                        {
+                            node.conditionValue = ResolveInt(valueStr);
+                        }
                     }
                 }
             }
