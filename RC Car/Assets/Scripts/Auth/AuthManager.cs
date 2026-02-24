@@ -33,7 +33,7 @@ namespace Auth
         [Header("디버그")]
         [Tooltip("에디터에서 테스트용 토큰으로 자동 인증")]
         [SerializeField] private bool _useTestTokenInEditor = true;
-        [SerializeField] private string _testToken = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZGozNzAxIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3NzAzNjQ4NDMsImV4cCI6MTc3MDk2OTY0M30.tcuZd9DGo3rcjCG7FOEE29alFEltK_wbmvKCgIFJXYg";
+        [SerializeField] private string _testToken = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZGozNzAxIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3NzE1NjQwNTMsImV4cCI6MTc3MjE2ODg1M30.Rj22gbIR1iEBgziCyfeVpNO0J9K6g7DV0jFLWX8ioLQ";
 
         // 인증 상태
         public bool IsAuthenticated { get; private set; }
@@ -46,6 +46,8 @@ namespace Auth
         // 저장된 토큰
         private string _accessToken;
         private string _refreshToken;
+        private bool _isAuthenticating;
+        public bool IsAuthenticating => _isAuthenticating;
 
         private void Awake()
         {
@@ -66,12 +68,12 @@ namespace Auth
             if (_useTestTokenInEditor)
             {
                 Debug.Log("🧪 에디터 테스트: 테스트 토큰으로 인증 시도");
-                AuthenticateWithToken(_testToken);
+                //AuthenticateWithToken(_testToken);
                 return;
             }
 #endif
             // 저장된 토큰으로 자동 로그인 시도
-            TryAutoLogin();
+            //TryAutoLogin();
         }
 
         /// <summary>
@@ -101,6 +103,13 @@ namespace Auth
         /// </summary>
         public async Task<bool> AuthenticateWithTokenAsync(string accessToken, string refreshToken = null)
         {
+            if (_isAuthenticating)
+            {
+                Debug.LogWarning("[AuthManager] Authentication is already in progress.");
+                return false;
+            }
+
+            _isAuthenticating = true;
             Debug.Log("🔐 토큰 검증 시작...");
 
             _accessToken = accessToken;
@@ -147,6 +156,10 @@ namespace Auth
                 Debug.LogError($"❌ 인증 중 오류: {e.Message}");
                 OnLoginFailed?.Invoke(e.Message);
                 return false;
+            }
+            finally
+            {
+                _isAuthenticating = false;
             }
         }
 
