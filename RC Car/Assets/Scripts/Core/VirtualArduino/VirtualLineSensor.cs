@@ -5,8 +5,11 @@ using UnityEngine;
 /// </summary>
 public class VirtualLineSensor : MonoBehaviour, IVirtualPeripheral
 {
+    const int SensorIndex2 = 2;
+    const int SensorIndex3 = 3;
+
     [Header("Sensor Objects")]
-    [Tooltip("Sensor objects (0=left, 1=right).")]
+    [Tooltip("Sensor objects (0=left, 1=right, 2~3=optional).")]
     public GameObject[] sensorObjects;
 
     [Header("Detection Settings")]
@@ -70,6 +73,61 @@ public class VirtualLineSensor : MonoBehaviour, IVirtualPeripheral
     public float OnFunctionAnalogRead(string function)
     {
         return OnFunctionRead(function) ? 1f : 0f;
+    }
+
+    /// <summary>
+    /// Toggles active state of sensorObjects[2] and sensorObjects[3].
+    /// Connect this to a UI Button onClick.
+    /// </summary>
+    public void ToggleSensorObjects23()
+    {
+        bool targetState = !AreSensorObjects23Active();
+        SetSensorObjects23Active(targetState);
+    }
+
+    public void SetSensorObjects23Active(bool isActive)
+    {
+        SetSensorObjectActive(SensorIndex2, isActive);
+        SetSensorObjectActive(SensorIndex3, isActive);
+    }
+
+    bool AreSensorObjects23Active()
+    {
+        bool hasAnyTarget = false;
+        bool allActive = true;
+
+        if (TryGetSensorObject(SensorIndex2, out GameObject sensor2))
+        {
+            hasAnyTarget = true;
+            allActive &= sensor2.activeSelf;
+        }
+
+        if (TryGetSensorObject(SensorIndex3, out GameObject sensor3))
+        {
+            hasAnyTarget = true;
+            allActive &= sensor3.activeSelf;
+        }
+
+        return hasAnyTarget && allActive;
+    }
+
+    void SetSensorObjectActive(int index, bool isActive)
+    {
+        if (TryGetSensorObject(index, out GameObject sensorObject))
+        {
+            sensorObject.SetActive(isActive);
+        }
+    }
+
+    bool TryGetSensorObject(int index, out GameObject sensorObject)
+    {
+        sensorObject = null;
+
+        if (sensorObjects == null || index < 0 || index >= sensorObjects.Length)
+            return false;
+
+        sensorObject = sensorObjects[index];
+        return sensorObject != null;
     }
 
     bool SampleSensor(int index, string sensorName, ref bool wasBlackPreviously, ref float blackUntilTime, ref bool blackLatched)
