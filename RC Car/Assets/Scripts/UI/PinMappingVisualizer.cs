@@ -79,7 +79,7 @@ public class PinMappingVisualizer : MonoBehaviour
         SetLabelColorByMapping(rightMotorForwardLabel, arduino.defaultRightMotorFPin, mappedPins);
         SetLabelColorByMapping(rightMotorBackwardLabel, arduino.defaultRightMotorBPin, mappedPins);
         
-        Debug.Log($"[PinMappingVisualizer] Individual pin colors updated. Mapped: {mappedPins.Count}/6");
+        Debug.Log($"[PinMappingVisualizer] Individual pin colors updated. Mapped: {mappedPins.Count}/{arduino.DefaultMappingCount}");
     }
     
     /// <summary>

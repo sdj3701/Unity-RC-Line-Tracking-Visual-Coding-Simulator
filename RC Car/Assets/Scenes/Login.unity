@@ -1281,7 +1281,7 @@ MonoBehaviour:
   _loginSceneName: Login
   _gameSceneName: CreateBlock
   _useTestTokenInEditor: 1
-  _testToken: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZGozNzAxIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3NzIxNjg5NjIsImV4cCI6MTc3Mjc3Mzc2Mn0.q-2Kw4nr_fjA-Hi59usufQrY0WvdySXPzcIukNrQFX0
+  _testToken: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZGozNzAxIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3NzI2ODkwMjUsImV4cCI6MTc3MzI5MzgyNX0.jhiRYNkcYoaTkHGMuUp9SbTs5OS9JLiVt7SWhmmkofU
 --- !u!4 &1831112859
 Transform:
   m_ObjectHideFlags: 0

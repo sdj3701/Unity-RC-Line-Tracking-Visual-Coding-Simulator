@@ -64618,6 +64618,8 @@ MonoBehaviour:
   totalPins: 20
   defaultLeftSensorPin: 3
   defaultRightSensorPin: 4
+  defaultLeftSensor2Pin: -1
+  defaultRightSensor2Pin: -1
   defaultLeftMotorFPin: 9
   defaultLeftMotorBPin: 11
   defaultRightMotorFPin: 6

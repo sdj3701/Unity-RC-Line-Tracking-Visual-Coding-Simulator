@@ -591,13 +591,14 @@ public class BlockCodeExecutor : MonoBehaviour
         if (arduino == null || string.IsNullOrEmpty(node.conditionSensorFunction))
             return false;
 
-        bool isLeftBranch = node.conditionSensorFunction.Equals("leftSensor", StringComparison.OrdinalIgnoreCase);
-        bool isRightBranch = node.conditionSensorFunction.Equals("rightSensor", StringComparison.OrdinalIgnoreCase);
-        if (!isLeftBranch && !isRightBranch)
+        if (!TryResolveLeftRightSensorPair(node.conditionSensorFunction, out bool isLeftBranch, out string pairSuffix))
             return false;
 
-        bool leftNow = arduino.FunctionDigitalRead("leftSensor");
-        bool rightNow = arduino.FunctionDigitalRead("rightSensor");
+        string leftSensorFunction = $"leftSensor{pairSuffix}";
+        string rightSensorFunction = $"rightSensor{pairSuffix}";
+
+        bool leftNow = arduino.FunctionDigitalRead(leftSensorFunction);
+        bool rightNow = arduino.FunctionDigitalRead(rightSensorFunction);
         if (!(leftNow && rightNow))
             return false;
 
@@ -615,7 +616,7 @@ public class BlockCodeExecutor : MonoBehaviour
             bothTrueSideResolvedThisTick = true;
         }
 
-        bool shouldRunThisBranch = runLeftThisTickWhenBothTrue ? isLeftBranch : isRightBranch;
+        bool shouldRunThisBranch = runLeftThisTickWhenBothTrue ? isLeftBranch : !isLeftBranch;
         if (!shouldRunThisBranch)
         {
             Debug.Log($"<color=gray>[3] ExecuteIfBlock: both sensors true, skipping '{node.conditionSensorFunction}' this tick</color>");
@@ -629,6 +630,35 @@ public class BlockCodeExecutor : MonoBehaviour
         }
 
         bothTrueBranchExecutedThisTick = true;
+        return false;
+    }
+
+    bool TryResolveLeftRightSensorPair(string sensorFunction, out bool isLeftBranch, out string pairSuffix)
+    {
+        isLeftBranch = false;
+        pairSuffix = "";
+
+        if (string.IsNullOrEmpty(sensorFunction))
+            return false;
+
+        string compact = sensorFunction.Trim().Replace(" ", "");
+        const string leftPrefix = "leftSensor";
+        const string rightPrefix = "rightSensor";
+
+        if (compact.StartsWith(leftPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            isLeftBranch = true;
+            pairSuffix = compact.Substring(leftPrefix.Length);
+            return true;
+        }
+
+        if (compact.StartsWith(rightPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            isLeftBranch = false;
+            pairSuffix = compact.Substring(rightPrefix.Length);
+            return true;
+        }
+
         return false;
     }
     

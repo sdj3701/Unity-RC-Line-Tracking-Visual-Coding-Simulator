@@ -5,6 +5,8 @@ using UnityEngine;
 /// </summary>
 public class VirtualLineSensor : MonoBehaviour, IVirtualPeripheral
 {
+    const int SensorIndex0 = 0;
+    const int SensorIndex1 = 1;
     const int SensorIndex2 = 2;
     const int SensorIndex3 = 3;
 
@@ -37,15 +39,23 @@ public class VirtualLineSensor : MonoBehaviour, IVirtualPeripheral
     [Header("Debug")]
     [SerializeField] bool leftSensorValue;
     [SerializeField] bool rightSensorValue;
+    [SerializeField] bool leftSensor2Value;
+    [SerializeField] bool rightSensor2Value;
     [SerializeField] bool leftOnBlack;
     [SerializeField] bool rightOnBlack;
+    [SerializeField] bool left2OnBlack;
+    [SerializeField] bool right2OnBlack;
     [SerializeField] bool leftBlackLatched;
     [SerializeField] bool rightBlackLatched;
+    [SerializeField] bool left2BlackLatched;
+    [SerializeField] bool right2BlackLatched;
     [SerializeField] float leftBlackUntilTime;
     [SerializeField] float rightBlackUntilTime;
+    [SerializeField] float left2BlackUntilTime;
+    [SerializeField] float right2BlackUntilTime;
     [SerializeField] bool logBlueOnBlackHit = true;
 
-    static readonly string[] supportedFunctions = { "leftSensor", "rightSensor" };
+    static readonly string[] supportedFunctions = { "leftSensor", "rightSensor", "leftSensor2", "rightSensor2" };
     readonly RaycastHit[] raycastBuffer = new RaycastHit[16];
 
     public string[] SupportedFunctions => supportedFunctions;
@@ -60,11 +70,17 @@ public class VirtualLineSensor : MonoBehaviour, IVirtualPeripheral
         switch (function)
         {
             case "leftSensor":
-                leftSensorValue = SampleSensor(0, "leftSensor", ref leftOnBlack, ref leftBlackUntilTime, ref leftBlackLatched);
+                leftSensorValue = SampleSensor(SensorIndex0, "leftSensor", ref leftOnBlack, ref leftBlackUntilTime, ref leftBlackLatched);
                 return leftSensorValue;
             case "rightSensor":
-                rightSensorValue = SampleSensor(1, "rightSensor", ref rightOnBlack, ref rightBlackUntilTime, ref rightBlackLatched);
+                rightSensorValue = SampleSensor(SensorIndex1, "rightSensor", ref rightOnBlack, ref rightBlackUntilTime, ref rightBlackLatched);
                 return rightSensorValue;
+            case "leftSensor2":
+                leftSensor2Value = SampleSensor(SensorIndex2, "leftSensor2", ref left2OnBlack, ref left2BlackUntilTime, ref left2BlackLatched);
+                return leftSensor2Value;
+            case "rightSensor2":
+                rightSensor2Value = SampleSensor(SensorIndex3, "rightSensor2", ref right2OnBlack, ref right2BlackUntilTime, ref right2BlackLatched);
+                return rightSensor2Value;
             default:
                 return false;
         }
@@ -132,7 +148,7 @@ public class VirtualLineSensor : MonoBehaviour, IVirtualPeripheral
 
     bool SampleSensor(int index, string sensorName, ref bool wasBlackPreviously, ref float blackUntilTime, ref bool blackLatched)
     {
-        if (sensorObjects == null || index >= sensorObjects.Length || sensorObjects[index] == null)
+        if (sensorObjects == null || index >= sensorObjects.Length || sensorObjects[index] == null || !sensorObjects[index].activeInHierarchy)
         {
             wasBlackPreviously = false;
             blackLatched = false;

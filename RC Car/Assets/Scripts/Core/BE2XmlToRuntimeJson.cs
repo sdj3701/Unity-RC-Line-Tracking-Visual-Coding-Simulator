@@ -1097,7 +1097,7 @@ public static class BE2XmlToRuntimeJson
         {
             // 첫 번째 입력: 센서 함수 이름 (예: "leftSensor", "rightSensor")
             var funcNameInput = headerInputs[0];
-            node.sensorFunction = funcNameInput.Element("value")?.Value?.Trim();
+            node.sensorFunction = NormalizeSensorFunctionName(funcNameInput.Element("value")?.Value?.Trim());
             
             Debug.Log($"[ParseBlockReadBlock] Found sensor function: {node.sensorFunction}");
         }
@@ -1744,15 +1744,37 @@ public static class BE2XmlToRuntimeJson
             return rawName;
 
         var name = rawName.Trim();
+        if (name.StartsWith("leftSensor", StringComparison.OrdinalIgnoreCase))
+            return "leftSensor" + name.Substring("leftSensor".Length);
+
+        if (name.StartsWith("rightSensor", StringComparison.OrdinalIgnoreCase))
+            return "rightSensor" + name.Substring("rightSensor".Length);
+
         if (name.IndexOf("sensor", StringComparison.OrdinalIgnoreCase) >= 0)
         {
+            string trailingDigits = ExtractTrailingDigits(name);
             if (name.IndexOf("left", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "leftSensor";
+                return string.IsNullOrEmpty(trailingDigits) ? "leftSensor" : $"leftSensor{trailingDigits}";
             if (name.IndexOf("right", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "rightSensor";
+                return string.IsNullOrEmpty(trailingDigits) ? "rightSensor" : $"rightSensor{trailingDigits}";
         }
 
         return name;
+    }
+
+    static string ExtractTrailingDigits(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return "";
+
+        int end = text.Length - 1;
+        while (end >= 0 && char.IsDigit(text[end]))
+            end--;
+
+        if (end == text.Length - 1)
+            return "";
+
+        return text.Substring(end + 1);
     }
 
     // ===== 헬퍼 함수 =====

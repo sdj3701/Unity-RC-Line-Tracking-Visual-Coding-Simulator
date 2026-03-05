@@ -19,6 +19,10 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
     public int defaultLeftSensorPin = 3;
     [Tooltip("오른쪽 센서 기본 핀")]
     public int defaultRightSensorPin = 4;
+    [Tooltip("Additional left sensor pin (-1 disables mapping)")]
+    public int defaultLeftSensor2Pin = 2;
+    [Tooltip("Additional right sensor pin (-1 disables mapping)")]
+    public int defaultRightSensor2Pin = 5;
     [Tooltip("왼쪽 모터 전진 기본 핀")]
     public int defaultLeftMotorFPin = 9;
     [Tooltip("왼쪽 모터 후진 기본 핀")]
@@ -52,6 +56,7 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
     /// 핀 맵핑 완료 시 발생하는 이벤트 (맵핑된 핀 Set 전달)
     /// </summary>
     public static event System.Action<HashSet<int>> OnPinMappingCompleted;
+    public int DefaultMappingCount => BuildDefaultPinToFunctionMap().Count;
     
     void Awake()
     {
@@ -105,15 +110,7 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
         Debug.Log("<color=cyan>★ [VirtualArduinoMicro] 핀 맵핑 시작 ★</color>");
         
         // Default Pin → Function 맵핑 (고정, 하드웨어 구성과 일치)
-        var defaultPinToFunction = new Dictionary<int, string>()
-        {
-            { defaultLeftSensorPin, "leftSensor" },
-            { defaultRightSensorPin, "rightSensor" },
-            { defaultLeftMotorFPin, "leftMotorF" },
-            { defaultLeftMotorBPin, "leftMotorB" },
-            { defaultRightMotorFPin, "rightMotorF" },
-            { defaultRightMotorBPin, "rightMotorB" },
-        };
+        var defaultPinToFunction = BuildDefaultPinToFunctionMap();
         
         // 맵핑된 핀 번호를 추적 (중복 방지)
         var mappedPins = new HashSet<int>();
@@ -146,7 +143,9 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
         }
         
         // 6개 핀 모두가 변수에서 맵핑되었는지 확인
-        bool allMapped = mappedPins.Count >= 6;
+        int expectedMappings = defaultPinToFunction.Count;
+        bool allMapped = mappedPins.Count >= expectedMappings;
+        Debug.Log($"[VirtualArduinoMicro] Mapping matched pins: {mappedPins.Count}/{expectedMappings}");
         
         Debug.Log("<color=cyan>───────────────────────────────────────────────────────</color>");
         if (allMapped)
@@ -207,12 +206,10 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
     void SetupDefaultPinMapping()
     {
         // 기본 핀 → 기능 매핑 설정
-        pinToFunction[defaultLeftSensorPin] = "leftSensor";
-        pinToFunction[defaultRightSensorPin] = "rightSensor";
-        pinToFunction[defaultLeftMotorFPin] = "leftMotorF";
-        pinToFunction[defaultLeftMotorBPin] = "leftMotorB";
-        pinToFunction[defaultRightMotorFPin] = "rightMotorF";
-        pinToFunction[defaultRightMotorBPin] = "rightMotorB";
+        foreach (var kvp in BuildDefaultPinToFunctionMap())
+        {
+            pinToFunction[kvp.Key] = kvp.Value;
+        }
         
         Debug.Log($"[VirtualArduinoMicro] Default pin mapping:");
         foreach (var kvp in pinToFunction)
@@ -260,6 +257,17 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
     {
         ConfigurePin(leftPin, "leftSensor");
         ConfigurePin(rightPin, "rightSensor");
+    }
+
+    public void ConfigureSensorPins(int leftPin, int rightPin, int left2Pin, int right2Pin)
+    {
+        ConfigureSensorPins(leftPin, rightPin);
+
+        if (left2Pin >= 0)
+            ConfigurePin(left2Pin, "leftSensor2");
+
+        if (right2Pin >= 0)
+            ConfigurePin(right2Pin, "rightSensor2");
     }
     
     /// <summary>
@@ -372,6 +380,30 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
             Debug.LogWarning($"<color=red>[4] FunctionDigitalRead: No peripheral for function '{sensorFunction}'</color>");
             return false;
         }
+    }
+
+    Dictionary<int, string> BuildDefaultPinToFunctionMap()
+    {
+        var map = new Dictionary<int, string>();
+
+        AddPinFunctionMapping(map, defaultLeftSensorPin, "leftSensor");
+        AddPinFunctionMapping(map, defaultRightSensorPin, "rightSensor");
+        AddPinFunctionMapping(map, defaultLeftSensor2Pin, "leftSensor2");
+        AddPinFunctionMapping(map, defaultRightSensor2Pin, "rightSensor2");
+        AddPinFunctionMapping(map, defaultLeftMotorFPin, "leftMotorF");
+        AddPinFunctionMapping(map, defaultLeftMotorBPin, "leftMotorB");
+        AddPinFunctionMapping(map, defaultRightMotorFPin, "rightMotorF");
+        AddPinFunctionMapping(map, defaultRightMotorBPin, "rightMotorB");
+
+        return map;
+    }
+
+    void AddPinFunctionMapping(Dictionary<int, string> map, int pin, string function)
+    {
+        if (pin < 0)
+            return;
+
+        map[pin] = function;
     }
     
     // // ============================================================
