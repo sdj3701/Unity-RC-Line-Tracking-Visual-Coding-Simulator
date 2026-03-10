@@ -64530,8 +64530,8 @@ MonoBehaviour:
   wheelVisualSpeed: 360
   wheelRotateAxis: {x: 0, y: 1, z: 0}
   wheels:
-  - {fileID: 2081222677}
   - {fileID: 2059906620}
+  - {fileID: 2081222677}
   blockCodeExecutor: {fileID: 0}
 --- !u!114 &1103646189
 MonoBehaviour:
@@ -64596,12 +64596,20 @@ MonoBehaviour:
   ignoreSelfColliders: 1
   leftSensorValue: 0
   rightSensorValue: 0
+  leftSensor2Value: 0
+  rightSensor2Value: 0
   leftOnBlack: 0
   rightOnBlack: 0
+  left2OnBlack: 0
+  right2OnBlack: 0
   leftBlackLatched: 0
   rightBlackLatched: 0
+  left2BlackLatched: 0
+  right2BlackLatched: 0
   leftBlackUntilTime: 0
   rightBlackUntilTime: 0
+  left2BlackUntilTime: 0
+  right2BlackUntilTime: 0
   logBlueOnBlackHit: 1
 --- !u!114 &1103646192
 MonoBehaviour:
