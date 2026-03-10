@@ -314,17 +314,17 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
         {
             if (functionToPeripheral.TryGetValue(function, out var peripheral))
             {
-                Debug.Log($"<color=green>[4] VirtualArduinoMicro.AnalogWrite: pin={pin} → {function}, value={value}</color>");
+                //Debug.Log($"<color=green>[4] VirtualArduinoMicro.AnalogWrite: pin={pin} → {function}, value={value}</color>");
                 peripheral.OnFunctionWrite(function, value);
             }
             else
             {
-                Debug.LogWarning($"<color=red>[4] AnalogWrite: No peripheral for function '{function}'</color>");
+                //Debug.LogWarning($"<color=red>[4] AnalogWrite: No peripheral for function '{function}'</color>");
             }
         }
         else
         {
-            Debug.LogWarning($"<color=red>[4] AnalogWrite: No function mapped to pin {pin}</color>");
+            //Debug.LogWarning($"<color=red>[4] AnalogWrite: No function mapped to pin {pin}</color>");
         }
     }
     

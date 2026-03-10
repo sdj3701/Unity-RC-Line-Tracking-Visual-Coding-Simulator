@@ -169,7 +169,6 @@ public class VirtualLineSensor : MonoBehaviour, IVirtualPeripheral
         if (logBlueOnBlackHit && rawIsBlack && !wasBlackPreviously)
         {
             string hitName = hitCollider != null ? hitCollider.name : "unknown";
-            Debug.Log($"<color=blue>[Sensor] {sensorName} touched black line (hit={hitName}, gray={minGray:F3})</color>");
         }
 
         wasBlackPreviously = isBlack;

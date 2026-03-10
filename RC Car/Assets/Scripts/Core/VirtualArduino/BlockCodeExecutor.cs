@@ -348,7 +348,7 @@ public class BlockCodeExecutor : MonoBehaviour
             return;
         }
         
-        Debug.Log($"<color=yellow>[3] ExecuteFunction: Calling '{callNode.functionName}' with {callNode.args?.Count ?? 0} args, {funcDef.parameters?.Count ?? 0} params</color>");
+        //Debug.Log($"<color=yellow>[3] ExecuteFunction: Calling '{callNode.functionName}' with {callNode.args?.Count ?? 0} args, {funcDef.parameters?.Count ?? 0} params</color>");
         
         // args를 params 이름으로 매핑
         // params: ["Speed"], args: [150] → variables["Speed"] = 150
@@ -366,12 +366,12 @@ public class BlockCodeExecutor : MonoBehaviour
                 {
                     string varName = callNode.argVars[i];
                     argValue = GetVariable(varName, callNode.args[i]);
-                    Debug.Log($"<color=yellow>[3] ExecuteFunction: Set {paramName} = {argValue} (from var '{varName}')</color>");
+                    //Debug.Log($"<color=yellow>[3] ExecuteFunction: Set {paramName} = {argValue} (from var '{varName}')</color>");
                 }
                 else
                 {
                     argValue = callNode.args[i];
-                    Debug.Log($"<color=yellow>[3] ExecuteFunction: Set {paramName} = {argValue}</color>");
+                    //Debug.Log($"<color=yellow>[3] ExecuteFunction: Set {paramName} = {argValue}</color>");
                 }
                 
                 variables[paramName] = argValue;
@@ -400,7 +400,7 @@ public class BlockCodeExecutor : MonoBehaviour
         // 함수 body 실행
         if (funcDef.body != null)
         {
-            Debug.Log($"<color=yellow>[3] ExecuteFunction: Executing body ({funcDef.body.Count} blocks)</color>");
+            //Debug.Log($"<color=yellow>[3] ExecuteFunction: Executing body ({funcDef.body.Count} blocks)</color>");
             foreach (var childNode in funcDef.body)
             {
                 ExecuteNode(childNode);
@@ -497,7 +497,7 @@ public class BlockCodeExecutor : MonoBehaviour
             // then body 실행
             if (node.body != null)
             {
-                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: Executing body ({node.body.Count} blocks)</color>");
+                //Debug.Log($"<color=magenta>[3] ExecuteIfBlock: Executing body ({node.body.Count} blocks)</color>");
                 foreach (var childNode in node.body)
                 {
                     ExecuteNode(childNode);

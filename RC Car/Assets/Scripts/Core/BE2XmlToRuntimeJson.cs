@@ -1028,7 +1028,7 @@ public static class BE2XmlToRuntimeJson
         var name = block.Element("blockName")?.Value?.Trim();
         if (string.IsNullOrEmpty(name)) return null;
         
-        Debug.Log($"[ParseBlockToLoopNode] Processing block: {name}");
+        //Debug.Log($"[ParseBlockToLoopNode] Processing block: {name}");
         
         // Dictionary에서 파서 조회 (O(1) 성능)
         if (blockParsers.TryGetValue(name, out var parser))
@@ -1037,7 +1037,7 @@ public static class BE2XmlToRuntimeJson
         }
         
         // 등록되지 않은 블록 타입은 null 반환
-        Debug.Log($"[ParseBlockToLoopNode] Unregistered block type: {name}");
+        //Debug.Log($"[ParseBlockToLoopNode] Unregistered block type: {name}");
         return null;
     }
     

@@ -74,7 +74,7 @@ public class VirtualCarPhysics : MonoBehaviour
     public void StartRunning()
     {
         isRunning = true;
-        Debug.Log("[VirtualCarPhysics] Started running.");
+        //Debug.Log("[VirtualCarPhysics] Started running.");
     }
     
     /// <summary>

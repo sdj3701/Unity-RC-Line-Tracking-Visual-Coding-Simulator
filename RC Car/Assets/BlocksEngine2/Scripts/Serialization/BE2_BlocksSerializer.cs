@@ -730,11 +730,11 @@ namespace MG_BlocksEngine2.Serializer
                 BE2_Ins_DefineFunction define = envBlock.Instruction as BE2_Ins_DefineFunction;
                 if (define != null)
                 {
-                    Debug.Log($"[C_DelayedFunctionBlockInit] - DefineFunction 발견: defineID={define.defineID}");
+                    //Debug.Log($"[C_DelayedFunctionBlockInit] - DefineFunction 발견: defineID={define.defineID}");
                 }
                 else
                 {
-                    Debug.Log($"[C_DelayedFunctionBlockInit] - 블록: {envBlock.Transform.name}, Type={envBlock.Type}");
+                    //Debug.Log($"[C_DelayedFunctionBlockInit] - 블록: {envBlock.Transform.name}, Type={envBlock.Type}");
                 }
             }
             
