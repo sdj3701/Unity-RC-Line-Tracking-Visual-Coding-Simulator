@@ -202,17 +202,31 @@
 - 시작~종료 정답 경로(`"*"` 의미)가 명확히 분리된다.
 - Unity 씬에서 블록 대신 라인 경로가 생성되고 RC카 센서가 이를 안정적으로 감지한다.
 - 재생성/확장 시에도 구조가 유지되며 테스트 가능하다.
+- 생성 결과에 불필요한 길(분기/트릭 길, `"."`)이 존재한다.
 
 ## 11) 추가 변경사항 요청
-- 현제 로블록스에서는 블록으로 대체로 했는데 유니티에서는 블록이 아니라 선으로 변경해야함
-  - RC카를 움직일때 센서가 선을 보고 움직이기 때문에 선으로 변경
-- 머테리얼로 사용할게 없는데 구현이 가능하지?
-- Miro Test Scene에서 작업을 할 생각이야 버튼을 누르면 미로를 생성하고 이것을 실시간으로 저장하는 방법도 있을까?
+- 현제 미로 생성을 하면 검은 시작 위치와 도착 위치까지만 연결이 됨
+  - 필요 불필요한 길(분기/트릭 길) 추가 생성이 필요함
 
-### 11.1 요청 반영 결과
-- 계획서 전체를 블록 기반 출력에서 라인 기반 출력으로 수정 완료.
-- 센서 코드(`VirtualLineSensor`) 기준 필수 조건(콜라이더 + 렌더러 + 머티리얼 읽기 가능)을 반영.
-- 머티리얼 에셋이 없어도 런타임 생성 방식으로 구현 가능하도록 계획 반영.
+### 11.1 예상 원인
+- 데이터는 `MainPath("*")`와 `BranchPath(".")`를 모두 생성해도, 렌더러의 `renderBranchPath = false` 상태면 시작~도착 주 경로만 보일 수 있다.
+- 특정 시드에서는 분기 수가 적게 생성되어 체감상 직선 경로처럼 보일 수 있다.
+
+### 11.2 계획 반영 항목
+1. 생성 직후 분기 통계 수집
+   - `MainPath` 수, `BranchPath` 수를 로그로 출력.
+2. 불필요한 길 최소 기준 정의
+   - 예시 기준: `BranchPath` 최소 개수(mazeSize 비율 기반).
+3. 생성 보강 로직 설계
+   - 종료 경로 확정 이후, 미사용 이웃 셀을 추가로 개방해 분기(`"."`)를 보강하는 pass 추가.
+4. 시각화 정책 분리
+   - 주행 라인은 `MainPath` 중심 유지.
+   - 디버그/학습용은 `BranchPath` 표시 옵션 활성화.
+5. 1차 테스트(요청 반영)
+   - 불필요한 길(BranchPath `"."`) 전체를 초록색으로 표시해 시각적으로 즉시 검증.
+   - 테스트 설정: `renderBranchPath = true`, `highlightUnnecessaryPathsInGreen = true`, `unnecessaryPathColor = green`, `mainPathColor = black`.
+6. 검증 목표
+   - 10회 연속 생성에서 BranchPath 존재율 100% 달성.
 
 12) 코드 생성할 때 주의사항
 - 주석 및 디버그 한글 작성시 UTF-8이나 UTF-16을 사용해서 한글이 깨지지 않도록 주의
@@ -229,7 +243,10 @@
 - [x] `Generate` 직후 자동 저장 흐름 반영 (`autoSaveOnGenerate`)
 - [x] 코드 컴파일 검증 완료 (`dotnet build Assembly-CSharp.csproj`, 오류 0)
 - [x] 사용 방법 가이드 문서화
-- [x] `Generate` 버튼 연속 랜덤 재생성(토글) 기능 구현
+- [x] `Generate` 버튼 클릭 시 1회 랜덤 생성 기능 구현
+- [ ] 불필요한 길 보강 생성 로직 설계/반영
+- [ ] 불필요한 길 통계/검증 항목 반영
+- [x] 불필요한 길 초록색 시각화 테스트 프로파일 적용 (`MiroLineRenderer`)
 
 ## 14) 사용 방법 (Miro Test Scene)
 
@@ -255,13 +272,28 @@
   - `lineWidth = 0.75` (센서 폭보다 충분히 크게 시작)
   - `lineThickness = 0.03`
   - `renderMainPath = true`
-  - `renderBranchPath = false` (처음에는 정답 라인만 렌더링)
+  - `renderBranchPath = true` (불필요한 길 가시화 테스트)
+  - `highlightUnnecessaryPathsInGreen = true`, `unnecessaryPathColor = green`
+  - `branchPathColor = gray` (일반 분기 기본색), `mainPathColor = black` (주 경로)
   - `createGroundPlane = true`, `groundColor = white`, `mainPathColor = black`
 - `MiroMazePersistence`
   - `fileName = miro_latest.json`
 - `MiroTestSceneController`
   - `autoSaveOnGenerate = true`
   - `autoLoadOnStart = false` (원하면 true)
+
+### 14.2.1 불필요한 길 초록색 테스트 프로파일 (요청사항)
+- `MiroLineRenderer`
+  - `renderMainPath = true`
+  - `renderBranchPath = true`
+  - `mainPathColor = black`
+  - `highlightUnnecessaryPathsInGreen = true`
+  - `unnecessaryPathColor = green`
+  - `branchPathColor = gray` (일반 분기 구분용)
+- 목적:
+  - 초록색 라인이 불필요한 길(BranchPath `"."`) 전체로 생성되는지 빠르게 확인.
+- 주의:
+  - RC카 주행 테스트 시에는 다시 `renderBranchPath = false` 또는 분기 색상/정책을 주행용으로 복귀.
 
 ### 14.3 UI 버튼 연결 방법
 1. Canvas에 버튼 4개를 만든다.
@@ -276,14 +308,14 @@
    - `Load` 버튼 -> `MiroTestSceneController.LoadLatest`
    - `Clear` 버튼 -> `MiroTestSceneController.ClearLines`
 4. 현재 기본 동작:
-   - `continuousRandomOnGenerate = true`이면 `Generate`를 누르는 순간 미로가 주기적으로 계속 바뀐다.
-   - 자동 생성 중 `Generate`를 다시 누르면 정지한다(`generateButtonTogglesAuto = true`일 때).
+   - `Generate`를 누를 때마다 미로를 1회 생성한다.
+   - 기본값 기준으로 클릭마다 랜덤 시드를 사용해 다른 미로가 생성된다.
 
 ### 14.4 실행 순서
 1. 플레이 모드에서 `Generate`를 누른다.
-2. 미로가 `autoGenerateIntervalSeconds` 간격으로 계속 랜덤 변경되는지 확인한다.
-3. 정지하려면 `Generate`를 한 번 더 누른다(토글 모드 기준).
-4. `autoSaveOnGenerate = true`이고 `saveEachAutoGeneration = true`면 매 틱 저장된다.
+2. 초록색 라인(불필요한 길/분기)이 함께 생성되는지 확인한다.
+3. 다시 `Generate`를 눌러 다른 미로에서도 초록색 분기가 유지되는지 확인한다.
+4. `autoSaveOnGenerate = true`면 클릭할 때마다 최신 미로가 저장된다.
 5. `Clear`를 누른 뒤 `Load`를 눌러 저장본이 복원되는지 확인한다.
 
 ### 14.5 저장 파일 위치 확인

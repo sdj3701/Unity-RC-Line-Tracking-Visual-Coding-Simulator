@@ -4,21 +4,21 @@ using System.Text;
 using UnityEngine;
 
 /// <summary>
-/// Handles JSON persistence for generated maze data.
+/// 생성된 미로 데이터를 JSON 파일로 저장/불러오기하는 모듈.
 /// </summary>
 public class MiroMazePersistence : MonoBehaviour
 {
     [Header("File Settings")]
-    [Tooltip("File name used under Application.persistentDataPath.")]
+    [Tooltip("Application.persistentDataPath 아래에 저장할 파일명.")]
     public string fileName = "miro_latest.json";
-    [Tooltip("Pretty-print JSON file for easier debugging.")]
+    [Tooltip("디버깅을 위해 JSON을 사람이 읽기 쉬운 형태로 저장할지 여부.")]
     public bool prettyPrintJson = true;
 
     [Header("Debug")]
     [SerializeField] bool logPersistence = true;
 
     /// <summary>
-    /// Returns absolute path of the current save file.
+    /// 현재 저장 파일의 절대 경로를 반환한다.
     /// </summary>
     public string GetSavePath()
     {
@@ -27,7 +27,8 @@ public class MiroMazePersistence : MonoBehaviour
     }
 
     /// <summary>
-    /// Saves maze data as JSON using UTF-8 and a temp-file replace strategy.
+    /// 미로 데이터를 UTF-8 JSON으로 저장한다.
+    /// 임시 파일 작성 후 교체하는 방식으로 저장 안정성을 높인다.
     /// </summary>
     public bool SaveMaze(MiroMazeData data)
     {
@@ -67,7 +68,7 @@ public class MiroMazePersistence : MonoBehaviour
     }
 
     /// <summary>
-    /// Loads the most recent maze JSON file and validates the result.
+    /// 최신 저장 JSON 파일을 불러오고 유효성을 검사한다.
     /// </summary>
     public bool TryLoadLatest(out MiroMazeData data)
     {
@@ -111,7 +112,7 @@ public class MiroMazePersistence : MonoBehaviour
     }
 
     /// <summary>
-    /// Deletes the current save file if it exists.
+    /// 저장 파일이 존재하면 삭제한다.
     /// </summary>
     public bool DeleteSave()
     {
@@ -139,7 +140,7 @@ public class MiroMazePersistence : MonoBehaviour
     }
 
     /// <summary>
-    /// Validates required fields after loading JSON to prevent invalid rendering data.
+    /// 로드된 JSON 데이터가 렌더링 가능한 최소 조건을 만족하는지 검사한다.
     /// </summary>
     bool ValidateLoadedData(MiroMazeData loaded)
     {
@@ -173,7 +174,8 @@ public class MiroMazePersistence : MonoBehaviour
     }
 
     /// <summary>
-    /// Replaces destination file with temp file and falls back to safe overwrite when replace is unavailable.
+    /// 임시 파일을 최종 저장 파일로 교체한다.
+    /// Replace가 실패하면 삭제 후 Move로 안전하게 대체한다.
     /// </summary>
     void ReplaceFile(string tempPath, string destinationPath)
     {

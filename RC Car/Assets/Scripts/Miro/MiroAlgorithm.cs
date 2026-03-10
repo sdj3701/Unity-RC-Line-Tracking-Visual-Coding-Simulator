@@ -2,7 +2,7 @@ using System;
 using UnityEngine;
 
 /// <summary>
-/// Cell type used by generated maze data.
+/// 생성된 미로 데이터에서 사용하는 셀 타입 정의.
 /// </summary>
 public enum MiroCellType
 {
@@ -12,7 +12,7 @@ public enum MiroCellType
 }
 
 /// <summary>
-/// Serializable maze payload used for rendering and persistence.
+/// 렌더링/저장을 위해 직렬화 가능한 미로 데이터 구조.
 /// </summary>
 [Serializable]
 public class MiroMazeData
@@ -34,12 +34,12 @@ public class MiroMazeData
     public int outerExitX = 14;
     public int outerExitY = 15;
 
-    // Flattened cells (1-based maze coordinates are mapped to 0-based array index).
-    // Values use MiroCellType numeric values.
+    // 1-based 미로 좌표를 0-based 1차원 배열로 펼친 셀 데이터.
+    // 값은 MiroCellType 열거형의 정수값을 사용한다.
     public int[] cells = Array.Empty<int>();
 
     /// <summary>
-    /// Returns the flattened cell index from one-based maze coordinates.
+    /// 1-based 미로 좌표를 1차원 배열 인덱스로 변환한다.
     /// </summary>
     public int GetCellIndex(int oneBasedY, int oneBasedX)
     {
@@ -47,7 +47,7 @@ public class MiroMazeData
     }
 
     /// <summary>
-    /// Reads a cell type using one-based maze coordinates.
+    /// 1-based 미로 좌표 기준으로 셀 타입을 조회한다.
     /// </summary>
     public MiroCellType GetCellType(int oneBasedY, int oneBasedX)
     {
@@ -67,7 +67,7 @@ public class MiroMazeData
 }
 
 /// <summary>
-/// Unity implementation of the Roblox Lua DFS maze generation algorithm.
+/// Roblox Lua DFS 미로 생성 알고리즘을 Unity로 옮긴 구현체.
 /// </summary>
 public class MiroAlgorithm : MonoBehaviour
 {
@@ -77,9 +77,9 @@ public class MiroAlgorithm : MonoBehaviour
     [Min(0.1f)] public float cellStepZ = 5f;
 
     [Header("Seed")]
-    [Tooltip("When enabled, the same seed value reproduces the same maze layout.")]
+    [Tooltip("활성화하면 동일한 시드로 같은 미로를 재현한다.")]
     public bool useFixedSeed = false;
-    [Tooltip("Used only when 'useFixedSeed' is true.")]
+    [Tooltip("'useFixedSeed'가 켜졌을 때만 사용하는 시드 값.")]
     public int fixedSeed = 12345;
 
     [Header("Start Coordinates (Lua 1-based)")]
@@ -91,16 +91,16 @@ public class MiroAlgorithm : MonoBehaviour
     [Header("Debug")]
     [SerializeField] bool logSummary = true;
 
-    // Internal nonce used to guarantee seed variation even when multiple generations happen rapidly.
+    // 짧은 시간에 연속 생성해도 시드가 달라지도록 보조값으로 사용한다.
     int generationNonce;
 
-    // Direction vectors are 1-based to mirror the original Lua table indexing.
+    // 원본 Lua 테이블 인덱싱(1-based)을 그대로 맞추기 위한 방향 벡터.
     static readonly int[] Dx = { 0, -2, 2, 0, 0 };
     static readonly int[] Dy = { 0, 0, 0, -2, 2 };
     static readonly int[] Wx = { 0, -1, 1, 0, 0 };
     static readonly int[] Wy = { 0, 0, 0, -1, 1 };
 
-    // 24 permutations of directions used exactly like the original Lua script.
+    // 원본 Lua 스크립트와 동일한 4방향 순열 24개.
     static readonly int[,] DirectionPermutations = new int[,]
     {
         { 1, 2, 3, 4 }, { 1, 2, 4, 3 }, { 1, 3, 2, 4 }, { 1, 3, 4, 2 }, { 1, 4, 2, 3 }, { 1, 4, 3, 2 },
@@ -113,7 +113,7 @@ public class MiroAlgorithm : MonoBehaviour
     System.Random random;
 
     /// <summary>
-    /// Generates maze data using the same DFS rules used in the original Lua script.
+    /// 원본 Lua와 동일한 DFS 규칙으로 미로 데이터를 생성한다.
     /// </summary>
     public MiroMazeData GenerateMazeData()
     {
@@ -121,7 +121,8 @@ public class MiroAlgorithm : MonoBehaviour
     }
 
     /// <summary>
-    /// Generates maze data and optionally forces random seed usage even when fixed seed mode is enabled.
+    /// 미로 데이터를 생성한다.
+    /// forceRandomSeed=true면 고정 시드 설정을 무시하고 랜덤 시드를 강제한다.
     /// </summary>
     public MiroMazeData GenerateMazeData(bool forceRandomSeed)
     {
@@ -135,7 +136,7 @@ public class MiroAlgorithm : MonoBehaviour
 
         InitializeArrays(text, visited, normalizedSize);
 
-        // Lua-equivalent setup:
+        // Lua 초기값과 동일하게 시작점/출구 라인 셀을 먼저 개방한다.
         // MazeTextArray[Y1][X1] = "*"
         // MazeTextArray[Y2][X2] = "*"
         // MazeTextArray[MAZE_SIZE][MAZE_SIZE-1] = "*"
@@ -159,7 +160,7 @@ public class MiroAlgorithm : MonoBehaviour
     }
 
     /// <summary>
-    /// Resolves the seed for this generation call.
+    /// 이번 생성 호출에서 사용할 시드를 결정한다.
     /// </summary>
     int ResolveSeed(bool forceRandomSeed)
     {
@@ -175,7 +176,7 @@ public class MiroAlgorithm : MonoBehaviour
     }
 
     /// <summary>
-    /// Converts an arbitrary requested size into a valid odd maze size used by the algorithm.
+    /// 요청된 미로 크기를 알고리즘이 처리 가능한 홀수 크기로 보정한다.
     /// </summary>
     int NormalizeMazeSize(int requestedSize)
     {
@@ -189,7 +190,7 @@ public class MiroAlgorithm : MonoBehaviour
     }
 
     /// <summary>
-    /// Initializes maze text and visited arrays with empty/default values.
+    /// 미로 텍스트 배열과 방문 배열을 기본값으로 초기화한다.
     /// </summary>
     void InitializeArrays(char[,] text, bool[,] visited, int size)
     {
@@ -204,7 +205,8 @@ public class MiroAlgorithm : MonoBehaviour
     }
 
     /// <summary>
-    /// Recursive DFS routine translated from Lua subDFS with equivalent path-marking behavior.
+    /// Lua subDFS를 동일한 동작으로 옮긴 재귀 DFS 함수.
+    /// 경로 마킹("*", ".") 규칙도 원본과 동일하게 유지한다.
     /// </summary>
     void SubDfs(int bfY2, int bfX2, int bfY1, int bfX1, int size, char[,] text, bool[,] visited)
     {
@@ -264,7 +266,7 @@ public class MiroAlgorithm : MonoBehaviour
     }
 
     /// <summary>
-    /// Converts internal text markers into serializable cell data.
+    /// 내부 텍스트 마커('*', '.')를 직렬화 가능한 셀 데이터로 변환한다.
     /// </summary>
     MiroMazeData BuildMazeData(int size, int seed, char[,] text)
     {

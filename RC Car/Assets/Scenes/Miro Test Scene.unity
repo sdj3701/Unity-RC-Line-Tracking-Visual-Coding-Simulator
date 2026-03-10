@@ -684,9 +684,11 @@ MonoBehaviour:
   segmentOverlap: 0.02
   lineLayer: 0
   renderMainPath: 1
-  renderBranchPath: 0
+  renderBranchPath: 1
   mainPathColor: {r: 0, g: 0, b: 0, a: 1}
   branchPathColor: {r: 0.55, g: 0.55, b: 0.55, a: 1}
+  highlightUnnecessaryPathsInGreen: 1
+  unnecessaryPathColor: {r: 0, g: 1, b: 0, a: 1}
   createGroundPlane: 1
   groundThickness: 0.02
   groundPadding: 2
