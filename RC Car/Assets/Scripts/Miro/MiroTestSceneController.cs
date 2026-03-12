@@ -694,6 +694,13 @@ public class MiroTestSceneController : MonoBehaviour
             rotation = Vector3.zero
         };
 
+        if (changeMap != null && changeMap.TryGetRuntimeDefaultSpawnPose(out Vector3 runtimeDefaultPosition, out Quaternion runtimeDefaultRotation))
+        {
+            pose.position = runtimeDefaultPosition;
+            pose.rotation = runtimeDefaultRotation.eulerAngles;
+            return pose;
+        }
+
         if (changeMap != null && changeMap.TryGetCurrentSpawnPose(out Vector3 spawnPosition, out Quaternion spawnRotation))
         {
             pose.position = spawnPosition;

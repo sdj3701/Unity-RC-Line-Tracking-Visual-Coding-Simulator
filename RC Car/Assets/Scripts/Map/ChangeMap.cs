@@ -33,6 +33,13 @@ public class ChangeMap : MonoBehaviour
     [Tooltip("맵 변경 버튼 순환에 런타임 맵까지 포함할지 여부. false면 기본 mapMaterials만 순환한다.")]
     public bool includeRuntimeMapsInCycle = true;
 
+    [Header("런타임 스폰 정책")]
+    [Tooltip("true면 런타임 맵(인덱스 3..n)의 차량 시작 위치를 지정한 carSpawnPoses 인덱스로 고정한다.")]
+    public bool useFixedSpawnPoseForRuntimeMaps = true;
+    [Min(0)]
+    [Tooltip("런타임 맵 공통 스폰 기준으로 사용할 carSpawnPoses 인덱스. 기본값 3.")]
+    public int runtimeSpawnPoseSourceIndex = 3;
+
     [Header("참조 설정")]
     [Tooltip("머테리얼을 적용할 플레인 렌더러")]
     public Renderer planeRenderer;
@@ -156,6 +163,33 @@ public class ChangeMap : MonoBehaviour
     }
 
     /// <summary>
+    /// 런타임 맵 공통 스폰 기준(carSpawnPoses[runtimeSpawnPoseSourceIndex])을 가져온다.
+    /// </summary>
+    public bool TryGetRuntimeDefaultSpawnPose(out Vector3 position, out Quaternion rotation)
+    {
+        if (!useFixedSpawnPoseForRuntimeMaps)
+        {
+            position = Vector3.zero;
+            rotation = Quaternion.identity;
+            return false;
+        }
+
+        if (carSpawnPoses != null &&
+            runtimeSpawnPoseSourceIndex >= 0 &&
+            runtimeSpawnPoseSourceIndex < carSpawnPoses.Length)
+        {
+            SpawnPose fixedPose = carSpawnPoses[runtimeSpawnPoseSourceIndex];
+            position = fixedPose.position;
+            rotation = Quaternion.Euler(fixedPose.rotation);
+            return true;
+        }
+
+        position = Vector3.zero;
+        rotation = Quaternion.identity;
+        return false;
+    }
+
+    /// <summary>
     /// 런타임 생성 맵을 목록에 추가하고, 즉시 적용할지 선택한다.
     /// 반환값은 전체 맵 목록 기준 인덱스다.
     /// </summary>
@@ -170,6 +204,12 @@ public class ChangeMap : MonoBehaviour
         if (runtimeMaps == null)
         {
             runtimeMaps = new List<RuntimeMapEntry>();
+        }
+
+        if (TryGetRuntimeDefaultSpawnPose(out Vector3 fixedSpawnPosition, out Quaternion fixedSpawnRotation))
+        {
+            spawnPose.position = fixedSpawnPosition;
+            spawnPose.rotation = fixedSpawnRotation.eulerAngles;
         }
 
         int replaceIndex = FindRuntimeMapIndexById(mapId);
@@ -367,6 +407,11 @@ public class ChangeMap : MonoBehaviour
 
     bool TryGetRuntimeSpawnPose(int mapIndex, out Vector3 position, out Quaternion rotation)
     {
+        if (TryGetRuntimeDefaultSpawnPose(out position, out rotation))
+        {
+            return true;
+        }
+
         int runtimeIndex = mapIndex - StaticMapCount;
         if (runtimeMaps != null && runtimeIndex >= 0 && runtimeIndex < runtimeMaps.Count)
         {

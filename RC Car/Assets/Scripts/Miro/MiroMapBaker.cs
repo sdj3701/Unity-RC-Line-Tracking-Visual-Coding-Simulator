@@ -10,6 +10,8 @@ public class MiroMapBaker : MonoBehaviour
 {
     [Header("Texture")]
     [Min(2)] public int pixelsPerCell = 16;
+    [Range(0.05f, 1f)] public float pathWidthRatio = 1f;
+    [Min(1)] public int minPathWidthPixels = 1;
     [Tooltip("true면 MainPath('*')를 텍스처에 그린다.")]
     public bool bakeMainPath = true;
     [Tooltip("true면 BranchPath('.')를 텍스처에 그린다.")]
@@ -46,6 +48,10 @@ public class MiroMapBaker : MonoBehaviour
 
         int size = data.mazeSize;
         int cellPixels = Mathf.Max(2, pixelsPerCell);
+        int linePixels = Mathf.Clamp(
+            Mathf.RoundToInt(cellPixels * Mathf.Clamp01(pathWidthRatio)),
+            Mathf.Max(1, minPathWidthPixels),
+            cellPixels);
         int width = size * cellPixels;
         int height = size * cellPixels;
         texture = new Texture2D(width, height, TextureFormat.RGBA32, false)
@@ -72,8 +78,30 @@ public class MiroMapBaker : MonoBehaviour
                 }
 
                 int gridX = x - 1;
-                int gridY = flipVertical ? (size - y) : (y - 1);
-                PaintCellRect(pixels, width, height, gridX, gridY, cellPixels, cellColor);
+                int gridY = ToGridY(y, size);
+                PaintPathCore(pixels, width, height, gridX, gridY, cellPixels, linePixels, cellColor);
+
+                if (x < size &&
+                    TryGetConnectionColor(cellType, data.GetCellType(y, x + 1), out Color rightColor))
+                {
+                    int rightGridX = x;
+                    int rightGridY = gridY;
+                    PaintConnection(
+                        pixels, width, height,
+                        gridX, gridY, rightGridX, rightGridY,
+                        cellPixels, linePixels, rightColor);
+                }
+
+                if (y < size &&
+                    TryGetConnectionColor(cellType, data.GetCellType(y + 1, x), out Color upColor))
+                {
+                    int upGridX = gridX;
+                    int upGridY = ToGridY(y + 1, size);
+                    PaintConnection(
+                        pixels, width, height,
+                        gridX, gridY, upGridX, upGridY,
+                        cellPixels, linePixels, upColor);
+                }
             }
         }
 
@@ -275,17 +303,103 @@ public class MiroMapBaker : MonoBehaviour
         return false;
     }
 
-    void PaintCellRect(Color[] pixels, int width, int height, int gridX, int gridY, int cellPixels, Color color)
+    bool TryGetConnectionColor(MiroCellType from, MiroCellType to, out Color color)
     {
-        int xStart = gridX * cellPixels;
-        int yStart = gridY * cellPixels;
-        int xEnd = Mathf.Min(width, xStart + cellPixels);
-        int yEnd = Mathf.Min(height, yStart + cellPixels);
+        bool fromPainted = TryGetCellColor(from, out _);
+        bool toPainted = TryGetCellColor(to, out _);
+        if (!fromPainted || !toPainted)
+        {
+            color = default;
+            return false;
+        }
 
-        for (int y = yStart; y < yEnd; y++)
+        // Main-Main 연결은 메인 라인 색상, 그 외(브랜치 포함)는 브랜치 색상으로 통일.
+        if (from == MiroCellType.MainPath && to == MiroCellType.MainPath)
+        {
+            color = mainPathColor;
+            return true;
+        }
+
+        color = branchPathColor;
+        return true;
+    }
+
+    int ToGridY(int oneBasedY, int mazeSize)
+    {
+        return flipVertical ? (mazeSize - oneBasedY) : (oneBasedY - 1);
+    }
+
+    void PaintPathCore(Color[] pixels, int width, int height, int gridX, int gridY, int cellPixels, int linePixels, Color color)
+    {
+        int centerX = GetCellCenterPixel(gridX, cellPixels);
+        int centerY = GetCellCenterPixel(gridY, cellPixels);
+        int half = linePixels / 2;
+        int xMin = centerX - half;
+        int yMin = centerY - half;
+        int xMax = xMin + linePixels;
+        int yMax = yMin + linePixels;
+        FillRect(pixels, width, height, xMin, yMin, xMax, yMax, color);
+    }
+
+    void PaintConnection(
+        Color[] pixels,
+        int width,
+        int height,
+        int fromGridX,
+        int fromGridY,
+        int toGridX,
+        int toGridY,
+        int cellPixels,
+        int linePixels,
+        Color color)
+    {
+        int x0 = GetCellCenterPixel(fromGridX, cellPixels);
+        int y0 = GetCellCenterPixel(fromGridY, cellPixels);
+        int x1 = GetCellCenterPixel(toGridX, cellPixels);
+        int y1 = GetCellCenterPixel(toGridY, cellPixels);
+        int half = linePixels / 2;
+
+        if (y0 == y1)
+        {
+            int xMin = Mathf.Min(x0, x1);
+            int xMax = Mathf.Max(x0, x1) + 1;
+            int yMin = y0 - half;
+            int yMax = yMin + linePixels;
+            FillRect(pixels, width, height, xMin, yMin, xMax, yMax, color);
+            return;
+        }
+
+        if (x0 == x1)
+        {
+            int yMin = Mathf.Min(y0, y1);
+            int yMax = Mathf.Max(y0, y1) + 1;
+            int xMin = x0 - half;
+            int xMax = xMin + linePixels;
+            FillRect(pixels, width, height, xMin, yMin, xMax, yMax, color);
+        }
+    }
+
+    int GetCellCenterPixel(int gridIndex, int cellPixels)
+    {
+        return (gridIndex * cellPixels) + (cellPixels / 2);
+    }
+
+    void FillRect(Color[] pixels, int width, int height, int xMin, int yMin, int xMaxExclusive, int yMaxExclusive, Color color)
+    {
+        int clampedXMin = Mathf.Clamp(xMin, 0, width);
+        int clampedYMin = Mathf.Clamp(yMin, 0, height);
+        int clampedXMax = Mathf.Clamp(xMaxExclusive, 0, width);
+        int clampedYMax = Mathf.Clamp(yMaxExclusive, 0, height);
+
+        if (clampedXMin >= clampedXMax || clampedYMin >= clampedYMax)
+        {
+            return;
+        }
+
+        for (int y = clampedYMin; y < clampedYMax; y++)
         {
             int rowOffset = y * width;
-            for (int x = xStart; x < xEnd; x++)
+            for (int x = clampedXMin; x < clampedXMax; x++)
             {
                 pixels[rowOffset + x] = color;
             }
