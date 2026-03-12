@@ -7445,12 +7445,15 @@ MonoBehaviour:
   - position: {x: -3, y: 2, z: -14.32}
     rotation: {x: 0, y: 0, z: 0}
   applyCurrentMapOnStart: 1
+  includeRuntimeMapsInCycle: 1
   planeRenderer: {fileID: 566899297}
   carTransform: {fileID: 1103646194}
   carPhysics: {fileID: 1103646188}
   buttonRestart: {fileID: 2027678313}
   changeMapButton: {fileID: 116684677}
   currentMapIndex: 0
+  logRuntimeMapActions: 1
+  runtimeMaps: []
 --- !u!1 &117191597
 GameObject:
   m_ObjectHideFlags: 0
@@ -34570,14 +34573,14 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 566899294}
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 2, y: 1, z: 2}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1332956501}
   m_RootOrder: 0
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 180, z: 0}
 --- !u!64 &566899296
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -108024,6 +108027,8 @@ GameObject:
   - component: {fileID: 1836622388}
   - component: {fileID: 1836622387}
   - component: {fileID: 1836622386}
+  - component: {fileID: 1836622393}
+  - component: {fileID: 1836622392}
   m_Layer: 0
   m_Name: MiroSystem
   m_TagString: Untagged
@@ -108066,9 +108071,23 @@ MonoBehaviour:
   lineRenderer: {fileID: 1836622389}
   persistence: {fileID: 1836622388}
   remoteRepository: {fileID: 1836622386}
-  autoSaveOnGenerate: 1
+  enablePlaneMapMerge: 1
+  mapBaker: {fileID: 1836622393}
+  changeMap: {fileID: 116684680}
+  runtimeMapCatalogPersistence: {fileID: 1836622392}
+  autoSaveOnGenerate: 0
   autoLoadOnStart: 0
   forceRandomSeedOnGenerate: 1
+  autoRestoreRuntimeMapsOnStart: 1
+  clearRuntimeMapsBeforeRestore: 1
+  registerMapToChangeMapOnSave: 1
+  registerMapToChangeMapOnGenerate: 1
+  persistGeneratePreviewToDisk: 0
+  registerMapToChangeMapOnLoad: 1
+  applyRegisteredMapImmediatelyOnGenerate: 1
+  applyRegisteredMapImmediatelyOnSaveLoad: 1
+  saveRuntimeTexturePng: 1
+  saveRuntimeMapCatalogOnRegister: 1
   enableRemoteDb: 0
   useLocalFallback: 1
   updateLocalCacheAfterRemoteSave: 1
@@ -108090,6 +108109,7 @@ MonoBehaviour:
     outerExitX: 14
     outerExitY: 15
     cells: 
+  runtimeMapSlots: []
 --- !u!114 &1836622388
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -108135,6 +108155,13 @@ MonoBehaviour:
   groundThickness: 0.02
   groundPadding: 2
   groundColor: {r: 1, g: 1, b: 1, a: 1}
+  groundReferencePlane: {fileID: 0}
+  alignGroundToReferencePlane: 1
+  alignedGroundSeparation: 0.03
+  placeAlignedGroundAboveReferencePlane: 0
+  overrideGroundPosition: 1
+  groundPositionOverride: {x: 100, y: 0, z: 0}
+  fallbackGroundScale: {x: 2, y: 1, z: 2}
   logRenderSummary: 1
 --- !u!114 &1836622390
 MonoBehaviour:
@@ -108173,6 +108200,46 @@ Transform:
   m_Father: {fileID: 0}
   m_RootOrder: 10
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1836622392
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1836622385}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c39defa48ea83445bd3ffd38f16e236, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fileName: miro_runtime_map_catalog.json
+  prettyPrintJson: 1
+  logPersistence: 1
+--- !u!114 &1836622393
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1836622385}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 13083900ef44f3b4c9ff33b9c03a4ba5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  pixelsPerCell: 16
+  bakeMainPath: 1
+  bakeBranchPath: 1
+  flipVertical: 0
+  rotateRuntimeTexture180: 1
+  textureFilterMode: 1
+  textureWrapMode: 1
+  backgroundColor: {r: 1, g: 1, b: 1, a: 1}
+  mainPathColor: {r: 0, g: 0, b: 0, a: 1}
+  branchPathColor: {r: 0.55, g: 0.55, b: 0.55, a: 1}
+  runtimeTextureFolderName: MiroRuntimeMaps
+  runtimeTexturePrefix: miro_map_
+  logBaking: 1
 --- !u!1 &1839212078
 GameObject:
   m_ObjectHideFlags: 0
