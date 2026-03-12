@@ -7448,6 +7448,8 @@ MonoBehaviour:
     rotation: {x: 0, y: 0, z: 0}
   applyCurrentMapOnStart: 1
   includeRuntimeMapsInCycle: 1
+  useFixedSpawnPoseForRuntimeMaps: 1
+  runtimeSpawnPoseSourceIndex: 3
   planeRenderer: {fileID: 566899297}
   carTransform: {fileID: 1103646194}
   carPhysics: {fileID: 1103646188}

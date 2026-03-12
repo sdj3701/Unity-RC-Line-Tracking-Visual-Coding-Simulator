@@ -771,10 +771,9 @@ public class MiroTestSceneController : MonoBehaviour
 
     string BuildMapId(MiroMazeData maze, string sourceLabel)
     {
-        bool forceUniqueBySaveTime = string.Equals(sourceLabel, "Save", StringComparison.OrdinalIgnoreCase);
-        string utc = forceUniqueBySaveTime
+        string utc = string.IsNullOrWhiteSpace(maze.generatedAtUtc)
             ? DateTime.UtcNow.ToString("o")
-            : (string.IsNullOrWhiteSpace(maze.generatedAtUtc) ? DateTime.UtcNow.ToString("o") : maze.generatedAtUtc);
+            : maze.generatedAtUtc;
 
         string normalizedTime = utc.Replace(":", "-").Replace("/", "-").Replace(" ", "_");
         return $"miro_{maze.mazeSize}_{maze.seed}_{normalizedTime}";
