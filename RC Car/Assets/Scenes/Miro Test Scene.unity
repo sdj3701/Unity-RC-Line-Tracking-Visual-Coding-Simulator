@@ -607,6 +607,7 @@ GameObject:
   - component: {fileID: 946625456}
   - component: {fileID: 946625455}
   - component: {fileID: 946625454}
+  - component: {fileID: 946625459}
   m_Layer: 0
   m_Name: MiroSystem
   m_TagString: Untagged
@@ -629,8 +630,14 @@ MonoBehaviour:
   algorithm: {fileID: 946625458}
   lineRenderer: {fileID: 946625456}
   persistence: {fileID: 946625455}
+  remoteRepository: {fileID: 946625459}
   autoSaveOnGenerate: 1
   autoLoadOnStart: 0
+  forceRandomSeedOnGenerate: 1
+  enableRemoteDb: 0
+  useLocalFallback: 1
+  updateLocalCacheAfterRemoteSave: 1
+  updateLocalCacheAfterRemoteLoad: 1
   logControllerActions: 1
   currentMaze:
     version: 1
@@ -731,6 +738,25 @@ MonoBehaviour:
   startX2: 2
   startY2: 2
   logSummary: 1
+--- !u!114 &946625459
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 946625453}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba3db04d45a982340a1257b78e742dd5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  apiBaseUrl: http://localhost:5000
+  saveEndpoint: /api/miro/mazes
+  latestEndpoint: /api/miro/mazes/latest
+  healthEndpoint: /health
+  bearerToken: 
+  timeoutSeconds: 10
+  logRemoteRequests: 1
 --- !u!1 &1061209668
 GameObject:
   m_ObjectHideFlags: 0

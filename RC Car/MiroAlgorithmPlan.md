@@ -239,6 +239,7 @@
 - [x] 직렬화 가능한 미로 데이터 모델 구현 (`MiroMazeData`, `MiroCellType`)
 - [x] 라인 기반 렌더러 구현 (`MiroLineRenderer`)
 - [x] JSON 저장/불러오기 구현 (`MiroMazePersistence`, `persistentDataPath`)
+- [x] DB 연결 토글(bool) + Remote API 저장/로드 기본 구현 (`MiroMazeRemoteRepository`, `MiroTestSceneController.enableRemoteDb`)
 - [x] Test Scene 버튼 워크플로우 구현 (`MiroTestSceneController`: `Generate/Save/Load/Clear`)
 - [x] `Generate` 직후 자동 저장 흐름 반영 (`autoSaveOnGenerate`)
 - [x] 코드 컴파일 검증 완료 (`dotnet build Assembly-CSharp.csproj`, 오류 0)
@@ -257,11 +258,13 @@
    - `MiroAlgorithm`
    - `MiroLineRenderer`
    - `MiroMazePersistence`
+   - `MiroMazeRemoteRepository` (선택: Remote DB 사용 시)
    - `MiroTestSceneController`
 4. `MiroTestSceneController`의 참조 필드를 같은 오브젝트의 컴포넌트로 연결한다.
    - `algorithm` -> `MiroAlgorithm`
    - `lineRenderer` -> `MiroLineRenderer`
    - `persistence` -> `MiroMazePersistence`
+   - `remoteRepository` -> `MiroMazeRemoteRepository` (Remote DB 사용 시)
 
 ### 14.2 Inspector 권장 초기값
 - `MiroAlgorithm`
@@ -281,6 +284,8 @@
 - `MiroTestSceneController`
   - `autoSaveOnGenerate = true`
   - `autoLoadOnStart = false` (원하면 true)
+  - `enableRemoteDb = false` (기본값: Local JSON만 사용)
+  - `useLocalFallback = true`
 
 ### 14.2.1 불필요한 길 초록색 테스트 프로파일 (요청사항)
 - `MiroLineRenderer`
@@ -340,3 +345,200 @@
 - 센서가 라인을 감지 못함:
   - 라인 오브젝트 Collider 존재 여부 확인.
   - 라인 색상/임계값(`blackThreshold`) 재조정.
+
+## 15) Save / Load 상세 설계 (Local 저장 + DB 저장)
+
+이 섹션은 `MiroTestSceneController`의 `Generate / Save / Load` 버튼 흐름을 기준으로,
+저장소를 2가지 방식으로 운영하는 방법을 정리한다.
+
+- 방법 A: Local 파일(JSON) 저장
+- 방법 B: DB(서버 API + 데이터베이스) 저장
+
+---
+
+### 15.1 Save / Load 공통 요구사항
+
+#### 15.1.1 저장 대상 데이터(최소)
+- 미로 식별 정보
+  - `mazeId`(GUID 권장), `version`, `createdAtUtc`, `updatedAtUtc`
+- 생성 파라미터
+  - `mazeSize`, `cellStepX`, `cellStepZ`, `seed`, `algorithmVersion`
+- 미로 본문
+  - `cells[]` (벽/주경로/분기 상태)
+  - `startCell`, `endCell`
+- 메타데이터(선택)
+  - `author`, `sceneName`, `note`, `playCount`
+
+#### 15.1.2 공통 유효성 검사 규칙
+- `mazeSize >= 5` (홀수 권장)
+- `cells.Length == mazeSize * mazeSize`
+- `cellStepX > 0`, `cellStepZ > 0`
+- `startCell`, `endCell`이 범위 내 좌표인지 확인
+- `version`/`algorithmVersion`이 지원되는 포맷인지 확인
+
+#### 15.1.3 공통 버튼 동작 정책
+- `Generate`:
+  - 새 미로 생성 -> 화면 렌더링 -> 옵션에 따라 자동 저장.
+- `Save`:
+  - 현재 `currentMaze`가 있을 때만 저장.
+  - 저장 성공/실패를 로그와 UI 메시지로 표시.
+- `Load`:
+  - 최신 저장본 또는 지정 `mazeId` 저장본 로드.
+  - 로드 성공 시 즉시 렌더링.
+
+---
+
+### 15.2 방법 A: Local 저장 (파일 기반 JSON)
+
+현재 프로젝트의 `MiroMazePersistence`가 이 방식을 사용하고 있으며, 가장 먼저 적용해야 할 기본 방식이다.
+
+#### 15.2.1 저장 위치
+- 기준 경로: `Application.persistentDataPath`
+- 기본 파일명: `miro_latest.json`
+- 권장 확장:
+  - 단일 최신본: `miro_latest.json`
+  - 슬롯 저장: `miro_slot_01.json` ~ `miro_slot_N.json`
+  - 히스토리 저장: `miro_yyyyMMdd_HHmmss.json`
+
+#### 15.2.2 Local Save 상세 흐름
+1. `currentMaze` null 체크.
+2. 저장 폴더 존재 확인(없으면 생성).
+3. JSON 직렬화(`UTF-8`, 필요 시 pretty print).
+4. 임시파일(`.tmp`)에 먼저 기록.
+5. 기존 본파일과 원자적 교체(`Replace` -> 실패 시 `Delete + Move`).
+6. 성공 로그 기록 + 필요 시 UI 토스트 표시.
+
+핵심 포인트:
+- 임시파일 교체 방식은 저장 중 앱 종료/예외 상황에서도 파일 손상 위험을 줄인다.
+- 저장 직후 파일 크기와 JSON 파싱 재검증을 추가하면 안정성이 더 높아진다.
+
+#### 15.2.3 Local Load 상세 흐름
+1. 파일 존재 여부 확인.
+2. JSON 읽기(`UTF-8`).
+3. 역직렬화 후 유효성 검사(`mazeSize`, `cells`, 좌표 등).
+4. 로드 성공 시 `currentMaze`에 반영.
+5. `MiroLineRenderer.Render(currentMaze)` 호출로 즉시 화면 복원.
+
+#### 15.2.4 Local 방식 실패 대응
+- 파일 없음:
+  - "저장본 없음" 안내 후 `Generate` 유도.
+- 파일 손상(JSON 파싱 실패):
+  - 백업 파일(`.bak`) 시도 후 실패 시 무시.
+- 버전 불일치:
+  - 마이그레이션 함수 적용 또는 로드 차단 + 안내.
+
+#### 15.2.5 Local 방식 장단점
+- 장점:
+  - 구현이 단순하고 빠름.
+  - 오프라인 100% 동작.
+  - 서버 비용/네트워크 의존 없음.
+- 단점:
+  - 기기 변경 시 데이터 이전이 어려움.
+  - 다중 사용자/공유 기능 구현이 제한됨.
+  - 클라이언트 파일 변조 방어가 어려움.
+
+---
+
+### 15.3 방법 B: DB 저장 (서버 API + DB)
+
+멀티 디바이스 동기화, 사용자별 저장, 랭킹/공유 기능이 필요하면 DB 방식이 필수다.
+Unity 클라이언트가 DB에 직접 접속하지 않고, 반드시 API 서버를 통해 저장/로드한다.
+
+#### 15.3.1 권장 아키텍처
+- Unity Client
+  - `MiroMazeRemoteRepository`(신규)로 API 통신 담당.
+- API Server (예: ASP.NET, Node.js)
+  - 인증, 유효성 검사, 저장/조회, 버전 관리 담당.
+- DB (예: PostgreSQL/MySQL)
+  - 미로 본문(JSON), 메타데이터, 사용자 정보 저장.
+
+#### 15.3.2 DB 스키마 예시
+- 테이블: `miro_mazes`
+- 컬럼(권장):
+  - `id` (PK, UUID)
+  - `user_id` (FK)
+  - `title`
+  - `maze_size`
+  - `seed`
+  - `algorithm_version`
+  - `maze_json` (TEXT/JSONB)
+  - `created_at_utc`
+  - `updated_at_utc`
+  - `is_deleted` (soft delete)
+
+#### 15.3.3 DB Save API 예시
+- `POST /api/miro/mazes`
+- 요청 바디:
+  - `mazeId`, `version`, `mazeSize`, `seed`, `mazeData`, `clientSavedAtUtc`
+- 응답:
+  - `success`, `serverSavedAtUtc`, `etag`(또는 `rowVersion`)
+
+저장 흐름:
+1. Unity에서 데이터 유효성 검사.
+2. 인증 토큰 포함하여 API 호출.
+3. 서버에서 2차 유효성 검사.
+4. DB 트랜잭션으로 저장.
+5. 성공 응답 수신 후 로컬 캐시 갱신.
+
+#### 15.3.4 DB Load API 예시
+- 최신 1건: `GET /api/miro/mazes/latest`
+- 특정 미로: `GET /api/miro/mazes/{mazeId}`
+- 목록 조회: `GET /api/miro/mazes?page=1&pageSize=20`
+
+로드 흐름:
+1. API에서 JSON 데이터 수신.
+2. 클라이언트 역직렬화 및 유효성 재검사.
+3. `currentMaze` 반영 + 렌더링.
+4. 최근 성공본을 Local 캐시에 동시 저장(오프라인 대비).
+
+#### 15.3.5 DB 방식 실패 대응
+- 네트워크 끊김/타임아웃:
+  - Local 큐에 저장 요청 적재 후 재시도(백오프).
+- 동시 수정 충돌:
+  - `etag`/`rowVersion` 기반 낙관적 잠금 사용.
+- 인증 만료:
+  - 재로그인 유도 후 재시도.
+- 서버 장애:
+  - 읽기는 Local 캐시 fallback, 쓰기는 보류 큐 저장.
+
+#### 15.3.6 보안/운영 필수 항목
+- 모든 통신 HTTPS 강제.
+- 사용자 인증(JWT/OAuth2) 적용.
+- 서버 측 스키마 검증 필수(클라이언트 값 신뢰 금지).
+- PII(개인정보)와 미로 데이터 분리 저장.
+- 감사 로그(누가 언제 저장/수정했는지) 유지.
+
+---
+
+### 15.4 Local vs DB 선택 기준
+
+| 구분 | Local(JSON) | DB(API+DB) |
+|---|---|---|
+| 구현 난이도 | 낮음 | 높음 |
+| 오프라인 동작 | 매우 강함 | 캐시 설계 필요 |
+| 다중 기기 동기화 | 불가(수동 이전) | 가능 |
+| 공유/랭킹 기능 | 제한적 | 용이 |
+| 보안/무결성 | 상대적으로 취약 | 서버 정책으로 강화 가능 |
+| 운영 비용 | 거의 없음 | 서버/DB 비용 필요 |
+
+권장 단계:
+1. 1단계: Local 저장으로 기능 완성 및 안정화.
+2. 2단계: DB 저장 추가 + Local 캐시 병행(하이브리드).
+3. 3단계: 계정 기반 동기화/버전관리/히스토리 기능 확장.
+
+---
+
+### 15.5 본 프로젝트 적용 제안 (실행 순서)
+
+1. 현재 `MiroMazePersistence`를 유지하고, 슬롯 저장/히스토리 저장 옵션 추가.
+2. `MiroTestSceneController`에 저장 백엔드 선택 옵션 추가.
+   - `SaveBackend = Local | RemoteDB | LocalThenRemote`
+3. `IMiroMazeRepository` 인터페이스 도입.
+   - `Save(MiroMazeData data)`, `TryLoadLatest(out MiroMazeData data)`, `TryLoadById(...)`
+4. Local 구현체: `MiroMazePersistence`(기존).
+5. Remote 구현체: `MiroMazeRemoteRepository`(신규).
+6. 최종적으로 `LocalThenRemote` 전략 적용.
+   - 저장: 먼저 Local 즉시 저장 -> 이후 비동기 Remote 업로드.
+   - 로드: Remote 우선 -> 실패 시 Local fallback.
+
+이 순서로 진행하면, 현재 동작을 깨지 않으면서 DB 기능을 안전하게 확장할 수 있다.
