@@ -70,6 +70,10 @@ namespace Auth
 #endif
         }
 
+        /// <summary>
+        /// HKCU 레지스트리 루트 키를 런타임 반사 방식으로 가져온다.
+        /// </summary>
+        /// <returns>현재 사용자 레지스트리 키 핸들</returns>
         private static System.IDisposable GetCurrentUserRegistryKey()
         {
             var registryType =
@@ -99,6 +103,12 @@ namespace Auth
             throw new System.InvalidOperationException("Could not access HKCU registry key.");
         }
 
+        /// <summary>
+        /// 지정한 부모 키 아래에 하위 키를 생성한다.
+        /// </summary>
+        /// <param name="parentKey">부모 레지스트리 키 객체</param>
+        /// <param name="subKeyPath">생성할 하위 키 경로</param>
+        /// <returns>생성된 하위 키 핸들</returns>
         private static System.IDisposable CreateSubKey(object parentKey, string subKeyPath)
         {
             var createSubKeyMethod = parentKey.GetType().GetMethod("CreateSubKey", new[] { typeof(string) });
@@ -116,6 +126,12 @@ namespace Auth
             throw new System.InvalidOperationException($"Could not create registry key: {subKeyPath}");
         }
 
+        /// <summary>
+        /// 레지스트리 키에 값을 기록한다.
+        /// </summary>
+        /// <param name="key">레지스트리 키 객체</param>
+        /// <param name="name">값 이름(기본값은 빈 문자열)</param>
+        /// <param name="value">설정할 값</param>
         private static void SetRegistryValue(object key, string name, string value)
         {
             var setValueMethod = key.GetType().GetMethod("SetValue", new[] { typeof(string), typeof(object) });
@@ -127,6 +143,12 @@ namespace Auth
             setValueMethod.Invoke(key, new object[] { name, value });
         }
 
+        /// <summary>
+        /// 레지스트리 하위 키 트리를 삭제한다.
+        /// .NET 런타임별 메서드 시그니처 차이를 반사로 흡수한다.
+        /// </summary>
+        /// <param name="parentKey">부모 레지스트리 키 객체</param>
+        /// <param name="subKeyPath">삭제할 하위 키 경로</param>
         private static void DeleteSubKeyTree(object parentKey, string subKeyPath)
         {
             var deleteWithThrowMethod = parentKey.GetType().GetMethod("DeleteSubKeyTree", new[] { typeof(string), typeof(bool) });

@@ -28,6 +28,10 @@ namespace Auth
         private GUIStyle _textFieldStyle;
         private GUIStyle _buttonStyle;
 
+        /// <summary>
+        /// 앱 로드 후 로그인 IMGUI 오브젝트를 자동 생성한다.
+        /// 테스트 인증 플로우에서는 생성하지 않는다.
+        /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
@@ -42,6 +46,10 @@ namespace Auth
             go.AddComponent<AuthManualTokenFallbackUI>();
         }
 
+        /// <summary>
+        /// 현재 실행이 테스트 인증 플로우인지 판별한다.
+        /// </summary>
+        /// <returns>테스트 플로우면 true</returns>
         private static bool ShouldSkipForTestFlow()
         {
             if (FindObjectOfType<TestAuthManager>() != null)
@@ -50,16 +58,27 @@ namespace Auth
             return SceneManager.GetActiveScene().name.Equals(TestLoginSceneName, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// 씬 로드 이벤트를 구독한다.
+        /// </summary>
         private void OnEnable()
         {
             SceneManager.sceneLoaded += OnSceneLoaded;
         }
 
+        /// <summary>
+        /// 씬 로드 이벤트 구독을 해제한다.
+        /// </summary>
         private void OnDisable()
         {
             SceneManager.sceneLoaded -= OnSceneLoaded;
         }
 
+        /// <summary>
+        /// 씬 전환 시 UI 상태를 초기화한다.
+        /// </summary>
+        /// <param name="scene">로드 완료된 씬</param>
+        /// <param name="mode">씬 로드 모드</param>
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
             _isSubmitting = false;
@@ -68,6 +87,9 @@ namespace Auth
                 _statusMessage = string.Empty;
         }
 
+        /// <summary>
+        /// 로그인 입력 UI(ID/PW)와 버튼을 렌더링하고 클릭 이벤트를 처리한다.
+        /// </summary>
         private void OnGUI()
         {
             if (!ShouldShow())
@@ -111,6 +133,10 @@ namespace Auth
                 QuitApp();
         }
 
+        /// <summary>
+        /// 현재 프레임에서 로그인 UI를 표시해야 하는지 판단한다.
+        /// </summary>
+        /// <returns>표시 필요 시 true</returns>
         private bool ShouldShow()
         {
             if (!SceneManager.GetActiveScene().name.Equals(LoginSceneName, StringComparison.Ordinal))
@@ -129,6 +155,9 @@ namespace Auth
             return true;
         }
 
+        /// <summary>
+        /// 입력된 ID/PW를 검증하고 비동기 로그인 요청을 수행한다.
+        /// </summary>
         private async void SubmitLogin()
         {
             string id = _userId.Trim();
@@ -172,6 +201,9 @@ namespace Auth
             }
         }
 
+        /// <summary>
+        /// 앱을 종료한다. 에디터에서는 Play 모드를 중단한다.
+        /// </summary>
         private static void QuitApp()
         {
 #if UNITY_EDITOR
@@ -181,6 +213,9 @@ namespace Auth
 #endif
         }
 
+        /// <summary>
+        /// IMGUI 스타일 객체를 최초 1회 생성하고 재사용한다.
+        /// </summary>
         private void EnsureStyles()
         {
             if (_boxStyle == null)

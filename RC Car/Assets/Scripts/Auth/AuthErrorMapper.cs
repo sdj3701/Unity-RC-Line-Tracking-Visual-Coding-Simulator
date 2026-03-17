@@ -16,6 +16,12 @@
         public const string UnknownError = "UNKNOWN_ERROR";
         public const string AuthenticationBusy = "AUTHENTICATION_BUSY";
 
+        /// <summary>
+        /// 내부/서버 에러코드를 사용자에게 표시할 한글 메시지로 변환한다.
+        /// </summary>
+        /// <param name="errorCode">서버 혹은 클라이언트 내부 에러코드</param>
+        /// <param name="fallbackMessage">정의되지 않은 코드일 때 사용할 보조 메시지</param>
+        /// <returns>사용자 표시용 메시지</returns>
         public static string ToUserMessage(string errorCode, string fallbackMessage = null)
         {
             string normalized = string.IsNullOrWhiteSpace(errorCode)
@@ -50,8 +56,10 @@
         }
 
         /// <summary>
-        /// 로그인 API 실패 코드(HTTP -> 내부코드) 매핑.
+        /// 로그인 API의 HTTP 상태코드를 내부 표준 에러코드로 매핑한다.
         /// </summary>
+        /// <param name="statusCode">HTTP 상태코드</param>
+        /// <returns>내부 표준 에러코드</returns>
         public static string FromStatusCode(long statusCode)
         {
             switch (statusCode)

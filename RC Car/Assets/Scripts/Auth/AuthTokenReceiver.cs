@@ -6,7 +6,8 @@ using UnityEngine;
 namespace Auth
 {
     /// <summary>
-    /// Optional deep-link token receiver. Disabled by default for ID/PW login flow.
+    /// Optional deep-link token receiver.
+    /// Receives and stores tokens from command-line protocol URL.
     /// </summary>
     public class AuthTokenReceiver : MonoBehaviour
     {
@@ -18,7 +19,11 @@ namespace Auth
 
         private string _receivedAccessToken;
         private string _receivedRefreshToken;
+        private bool _hasProcessedCommandLineArgs;
 
+        /// <summary>
+        /// 딥링크 수신기 싱글톤을 준비하고 커맨드라인 인자를 파싱한다.
+        /// </summary>
         private void Awake()
         {
             if (!_enableDeepLinkLogin)
@@ -40,14 +45,25 @@ namespace Auth
             ProcessCommandLineArgs();
         }
 
+        /// <summary>
+        /// 실행 인자에 프로토콜 URL(`rccar://...`)이 포함됐는지 확인한다.
+        /// </summary>
+        /// <returns>토큰 인자가 존재하면 true</returns>
         private bool HasTokenInCommandLine()
         {
             string[] args = Environment.GetCommandLineArgs();
             return args.Any(arg => arg.StartsWith($"{ProtocolRegistrar.PROTOCOL_NAME}://", StringComparison.OrdinalIgnoreCase));
         }
 
+        /// <summary>
+        /// 커맨드라인에서 딥링크 URL을 찾아 한 번만 파싱한다.
+        /// </summary>
         public void ProcessCommandLineArgs()
         {
+            if (_hasProcessedCommandLineArgs)
+                return;
+
+            _hasProcessedCommandLineArgs = true;
             string[] args = Environment.GetCommandLineArgs();
 
             foreach (string arg in args)
@@ -60,6 +76,10 @@ namespace Auth
             }
         }
 
+        /// <summary>
+        /// 프로토콜 URL의 쿼리스트링에서 access/refresh 토큰을 추출한다.
+        /// </summary>
+        /// <param name="url">예: rccar://auth?token=...&amp;refresh=...</param>
         private void ParseProtocolUrl(string url)
         {
             try
@@ -86,7 +106,6 @@ namespace Auth
                     return;
 
                 OnTokenReceived?.Invoke(_receivedAccessToken, _receivedRefreshToken);
-                AuthManager.Instance?.AuthenticateWithToken(_receivedAccessToken, _receivedRefreshToken);
             }
             catch (Exception e)
             {
@@ -94,7 +113,14 @@ namespace Auth
             }
         }
 
+        /// <summary>
+        /// 마지막으로 수신된 access token을 반환한다.
+        /// </summary>
         public string GetAccessToken() => _receivedAccessToken;
+
+        /// <summary>
+        /// 마지막으로 수신된 refresh token을 반환한다.
+        /// </summary>
         public string GetRefreshToken() => _receivedRefreshToken;
     }
 }

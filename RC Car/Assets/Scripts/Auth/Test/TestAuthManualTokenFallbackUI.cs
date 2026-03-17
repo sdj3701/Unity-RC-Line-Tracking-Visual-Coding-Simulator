@@ -31,6 +31,10 @@ namespace Auth
         private GUIStyle _textFieldStyle;
         private GUIStyle _buttonStyle;
 
+        /// <summary>
+        /// 테스트 로그인 씬에서 수동 토큰 입력 UI를 자동 생성한다.
+        /// 메인(AuthManager) 플로우가 활성화된 경우에는 생성하지 않는다.
+        /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
@@ -45,6 +49,10 @@ namespace Auth
             go.AddComponent<TestAuthManualTokenFallbackUI>();
         }
 
+        /// <summary>
+        /// 현재 실행이 메인 인증 플로우인지 판별해 테스트 UI 생성 여부를 결정한다.
+        /// </summary>
+        /// <returns>메인 플로우면 true</returns>
         private static bool ShouldSkipForPrimaryFlow()
         {
             if (FindObjectOfType<AuthManager>() != null)
@@ -53,17 +61,28 @@ namespace Auth
             return SceneManager.GetActiveScene().name.Equals(PrimaryLoginSceneName, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// 씬 로드 이벤트를 구독하고 유예 시간 기준점을 초기화한다.
+        /// </summary>
         private void OnEnable()
         {
             SceneManager.sceneLoaded += OnSceneLoaded;
             _sceneLoadedAt = Time.unscaledTime;
         }
 
+        /// <summary>
+        /// 씬 로드 이벤트 구독을 해제한다.
+        /// </summary>
         private void OnDisable()
         {
             SceneManager.sceneLoaded -= OnSceneLoaded;
         }
 
+        /// <summary>
+        /// 씬 전환 시 상태 메시지/제출 상태/유예 타이머를 초기화한다.
+        /// </summary>
+        /// <param name="scene">로드 완료된 씬</param>
+        /// <param name="mode">씬 로드 모드</param>
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
             _sceneLoadedAt = Time.unscaledTime;
@@ -73,6 +92,9 @@ namespace Auth
                 _statusMessage = string.Empty;
         }
 
+        /// <summary>
+        /// 테스트용 수동 토큰 로그인 UI를 렌더링하고 버튼 입력을 처리한다.
+        /// </summary>
         private void OnGUI()
         {
             if (!ShouldShow())
@@ -118,6 +140,11 @@ namespace Auth
             }
         }
 
+        /// <summary>
+        /// 수동 토큰 입력 UI를 보여줄지 판단한다.
+        /// 자동 인증 흐름과 충돌하지 않도록 유예 시간/인증 상태를 함께 확인한다.
+        /// </summary>
+        /// <returns>표시 필요 시 true</returns>
         private bool ShouldShow()
         {
             if (!SceneManager.GetActiveScene().name.Equals(LoginSceneName, StringComparison.Ordinal))
@@ -149,6 +176,9 @@ namespace Auth
             return true;
         }
 
+        /// <summary>
+        /// 수동 입력된 토큰으로 테스트 인증을 비동기로 수행한다.
+        /// </summary>
         private async void SubmitToken()
         {
             string accessToken = _accessToken.Trim();
@@ -185,6 +215,9 @@ namespace Auth
             }
         }
 
+        /// <summary>
+        /// 앱 종료(에디터에서는 Play 모드 종료).
+        /// </summary>
         private static void QuitApp()
         {
 #if UNITY_EDITOR
@@ -194,6 +227,9 @@ namespace Auth
 #endif
         }
 
+        /// <summary>
+        /// 테스트 로그인 UI의 IMGUI 스타일을 최초 1회 생성한다.
+        /// </summary>
         private void EnsureStyles()
         {
             if (_boxStyle == null)

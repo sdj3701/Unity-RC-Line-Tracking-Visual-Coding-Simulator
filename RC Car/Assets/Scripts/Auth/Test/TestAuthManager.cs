@@ -49,6 +49,9 @@ namespace Auth
         private bool _isAuthenticating;
         public bool IsAuthenticating => _isAuthenticating;
 
+        /// <summary>
+        /// 테스트 인증 매니저 싱글톤을 초기화한다.
+        /// </summary>
         private void Awake()
         {
             // 싱글톤 패턴
@@ -61,6 +64,10 @@ namespace Auth
             DontDestroyOnLoad(gameObject);
         }
 
+        /// <summary>
+        /// 테스트 시작 시 자동 인증 경로를 제어한다.
+        /// 현재는 테스트 토큰/자동로그인 호출이 주석 처리되어 수동 트리거 중심으로 동작한다.
+        /// </summary>
         private void Start()
         {
 #if UNITY_EDITOR
@@ -77,7 +84,7 @@ namespace Auth
         }
 
         /// <summary>
-        /// 저장된 토큰이 있으면 자동 로그인 시도
+        /// 저장된 토큰이 있으면 자동 로그인 시도.
         /// </summary>
         private async void TryAutoLogin()
         {
@@ -91,16 +98,21 @@ namespace Auth
         }
 
         /// <summary>
-        /// URL Scheme으로 받은 토큰으로 인증 (동기 버전)
+        /// 테스트 토큰 인증 비동기 함수를 간편하게 호출하는 래퍼.
         /// </summary>
+        /// <param name="accessToken">검증할 access token</param>
+        /// <param name="refreshToken">선택적 refresh token</param>
         public async void AuthenticateWithToken(string accessToken, string refreshToken = null)
         {
             await AuthenticateWithTokenAsync(accessToken, refreshToken);
         }
 
         /// <summary>
-        /// 토큰으로 인증 (비동기 버전)
+        /// 테스트 서버로 토큰 인증을 수행하고 인증 상태/씬 전환을 처리한다.
         /// </summary>
+        /// <param name="accessToken">검증할 access token</param>
+        /// <param name="refreshToken">저장할 refresh token</param>
+        /// <returns>인증 성공 여부</returns>
         public async Task<bool> AuthenticateWithTokenAsync(string accessToken, string refreshToken = null)
         {
             if (_isAuthenticating)
@@ -164,8 +176,10 @@ namespace Auth
         }
 
         /// <summary>
-        /// 서버에 토큰 검증 요청
+        /// 테스트 서버에 토큰 검증 요청을 보내고 결과를 <see cref="AuthResult"/>로 변환한다.
         /// </summary>
+        /// <param name="token">검증할 access token</param>
+        /// <returns>성공 여부와 사용자 정보가 포함된 인증 결과</returns>
         private async Task<AuthResult> ValidateTokenWithServer(string token)
         {
             string url = _serverBaseUrl;  // 웹 개발자가 제공한 완전한 엔드포인트 사용
@@ -219,8 +233,10 @@ namespace Auth
         }
 
         /// <summary>
-        /// 토큰 로컬 저장 (자동 로그인용)
+        /// 자동 로그인 재사용을 위해 토큰을 PlayerPrefs에 저장한다.
         /// </summary>
+        /// <param name="accessToken">저장할 access token</param>
+        /// <param name="refreshToken">저장할 refresh token</param>
         private void SaveTokenLocally(string accessToken, string refreshToken)
         {
             PlayerPrefs.SetString("auth_access_token", accessToken);
@@ -233,12 +249,13 @@ namespace Auth
         }
 
         /// <summary>
-        /// API 요청 시 사용할 Access Token 반환
+        /// 현재 메모리에 보관 중인 access token을 반환한다.
         /// </summary>
+        /// <returns>현재 access token</returns>
         public string GetAccessToken() => _accessToken;
 
         /// <summary>
-        /// 로그아웃
+        /// 테스트 인증 상태와 저장 토큰을 초기화하고 로그인 씬으로 이동한다.
         /// </summary>
         public void Logout()
         {
