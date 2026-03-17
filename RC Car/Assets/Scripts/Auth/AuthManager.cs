@@ -1,160 +1,252 @@
-// Assets/Scripts/Auth/AuthManager.cs
-using System;
+﻿using System;
 using System.Threading.Tasks;
+using Auth.Models;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.SceneManagement;
-using Auth.Models;
+using UnityEngine.Serialization;
 
 namespace Auth
 {
     /// <summary>
-    /// 인증 전체를 관리하는 매니저.
-    /// 토큰 검증, 저장, 로그인/로그아웃 처리를 담당합니다.
+    /// 인증 상태, 로그인 흐름, 토큰 검증, 씬 전환을 관리한다.
     /// </summary>
     public class AuthManager : MonoBehaviour
     {
         public static AuthManager Instance { get; private set; }
 
-        [Header("서버 설정")]
-        [Tooltip("인증 서버 주소")]
-        [SerializeField] private string _serverBaseUrl = "http://ioteacher.com/api/users/me-by-token";
-        
-        [Tooltip("토큰 검증 API 엔드포인트")]
-        [SerializeField] private string _validateEndpoint = "/api/auth/validate";
+        [Header("Server")]
+        [Tooltip("ID/PW 로그인 API URL")]
+        [SerializeField] private string _loginEndpoint = "http://ioteacher.com/api/auth/login";
 
-        [Header("씬 설정")]
-        [Tooltip("인증 실패 시 이동할 씬")]
-        [SerializeField] private string _loginSceneName = "Login";
-        
-        [Tooltip("인증 성공 시 이동할 씬")]
-        [SerializeField] private string _gameSceneName = "CreateBlock";
+        [Tooltip("토큰 검증 API URL")]
+        [FormerlySerializedAs("_serverBaseUrl")]
+        [SerializeField] private string _tokenValidationUrl = "http://ioteacher.com/api/users/me-by-token";
 
-        [Header("디버그")]
-        [Tooltip("에디터에서 테스트용 토큰으로 자동 인증")]
-        [SerializeField] private bool _useTestTokenInEditor = true;
-        [SerializeField] private string _testToken = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZGozNzAxIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3NzE1NjQwNTMsImV4cCI6MTc3MjE2ODg1M30.Rj22gbIR1iEBgziCyfeVpNO0J9K6g7DV0jFLWX8ioLQ";
+        [Tooltip("요청 타임아웃(초)")]
+        [SerializeField] private int _requestTimeoutSeconds = 15;
 
-        // 인증 상태
+        [Header("Scenes")]
+        [FormerlySerializedAs("_loginSceneName")]
+        [SerializeField] private string _loginSceneName = "00_Login";
+
+        [FormerlySerializedAs("_gameSceneName")]
+        [SerializeField] private string _gameSceneName = "01_Lobby";
+
+        [Header("Runtime")]
+        [SerializeField] private bool _useAutoLogin = true;
+
+        [Header("Editor Test")]
+        [SerializeField] private bool _useTestTokenInEditor = false;
+        [SerializeField] private string _testToken = string.Empty;
+
         public bool IsAuthenticated { get; private set; }
         public UserInfo CurrentUser { get; private set; }
+        public string LastAuthErrorMessage { get; private set; }
 
-        // 이벤트
         public event Action OnLoginSuccess;
         public event Action<string> OnLoginFailed;
 
-        // 저장된 토큰
         private string _accessToken;
         private string _refreshToken;
+
         private bool _isAuthenticating;
-        public bool IsAuthenticating => _isAuthenticating;
+        private bool _isCredentialLoginInProgress;
+
+        private AuthApiClient _authApiClient;
+
+        public bool IsAuthenticating => _isAuthenticating || _isCredentialLoginInProgress;
 
         private void Awake()
         {
-            // 싱글톤 패턴
             if (Instance != null)
             {
                 Destroy(gameObject);
                 return;
             }
+
             Instance = this;
             DontDestroyOnLoad(gameObject);
+            EnsureApiClient();
         }
 
         private void Start()
         {
 #if UNITY_EDITOR
-            // 에디터 테스트용
-            if (_useTestTokenInEditor)
+            if (_useTestTokenInEditor && !string.IsNullOrWhiteSpace(_testToken))
             {
-                Debug.Log("🧪 에디터 테스트: 테스트 토큰으로 인증 시도");
-                //AuthenticateWithToken(_testToken);
+                _ = AuthenticateWithTokenAsync(_testToken);
                 return;
             }
 #endif
-            // 저장된 토큰으로 자동 로그인 시도
-            //TryAutoLogin();
+            if (_useAutoLogin)
+                TryAutoLogin();
         }
 
-        /// <summary>
-        /// 저장된 토큰이 있으면 자동 로그인 시도
-        /// </summary>
-        private async void TryAutoLogin()
+        public async Task<LoginResult> LoginWithCredentialsAsync(string id, string password)
         {
-            string savedToken = PlayerPrefs.GetString("auth_access_token", "");
-            
-            if (!string.IsNullOrEmpty(savedToken))
+            if (_isCredentialLoginInProgress || _isAuthenticating)
             {
-                Debug.Log("💾 저장된 토큰으로 자동 로그인 시도...");
-                await AuthenticateWithTokenAsync(savedToken);
+                return new LoginResult
+                {
+                    IsSuccess = false,
+                    ErrorCode = AuthErrorMapper.AuthenticationBusy,
+                    ErrorMessage = AuthErrorMapper.ToUserMessage(AuthErrorMapper.AuthenticationBusy),
+                    Retryable = true
+                };
+            }
+
+            if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(password))
+            {
+                return new LoginResult
+                {
+                    IsSuccess = false,
+                    ErrorCode = AuthErrorMapper.ValidationError,
+                    ErrorMessage = AuthErrorMapper.ToUserMessage(AuthErrorMapper.ValidationError),
+                    Retryable = true
+                };
+            }
+
+            _isCredentialLoginInProgress = true;
+
+            try
+            {
+                EnsureApiClient();
+                LoginResult loginResult = await _authApiClient.LoginWithIdPasswordAsync(id, password);
+
+                if (!loginResult.IsSuccess)
+                {
+                    LastAuthErrorMessage = loginResult.ErrorMessage;
+                    OnLoginFailed?.Invoke(loginResult.ErrorMessage);
+                    return loginResult;
+                }
+
+                bool tokenVerified = await AuthenticateWithTokenAsync(loginResult.AccessToken, loginResult.RefreshToken);
+                if (tokenVerified)
+                {
+                    loginResult.User = CurrentUser;
+                    return loginResult;
+                }
+
+                return new LoginResult
+                {
+                    IsSuccess = false,
+                    ErrorCode = AuthErrorMapper.UnknownError,
+                    ErrorMessage = string.IsNullOrWhiteSpace(LastAuthErrorMessage)
+                        ? AuthErrorMapper.ToUserMessage(AuthErrorMapper.UnknownError)
+                        : LastAuthErrorMessage,
+                    Retryable = true,
+                    StatusCode = loginResult.StatusCode
+                };
+            }
+            catch (Exception e)
+            {
+                string message = AuthErrorMapper.ToUserMessage(AuthErrorMapper.NetworkError, e.Message);
+                LastAuthErrorMessage = message;
+                OnLoginFailed?.Invoke(message);
+
+                return new LoginResult
+                {
+                    IsSuccess = false,
+                    ErrorCode = AuthErrorMapper.NetworkError,
+                    ErrorMessage = message,
+                    Retryable = true
+                };
+            }
+            finally
+            {
+                _isCredentialLoginInProgress = false;
             }
         }
 
-        /// <summary>
-        /// URL Scheme으로 받은 토큰으로 인증 (동기 버전)
-        /// </summary>
         public async void AuthenticateWithToken(string accessToken, string refreshToken = null)
         {
             await AuthenticateWithTokenAsync(accessToken, refreshToken);
         }
 
-        /// <summary>
-        /// 토큰으로 인증 (비동기 버전)
-        /// </summary>
-        public async Task<bool> AuthenticateWithTokenAsync(string accessToken, string refreshToken = null)
+        public async Task<bool> AuthenticateWithTokenAsync(
+            string accessToken,
+            string refreshToken = null,
+            bool suppressFailureFeedback = false)
         {
             if (_isAuthenticating)
             {
-                Debug.LogWarning("[AuthManager] Authentication is already in progress.");
+                Debug.LogWarning("[AuthManager] Token validation is already in progress.");
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(accessToken))
+            {
+                if (!suppressFailureFeedback)
+                {
+                    string message = AuthErrorMapper.ToUserMessage(AuthErrorMapper.ValidationError, "Access token is empty.");
+                    LastAuthErrorMessage = message;
+                    OnLoginFailed?.Invoke(message);
+                }
                 return false;
             }
 
             _isAuthenticating = true;
-            Debug.Log("🔐 토큰 검증 시작...");
-
+            LastAuthErrorMessage = null;
             _accessToken = accessToken;
             _refreshToken = refreshToken;
 
             try
             {
-                // 서버에 토큰 검증 요청
-                var result = await ValidateTokenWithServer(accessToken);
-
+                AuthResult result = await ValidateTokenWithServer(accessToken);
                 if (result.IsSuccess)
                 {
                     IsAuthenticated = true;
                     CurrentUser = result.User;
 
-                    // 토큰 로컬 저장 (다음 실행 시 자동 로그인용)
                     SaveTokenLocally(accessToken, refreshToken);
+                    LastAuthErrorMessage = null;
 
-                    Debug.Log($"✅ 인증 성공! 유저: {CurrentUser?.username}");
                     OnLoginSuccess?.Invoke();
 
-                    // 게임 씬으로 이동
-                    if (!string.IsNullOrEmpty(_gameSceneName))
-                    {
+                    if (!string.IsNullOrWhiteSpace(_gameSceneName))
                         SceneManager.LoadScene(_gameSceneName);
-                    }
+
                     return true;
                 }
-                else
-                {
-                    Debug.LogError($"❌ 인증 실패: {result.ErrorMessage}");
-                    OnLoginFailed?.Invoke(result.ErrorMessage);
 
-                    // 로그인 씬으로 이동
-                    if (!string.IsNullOrEmpty(_loginSceneName))
-                    {
-                        SceneManager.LoadScene(_loginSceneName);
-                    }
-                    return false;
+                IsAuthenticated = false;
+                CurrentUser = null;
+                _accessToken = null;
+                _refreshToken = null;
+                AuthSessionStore.Clear();
+
+                string failureMessage = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                    ? AuthErrorMapper.ToUserMessage(AuthErrorMapper.UnknownError)
+                    : result.ErrorMessage;
+
+                if (!suppressFailureFeedback)
+                {
+                    Debug.LogError($"[AuthManager] Token validation failed: {failureMessage}");
+                    LastAuthErrorMessage = failureMessage;
+                    OnLoginFailed?.Invoke(failureMessage);
+                    LoadLoginSceneIfNeeded();
                 }
+
+                return false;
             }
             catch (Exception e)
             {
-                Debug.LogError($"❌ 인증 중 오류: {e.Message}");
-                OnLoginFailed?.Invoke(e.Message);
+                IsAuthenticated = false;
+                CurrentUser = null;
+                _accessToken = null;
+                _refreshToken = null;
+                AuthSessionStore.Clear();
+
+                string message = AuthErrorMapper.ToUserMessage(AuthErrorMapper.NetworkError, e.Message);
+                if (!suppressFailureFeedback)
+                {
+                    Debug.LogError($"[AuthManager] Authentication error: {e.Message}");
+                    LastAuthErrorMessage = message;
+                    OnLoginFailed?.Invoke(message);
+                    LoadLoginSceneIfNeeded();
+                }
+
                 return false;
             }
             finally
@@ -163,102 +255,170 @@ namespace Auth
             }
         }
 
-        /// <summary>
-        /// 서버에 토큰 검증 요청
-        /// </summary>
+        private async void TryAutoLogin()
+        {
+            string savedToken = AuthSessionStore.GetAccessToken();
+            string savedRefreshToken = AuthSessionStore.GetRefreshToken();
+
+            if (string.IsNullOrWhiteSpace(savedToken))
+                return;
+
+            await AuthenticateWithTokenAsync(savedToken, savedRefreshToken, suppressFailureFeedback: true);
+        }
+
         private async Task<AuthResult> ValidateTokenWithServer(string token)
         {
-            string url = _serverBaseUrl;  // 웹 개발자가 제공한 완전한 엔드포인트 사용
-
-            Debug.Log($"📡 서버 검증 요청: {url}");
-
-            using (var request = new UnityWebRequest(url, "GET"))
+            using (var request = new UnityWebRequest(_tokenValidationUrl, UnityWebRequest.kHttpVerbGET))
             {
-                // Authorization 헤더에 토큰 포함
                 request.SetRequestHeader("Authorization", $"Bearer {token}");
                 request.SetRequestHeader("Content-Type", "application/json");
                 request.downloadHandler = new DownloadHandlerBuffer();
+                request.timeout = Mathf.Max(1, _requestTimeoutSeconds);
 
-                // 비동기 요청
                 var operation = request.SendWebRequest();
-
                 while (!operation.isDone)
                     await Task.Yield();
 
-                if (request.result == UnityWebRequest.Result.Success)
+                if (request.result != UnityWebRequest.Result.Success)
                 {
-                    Debug.Log($"📩 서버 응답: {request.downloadHandler.text}");
-
-                    // 서버가 유저 정보를 직접 반환하는 경우
-                    var userInfo = JsonUtility.FromJson<UserInfo>(request.downloadHandler.text);
-                    
-                    // userId가 있으면 인증 성공
-                    bool isSuccess = !string.IsNullOrEmpty(userInfo?.userId);
-                    
-                    return new AuthResult
-                    {
-                        IsSuccess = isSuccess,
-                        User = userInfo,
-                        ErrorMessage = isSuccess ? null : "유저 정보를 가져올 수 없습니다."
-                    };
-                }
-                else
-                {
-                    // 401 Unauthorized 등의 에러 처리
-                    string errorMessage = request.responseCode == 401 
-                        ? "인증되지 않은 토큰입니다." 
-                        : $"서버 오류: {request.error}";
-                    
+                    string errorCode = MapTokenValidationErrorCode(request);
                     return new AuthResult
                     {
                         IsSuccess = false,
-                        ErrorMessage = errorMessage
+                        ErrorMessage = AuthErrorMapper.ToUserMessage(errorCode, request.error)
                     };
                 }
+
+                string responseBody = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+                AuthResult parsedResult = ParseValidationResponse(responseBody);
+                if (parsedResult.IsSuccess)
+                    return parsedResult;
+
+                return new AuthResult
+                {
+                    IsSuccess = false,
+                    ErrorMessage = string.IsNullOrWhiteSpace(parsedResult.ErrorMessage)
+                        ? AuthErrorMapper.ToUserMessage(AuthErrorMapper.UnknownError)
+                        : parsedResult.ErrorMessage
+                };
             }
         }
 
-        /// <summary>
-        /// 토큰 로컬 저장 (자동 로그인용)
-        /// </summary>
-        private void SaveTokenLocally(string accessToken, string refreshToken)
+        private static AuthResult ParseValidationResponse(string responseBody)
         {
-            PlayerPrefs.SetString("auth_access_token", accessToken);
-            
-            if (!string.IsNullOrEmpty(refreshToken))
-                PlayerPrefs.SetString("auth_refresh_token", refreshToken);
-            
-            PlayerPrefs.Save();
-            Debug.Log("💾 토큰 저장 완료");
+            if (string.IsNullOrWhiteSpace(responseBody))
+            {
+                return new AuthResult
+                {
+                    IsSuccess = false,
+                    ErrorMessage = AuthErrorMapper.ToUserMessage(AuthErrorMapper.UnknownError)
+                };
+            }
+
+            try
+            {
+                AuthResponse wrapper = JsonUtility.FromJson<AuthResponse>(responseBody);
+                if (wrapper != null)
+                {
+                    bool wrappedSuccess = wrapper.success && wrapper.user != null && !string.IsNullOrWhiteSpace(wrapper.user.userId);
+                    if (wrappedSuccess)
+                    {
+                        return new AuthResult
+                        {
+                            IsSuccess = true,
+                            User = wrapper.user
+                        };
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(wrapper.error))
+                    {
+                        return new AuthResult
+                        {
+                            IsSuccess = false,
+                            ErrorMessage = wrapper.error
+                        };
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Backend response format may vary.
+            }
+
+            try
+            {
+                UserInfo userInfo = JsonUtility.FromJson<UserInfo>(responseBody);
+                if (userInfo != null && !string.IsNullOrWhiteSpace(userInfo.userId))
+                {
+                    return new AuthResult
+                    {
+                        IsSuccess = true,
+                        User = userInfo
+                    };
+                }
+            }
+            catch (Exception)
+            {
+                // Backend response format may vary.
+            }
+
+            return new AuthResult
+            {
+                IsSuccess = false,
+                ErrorMessage = AuthErrorMapper.ToUserMessage(AuthErrorMapper.UnknownError)
+            };
         }
 
-        /// <summary>
-        /// API 요청 시 사용할 Access Token 반환
-        /// </summary>
+        private static string MapTokenValidationErrorCode(UnityWebRequest request)
+        {
+            if (request.result == UnityWebRequest.Result.ConnectionError ||
+                request.result == UnityWebRequest.Result.DataProcessingError)
+            {
+                return AuthErrorMapper.NetworkError;
+            }
+
+            if (request.responseCode == 401)
+                return AuthErrorMapper.TokenExpiredOrInvalid;
+
+            if (request.responseCode == 500)
+                return AuthErrorMapper.InternalError;
+
+            return AuthErrorMapper.UnknownError;
+        }
+
+        private void SaveTokenLocally(string accessToken, string refreshToken)
+        {
+            AuthSessionStore.Save(accessToken, refreshToken);
+        }
+
+        private void LoadLoginSceneIfNeeded()
+        {
+            if (string.IsNullOrWhiteSpace(_loginSceneName))
+                return;
+
+            Scene activeScene = SceneManager.GetActiveScene();
+            if (!activeScene.name.Equals(_loginSceneName, StringComparison.Ordinal))
+                SceneManager.LoadScene(_loginSceneName);
+        }
+
+        private void EnsureApiClient()
+        {
+            if (_authApiClient == null)
+                _authApiClient = new AuthApiClient(_loginEndpoint, _requestTimeoutSeconds);
+        }
+
         public string GetAccessToken() => _accessToken;
 
-        /// <summary>
-        /// 로그아웃
-        /// </summary>
         public void Logout()
         {
             _accessToken = null;
             _refreshToken = null;
             IsAuthenticated = false;
             CurrentUser = null;
+            LastAuthErrorMessage = null;
 
-            // 저장된 토큰 삭제
-            PlayerPrefs.DeleteKey("auth_access_token");
-            PlayerPrefs.DeleteKey("auth_refresh_token");
-            PlayerPrefs.Save();
-
-            Debug.Log("👋 로그아웃 완료");
-
-            // 로그인 씬으로 이동
-            if (!string.IsNullOrEmpty(_loginSceneName))
-            {
-                SceneManager.LoadScene(_loginSceneName);
-            }
+            AuthSessionStore.Clear();
+            LoadLoginSceneIfNeeded();
         }
     }
 }
