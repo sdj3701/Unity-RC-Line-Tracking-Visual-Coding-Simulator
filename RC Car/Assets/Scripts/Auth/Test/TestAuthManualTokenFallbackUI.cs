@@ -1,26 +1,29 @@
-﻿using System;
+using System;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace Auth
 {
     /// <summary>
-    /// Runtime login UI for ID/PW authentication on Login scene.
+    /// Runtime fallback UI used when deep-link token is missing.
+    /// Shows manual token input and quit button on Login scene.
     /// </summary>
-    public class AuthManualTokenFallbackUI : MonoBehaviour
+    public class TestAuthManualTokenFallbackUI : MonoBehaviour
     {
-        private const string LoginSceneName = "00_Login";
-        private const string TestLoginSceneName = "00_TestLogin";
-        private const float PanelWidth = 980f;
-        private const float PanelHeight = 420f;
+        private const string LoginSceneName = "00_TestLogin";
+        private const string PrimaryLoginSceneName = "00_Login";
+        private const float PanelWidth = 1200f;
+        private const float PanelHeight = 460f;
+        private const float UiDelaySeconds = 0.35f;
         private const int TitleFontSize = 30;
         private const int BodyFontSize = 30;
-        private const int StatusFontSize = 25;
+        private const int StatusFontSize = 26;
 
-        private string _userId = string.Empty;
-        private string _password = string.Empty;
+        private string _accessToken = string.Empty;
+        private string _refreshToken = string.Empty;
         private string _statusMessage = string.Empty;
         private bool _isSubmitting;
+        private float _sceneLoadedAt;
 
         private GUIStyle _boxStyle;
         private GUIStyle _labelStyle;
@@ -31,28 +34,29 @@ namespace Auth
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
-            if (ShouldSkipForTestFlow())
+            if (ShouldSkipForPrimaryFlow())
                 return;
 
-            if (FindObjectOfType<AuthManualTokenFallbackUI>() != null)
+            if (FindObjectOfType<TestAuthManualTokenFallbackUI>() != null)
                 return;
 
-            var go = new GameObject(nameof(AuthManualTokenFallbackUI));
+            var go = new GameObject(nameof(TestAuthManualTokenFallbackUI));
             DontDestroyOnLoad(go);
-            go.AddComponent<AuthManualTokenFallbackUI>();
+            go.AddComponent<TestAuthManualTokenFallbackUI>();
         }
 
-        private static bool ShouldSkipForTestFlow()
+        private static bool ShouldSkipForPrimaryFlow()
         {
-            if (FindObjectOfType<TestAuthManager>() != null)
+            if (FindObjectOfType<AuthManager>() != null)
                 return true;
 
-            return SceneManager.GetActiveScene().name.Equals(TestLoginSceneName, StringComparison.Ordinal);
+            return SceneManager.GetActiveScene().name.Equals(PrimaryLoginSceneName, StringComparison.Ordinal);
         }
 
         private void OnEnable()
         {
             SceneManager.sceneLoaded += OnSceneLoaded;
+            _sceneLoadedAt = Time.unscaledTime;
         }
 
         private void OnDisable()
@@ -62,6 +66,7 @@ namespace Auth
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
+            _sceneLoadedAt = Time.unscaledTime;
             _isSubmitting = false;
 
             if (!scene.name.Equals(LoginSceneName, StringComparison.Ordinal))
@@ -81,34 +86,36 @@ namespace Auth
                 PanelWidth,
                 PanelHeight);
 
-            GUI.Box(panelRect, "Account Login", _boxStyle);
+            GUI.Box(panelRect, "Manual Token Login", _boxStyle);
 
             float x = panelRect.x + 20f;
             float y = panelRect.y + 70f;
             float width = panelRect.width - 40f;
 
-            GUI.Label(new Rect(x, y, width, 36f), "ID", _labelStyle);
+            GUI.Label(new Rect(x, y, width, 36f), "Access Token", _labelStyle);
             y += 42f;
-            _userId = GUI.TextField(new Rect(x, y, width, 48f), _userId, _textFieldStyle);
+            _accessToken = GUI.TextField(new Rect(x, y, width, 48f), _accessToken, _textFieldStyle);
 
-            y += 62f;
-            GUI.Label(new Rect(x, y, width, 36f), "Password", _labelStyle);
+            y += 60f;
+            GUI.Label(new Rect(x, y, width, 36f), "Refresh Token (Optional)", _labelStyle);
             y += 42f;
-            _password = GUI.PasswordField(new Rect(x, y, width, 48f), _password, '*', _textFieldStyle);
+            _refreshToken = GUI.TextField(new Rect(x, y, width, 48f), _refreshToken, _textFieldStyle);
 
             y += 58f;
             if (!string.IsNullOrEmpty(_statusMessage))
                 GUI.Label(new Rect(x, y, width, 56f), _statusMessage, _statusStyle);
 
             float buttonY = panelRect.yMax - 68f;
-            if (GUI.Button(new Rect(x, buttonY, 220f, 48f), _isSubmitting ? "Logging in..." : "Login", _buttonStyle))
+            if (GUI.Button(new Rect(x, buttonY, 220f, 48f), _isSubmitting ? "Validating..." : "Login", _buttonStyle))
             {
                 if (!_isSubmitting)
-                    SubmitLogin();
+                    SubmitToken();
             }
 
             if (GUI.Button(new Rect(x + 234f, buttonY, 160f, 48f), "Quit", _buttonStyle))
+            {
                 QuitApp();
+            }
         }
 
         private bool ShouldShow()
@@ -116,55 +123,61 @@ namespace Auth
             if (!SceneManager.GetActiveScene().name.Equals(LoginSceneName, StringComparison.Ordinal))
                 return false;
 
-            var authManager = AuthManager.Instance;
-            if (authManager == null)
+            var authManager = TestAuthManager.Instance;
+            if (authManager != null)
             {
-                _statusMessage = "AuthManager not found.";
-                return true;
+                if (authManager.IsAuthenticated)
+                    return false;
+
+                if (authManager.IsAuthenticating)
+                    return false;
             }
 
-            if (authManager.IsAuthenticated)
+            // Give auto login / deep-link flow a short grace period.
+            if (Time.unscaledTime - _sceneLoadedAt < UiDelaySeconds)
                 return false;
+
+            if (AuthTokenReceiver.Instance != null &&
+                !string.IsNullOrEmpty(AuthTokenReceiver.Instance.GetAccessToken()))
+            {
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(_statusMessage))
+                _statusMessage = "No deep-link token found. Enter token manually or quit.";
 
             return true;
         }
 
-        private async void SubmitLogin()
+        private async void SubmitToken()
         {
-            string id = _userId.Trim();
-            string password = _password;
-
-            if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(password))
+            string accessToken = _accessToken.Trim();
+            if (string.IsNullOrEmpty(accessToken))
             {
-                _statusMessage = AuthErrorMapper.ToUserMessage(AuthErrorMapper.ValidationError);
+                _statusMessage = "Access token is required.";
                 return;
             }
 
-            var authManager = AuthManager.Instance;
+            var authManager = TestAuthManager.Instance;
             if (authManager == null)
             {
                 _statusMessage = "AuthManager not found.";
                 return;
             }
 
-            if (authManager.IsAuthenticating)
-            {
-                _statusMessage = AuthErrorMapper.ToUserMessage(AuthErrorMapper.AuthenticationBusy);
-                return;
-            }
-
             _isSubmitting = true;
-            _statusMessage = "Logging in...";
+            _statusMessage = "Validating token...";
 
             try
             {
-                var result = await authManager.LoginWithCredentialsAsync(id, password);
-                if (!result.IsSuccess)
-                    _statusMessage = result.ErrorMessage;
+                string refreshToken = string.IsNullOrWhiteSpace(_refreshToken) ? null : _refreshToken.Trim();
+                bool success = await authManager.AuthenticateWithTokenAsync(accessToken, refreshToken);
+                if (!success)
+                    _statusMessage = "Authentication failed. Check token and try again.";
             }
             catch (Exception ex)
             {
-                _statusMessage = AuthErrorMapper.ToUserMessage(AuthErrorMapper.NetworkError, ex.Message);
+                _statusMessage = $"Authentication error: {ex.Message}";
             }
             finally
             {

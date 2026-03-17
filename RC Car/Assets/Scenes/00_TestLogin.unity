@@ -378,8 +378,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1831112859}
-  - component: {fileID: 1831112860}
   - component: {fileID: 1831112857}
+  - component: {fileID: 1831112860}
   m_Layer: 0
   m_Name: AuthManager
   m_TagString: Untagged
@@ -424,10 +424,15 @@ MonoBehaviour:
   m_GameObject: {fileID: 1831112856}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 17590bd076c4ce54ba9194fbfcefe1dd, type: 3}
+  m_Script: {fileID: 11500000, guid: d438b7089f4495f41adc2492452f7bbe, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _enableTokenLoginUi: 1
+  _serverBaseUrl: http://ioteacher.com/api/users/me-by-token
+  _validateEndpoint: /api/auth/validate
+  _loginSceneName: 00_TestLogin
+  _gameSceneName: 02_SingleCreateBlock
+  _useTestTokenInEditor: 1
+  _testToken: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZGozNzAxIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3NzE1NjQwNTMsImV4cCI6MTc3MjE2ODg1M30.Rj22gbIR1iEBgziCyfeVpNO0J9K6g7DV0jFLWX8ioLQ
 --- !u!1 &2112845209
 GameObject:
   m_ObjectHideFlags: 0
