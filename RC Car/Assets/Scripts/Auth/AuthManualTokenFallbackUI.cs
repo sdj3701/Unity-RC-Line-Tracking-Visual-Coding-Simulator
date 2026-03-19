@@ -160,10 +160,14 @@ namespace Auth
         /// </summary>
         private async void SubmitLogin()
         {
-            string id = _userId.Trim();
+            // 흐름 주석:
+            // 1) UI 입력값 정규화(userId/password)
+            // 2) AuthManager에 로그인 요청 위임
+            // 3) 실패 메시지는 UI 상태 텍스트에 반영
+            string userId = _userId.Trim();
             string password = _password;
 
-            if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(password))
+            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(password))
             {
                 _statusMessage = AuthErrorMapper.ToUserMessage(AuthErrorMapper.ValidationError);
                 return;
@@ -187,7 +191,7 @@ namespace Auth
 
             try
             {
-                var result = await authManager.LoginWithCredentialsAsync(id, password);
+                var result = await authManager.LoginWithCredentialsAsync(userId, password);
                 if (!result.IsSuccess)
                     _statusMessage = result.ErrorMessage;
             }

@@ -41,6 +41,10 @@ namespace Auth
         [SerializeField] private bool _useTestTokenInEditor = false;
         [SerializeField] private string _testToken = string.Empty;
 
+        [Header("Debug")]
+        [Tooltip("로그인 성공 시 access/refresh token과 UserInfo를 Debug.Log로 출력한다.")]
+        [SerializeField] private bool _debugLogLoginPayload = true;
+
         public bool IsAuthenticated { get; private set; }
         public UserInfo CurrentUser { get; private set; }
         public string LastAuthErrorMessage { get; private set; }
@@ -113,10 +117,10 @@ namespace Auth
         /// <summary>
         /// ID/PW 로그인 API를 호출하고, 응답 토큰으로 최종 인증까지 완료한다.
         /// </summary>
-        /// <param name="id">사용자 로그인 ID</param>
+        /// <param name="userId">사용자 로그인 ID</param>
         /// <param name="password">사용자 비밀번호</param>
         /// <returns>로그인 API + 토큰 검증 결과를 담은 <see cref="LoginResult"/></returns>
-        public async Task<LoginResult> LoginWithCredentialsAsync(string id, string password)
+        public async Task<LoginResult> LoginWithCredentialsAsync(string userId, string password)
         {
             if (_isCredentialLoginInProgress || _isAuthenticating)
             {
@@ -129,7 +133,7 @@ namespace Auth
                 };
             }
 
-            if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(password))
+            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(password))
             {
                 return new LoginResult
                 {
@@ -144,14 +148,37 @@ namespace Auth
 
             try
             {
+                // 흐름 주석:
+                // 1) ID/PW 로그인 API 호출
+                // 2) 응답 토큰(access/refresh) 추출
+                // 3) access token으로 최종 검증 후 인증 상태 확정
                 EnsureApiClient();
-                LoginResult loginResult = await _authApiClient.LoginWithIdPasswordAsync(id, password);
+                LoginResult loginResult = await _authApiClient.LoginWithIdPasswordAsync(userId, password);
 
                 if (!loginResult.IsSuccess)
                 {
                     LastAuthErrorMessage = loginResult.ErrorMessage;
                     OnLoginFailed?.Invoke(loginResult.ErrorMessage);
                     return loginResult;
+                }
+
+                if (string.IsNullOrWhiteSpace(loginResult.AccessToken))
+                {
+                    string message = AuthErrorMapper.ToUserMessage(
+                        AuthErrorMapper.UnknownError,
+                        "로그인 응답에 access token이 없습니다.");
+
+                    LastAuthErrorMessage = message;
+                    OnLoginFailed?.Invoke(message);
+
+                    return new LoginResult
+                    {
+                        IsSuccess = false,
+                        ErrorCode = AuthErrorMapper.UnknownError,
+                        ErrorMessage = message,
+                        Retryable = true,
+                        StatusCode = loginResult.StatusCode
+                    };
                 }
 
                 bool tokenVerified = await AuthenticateWithTokenAsync(loginResult.AccessToken, loginResult.RefreshToken);
@@ -214,6 +241,11 @@ namespace Auth
             string refreshToken = null,
             bool suppressFailureFeedback = false)
         {
+            // 흐름 주석:
+            // 1) access token 입력 검증
+            // 2) 서버 토큰 검증 API 호출
+            // 3) 성공 시 인증 상태/세션 저장/씬 이동
+            // 4) 실패 시 상태 초기화 후 로그인 씬 복귀(옵션)
             if (_isAuthenticating)
             {
                 Debug.LogWarning("[AuthManager] Token validation is already in progress.");
@@ -245,6 +277,7 @@ namespace Auth
                     CurrentUser = result.User;
 
                     SaveTokenLocally(accessToken, refreshToken);
+                    DebugLogLoginPayload(accessToken, refreshToken, result.User);
                     LastAuthErrorMessage = null;
 
                     OnLoginSuccess?.Invoke();
@@ -514,6 +547,27 @@ namespace Auth
         private void SaveTokenLocally(string accessToken, string refreshToken)
         {
             AuthSessionStore.Save(accessToken, refreshToken);
+        }
+
+        /// <summary>
+        /// 로그인 성공 시 디버깅용 인증 페이로드를 출력한다.
+        /// </summary>
+        private void DebugLogLoginPayload(string accessToken, string refreshToken, UserInfo user)
+        {
+            if (!_debugLogLoginPayload)
+                return;
+
+            string safeRefreshToken = string.IsNullOrWhiteSpace(refreshToken) ? "(empty)" : refreshToken;
+            string userJson = user == null ? "null" : JsonUtility.ToJson(user, true);
+
+            // 흐름 주석:
+            // 로그인 성공 직후 토큰과 사용자 정보를 한 번에 출력해
+            // API 응답/파싱/검증 결과를 빠르게 확인한다.
+            Debug.Log(
+                $"[AuthManager] Login Success Payload\n" +
+                $"AccessToken: {accessToken}\n" +
+                $"RefreshToken: {safeRefreshToken}\n" +
+                $"UserInfo: {userJson}");
         }
 
         /// <summary>

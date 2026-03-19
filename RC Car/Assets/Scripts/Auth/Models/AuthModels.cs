@@ -1,10 +1,10 @@
-// Assets/Scripts/Auth/Models/AuthModels.cs
+﻿// Assets/Scripts/Auth/Models/AuthModels.cs
 using System;
 
 namespace Auth.Models
 {
     /// <summary>
-    /// 서버에서 받은 인증 응답
+    /// ?좏겙 寃利?API???섑띁 ?묐떟 紐⑤뜽.
     /// </summary>
     [Serializable]
     public class AuthResponse
@@ -15,40 +15,69 @@ namespace Auth.Models
     }
 
     /// <summary>
-    /// ID/PW 로그인 요청 모델
+    /// ID/PW 濡쒓렇???붿껌 紐⑤뜽.
+    /// ?쒕쾭 怨꾩빟??留욎떠 userId ?ㅻ? ?ъ슜?쒕떎.
     /// </summary>
     [Serializable]
     public class LoginRequest
     {
-        public string id;
+        public string userId;
         public string password;
     }
 
     /// <summary>
-    /// ID/PW 로그인 응답 모델
+    /// 濡쒓렇???묐떟?먯꽌 ?좏겙??data ?꾨옒???대젮?ㅻ뒗 寃쎌슦瑜??꾪븳 蹂댁“ 紐⑤뜽.
+    /// </summary>
+    [Serializable]
+    public class LoginTokenData
+    {
+        public string accessToken;
+        public string token;
+        public string access_token;
+        public string refreshToken;
+        public string refresh;
+        public string refresh_token;
+    }
+
+    /// <summary>
+    /// ID/PW 濡쒓렇???묐떟 紐⑤뜽.
+    /// 諛깆뿏???묐떟 蹂?뺤뿉 ?鍮꾪빐 ?щ윭 ?ㅻ? ?④퍡 ?좎뼵?쒕떎.
     /// </summary>
     [Serializable]
     public class LoginResponse
     {
         public bool success;
+        public bool isSuccess;
+
         public string accessToken;
+        public string token;
+        public string access_token;
+
         public string refreshToken;
+        public string refresh;
+        public string refresh_token;
+
+        public LoginTokenData data;
         public UserInfo user;
+
         public string errorCode;
+        public string code;
         public string message;
+        public string error;
+        public string detail;
         public bool retryable;
     }
 
     /// <summary>
-    /// 로그인한 사용자 정보 (서버 응답 형식에 맞춤)
+    /// 濡쒓렇?몃맂 ?ъ슜???뺣낫.
     /// </summary>
     [Serializable]
     public class UserInfo
     {
         public string userId;
         public string email;
-        public string name;           // 서버에서 name으로 반환
-        public string username;       // 호환성 유지
+        public string name;
+        public string username;
         public string role;
         public string status;
         public string profileImageUrl;
@@ -62,7 +91,7 @@ namespace Auth.Models
     }
 
     /// <summary>
-    /// 인증 결과
+    /// ?좏겙 寃利?寃곌낵 紐⑤뜽.
     /// </summary>
     public class AuthResult
     {
@@ -72,7 +101,7 @@ namespace Auth.Models
     }
 
     /// <summary>
-    /// 로그인 API 결과
+    /// 濡쒓렇??API 寃곌낵 紐⑤뜽.
     /// </summary>
     public class LoginResult
     {

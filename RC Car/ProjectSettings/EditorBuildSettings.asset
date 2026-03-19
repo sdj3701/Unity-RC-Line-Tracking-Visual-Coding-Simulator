@@ -9,6 +9,15 @@ EditorBuildSettings:
     path: Assets/Scenes/00_Login.unity
     guid: d9f7746989bc2d44d9bf3df4251df79a
   - enabled: 1
+    path: Assets/Scenes/00_TestLogin.unity
+    guid: 05ac2965ead7ec54d8c58d4f6ed842bf
+  - enabled: 1
+    path: Assets/Scenes/01_Lobby.unity
+    guid: ef707f96990cd4e4793207c653af8adf
+  - enabled: 1
     path: Assets/Scenes/02_SingleCreateBlock.unity
     guid: 047014c7983d1624284da9883a9c916e
+  - enabled: 1
+    path: Assets/Scenes/03_NetworkCarTest.unity
+    guid: 0b92134102a455b41892180ae9f741dd
   m_configObjects: {}

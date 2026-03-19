@@ -21,7 +21,7 @@
 - 역할: 이벤트 구독 해제.
 - 주요 동작: 현재 인스턴스가 싱글톤일 때만 `OnTokenReceived` 핸들러를 해제하여 메모리 누수/중복 호출을 방지합니다.
 
-### LoginWithCredentialsAsync(string id, string password)
+### LoginWithCredentialsAsync(string userId, string password)
 - 역할: ID/PW 로그인 전체 흐름의 진입점.
 - 입력: 사용자 ID, 비밀번호.
 - 출력: `LoginResult`.
@@ -140,7 +140,7 @@
 - 역할: 로그인 API 클라이언트 생성자.
 - 주요 동작: URL/타임아웃을 안전한 값으로 초기화.
 
-### LoginWithIdPasswordAsync(string id, string password)
+### LoginWithIdPasswordAsync(string userId, string password)
 - 역할: ID/PW 로그인 API 요청 실행.
 - 출력: `LoginResult`.
 - 주요 동작:
