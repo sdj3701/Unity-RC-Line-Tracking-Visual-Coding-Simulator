@@ -65313,6 +65313,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1103646194}
   - component: {fileID: 1103646193}
+  - component: {fileID: 1103646195}
   - component: {fileID: 1103646192}
   - component: {fileID: 1103646191}
   - component: {fileID: 1103646190}
@@ -65479,6 +65480,23 @@ Transform:
   m_Father: {fileID: 0}
   m_RootOrder: 4
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1103646195
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1103646187}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2512c1259ed6a4b468da512a0ad7ee9a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  targetRenderer: {fileID: 930733189}
+  cubeChildName: Cube
+  includeInactive: 1
+  applyOnStart: 0
+  initialColor: {r: 1, g: 1, b: 1, a: 1}
 --- !u!1 &1105370341
 GameObject:
   m_ObjectHideFlags: 0
@@ -108152,9 +108170,9 @@ MonoBehaviour:
   renderMainPath: 1
   renderBranchPath: 1
   mainPathColor: {r: 0, g: 0, b: 0, a: 1}
-  branchPathColor: {r: 0.55, g: 0.55, b: 0.55, a: 1}
+  branchPathColor: {r: 1, g: 1, b: 1, a: 0}
   highlightUnnecessaryPathsInGreen: 1
-  unnecessaryPathColor: {r: 0, g: 1, b: 0, a: 1}
+  unnecessaryPathColor: {r: 0, g: 1, b: 0.10499692, a: 1}
   createGroundPlane: 1
   groundThickness: 0.02
   groundPadding: 2
@@ -108241,9 +108259,9 @@ MonoBehaviour:
   rotateRuntimeTexture180: 1
   textureFilterMode: 1
   textureWrapMode: 1
-  backgroundColor: {r: 1, g: 1, b: 1, a: 1}
+  backgroundColor: {r: 1, g: 1, b: 1, a: 0}
   mainPathColor: {r: 0, g: 0, b: 0, a: 1}
-  branchPathColor: {r: 0.55, g: 0.55, b: 0.55, a: 1}
+  branchPathColor: {r: 1, g: 1, b: 1, a: 0}
   runtimeTextureFolderName: MiroRuntimeMaps
   runtimeTexturePrefix: miro_map_
   logBaking: 1
