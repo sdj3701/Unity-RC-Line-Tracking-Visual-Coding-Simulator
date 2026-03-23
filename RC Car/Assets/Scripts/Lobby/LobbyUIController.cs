@@ -1,5 +1,6 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 public class LobbyUIController : MonoBehaviour
@@ -7,10 +8,17 @@ public class LobbyUIController : MonoBehaviour
     [Tooltip("Room Info UI")]
     [SerializeField] private GameObject _roomInfoUI;
     [SerializeField] private TMP_InputField _roomNameInputField;
+    [SerializeField] private TMP_InputField _maxUserCountInputField;
     [SerializeField] private Button _createRoomButton;
     [SerializeField] private Button _closeRoomInfoButton;
     [SerializeField] private TMP_Text _statusText;
     [SerializeField] private LobbyRoomFlow _roomFlow;
+    [SerializeField] private ChatRoomManager _chatRoomManager;
+
+    [Header("Scene Transition (ChatRoom Path)")]
+    [SerializeField] private bool _moveToNetworkSceneOnChatRoomReady = true;
+    [SerializeField] private string _targetSceneName = "03_NetworkCarTest";
+    [SerializeField] private bool _storeRoomContext = true;
 
     /// <summary>
     /// 로비 UI의 초기 표시 상태를 설정한다.
@@ -48,6 +56,14 @@ public class LobbyUIController : MonoBehaviour
             _roomFlow.OnRoomCreateFailed += HandleRoomCreateFailed;
             _roomFlow.OnRoomCreateCanceled += HandleRoomCreateCanceled;
         }
+
+        if (_chatRoomManager != null)
+        {
+            _chatRoomManager.OnCreateStarted += HandleChatRoomCreateStarted;
+            _chatRoomManager.OnCreateSucceeded += HandleChatRoomCreateSucceeded;
+            _chatRoomManager.OnCreateFailed += HandleChatRoomCreateFailed;
+            _chatRoomManager.OnCreateCanceled += HandleChatRoomCreateCanceled;
+        }
     }
 
     /// <summary>
@@ -69,6 +85,14 @@ public class LobbyUIController : MonoBehaviour
             _roomFlow.OnRoomReady -= HandleRoomReady;
             _roomFlow.OnRoomCreateFailed -= HandleRoomCreateFailed;
             _roomFlow.OnRoomCreateCanceled -= HandleRoomCreateCanceled;
+        }
+
+        if (_chatRoomManager != null)
+        {
+            _chatRoomManager.OnCreateStarted -= HandleChatRoomCreateStarted;
+            _chatRoomManager.OnCreateSucceeded -= HandleChatRoomCreateSucceeded;
+            _chatRoomManager.OnCreateFailed -= HandleChatRoomCreateFailed;
+            _chatRoomManager.OnCreateCanceled -= HandleChatRoomCreateCanceled;
         }
     }
 
@@ -92,6 +116,9 @@ public class LobbyUIController : MonoBehaviour
         if (_roomFlow != null && _roomFlow.IsBusy)
             _roomFlow.CancelCurrentRequest();
 
+        if (_chatRoomManager != null && _chatRoomManager.IsBusy)
+            _chatRoomManager.CancelCurrentRequest();
+
         SetRoomInfoVisible(false);
         SetStatusText(string.Empty);
         SetCreateButtonInteractable(true);
@@ -103,13 +130,22 @@ public class LobbyUIController : MonoBehaviour
     /// </summary>
     public void OnCreateRoomButtonClicked()
     {
-        if (_roomFlow == null)
+        if (!TryReadCreateInputs(out string roomName, out string maxUserCountRaw))
+            return;
+
+        if (_chatRoomManager != null)
         {
-            SetStatusText("LobbyRoomFlow 참조가 없습니다.");
+            _chatRoomManager.CreateRoom(roomName, maxUserCountRaw);
             return;
         }
 
-        string roomName = _roomNameInputField != null ? _roomNameInputField.text : string.Empty;
+        if (_roomFlow == null)
+        {
+            SetStatusText("ChatRoomManager 또는 LobbyRoomFlow 참조가 없습니다.");
+            return;
+        }
+
+        // 레거시 룸 플로우 fallback. maxUserCount 입력 검증은 위에서 이미 수행한다.
         _roomFlow.CreateRoom(roomName);
     }
 
@@ -175,6 +211,68 @@ public class LobbyUIController : MonoBehaviour
     }
 
     /// <summary>
+    /// ChatRoomManager 생성 시작 이벤트 수신 시 UI를 로딩 상태로 전환한다.
+    /// </summary>
+    private void HandleChatRoomCreateStarted(string roomTitle, int maxUserCount)
+    {
+        SetCreateButtonInteractable(false);
+        SetStatusText($"\"{roomTitle}\" 채팅방 생성 중... (최대 {maxUserCount}명)");
+    }
+
+    /// <summary>
+    /// ChatRoomManager 생성 성공 이벤트 수신 시 상태 메시지를 표시한다.
+    /// </summary>
+    private void HandleChatRoomCreateSucceeded(ChatRoomCreateInfo roomInfo)
+    {
+        SetCreateButtonInteractable(!_moveToNetworkSceneOnChatRoomReady);
+
+        string roomId = roomInfo != null ? roomInfo.RoomId : string.Empty;
+        string title = roomInfo != null ? roomInfo.Title : string.Empty;
+        string ownerUserId = roomInfo != null ? roomInfo.OwnerUserId : string.Empty;
+        string createdAtUtc = roomInfo != null ? roomInfo.CreatedAtUtc : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(title))
+            SetStatusText($"채팅방 생성 완료 (ID: {roomId})");
+        else
+            SetStatusText($"\"{title}\" 채팅방 생성 완료 (ID: {roomId})");
+
+        if (!_moveToNetworkSceneOnChatRoomReady)
+            return;
+
+        if (_storeRoomContext)
+        {
+            RoomSessionContext.Set(new RoomInfo
+            {
+                RoomId = roomId,
+                RoomName = title,
+                HostUserId = ownerUserId,
+                CreatedAtUtc = createdAtUtc
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(_targetSceneName))
+            SceneManager.LoadScene(_targetSceneName);
+    }
+
+    /// <summary>
+    /// ChatRoomManager 생성 실패 이벤트 수신 시 사용자 메시지를 표시한다.
+    /// </summary>
+    private void HandleChatRoomCreateFailed(string userMessage)
+    {
+        SetCreateButtonInteractable(true);
+        SetStatusText(string.IsNullOrWhiteSpace(userMessage) ? "채팅방 생성에 실패했습니다." : userMessage);
+    }
+
+    /// <summary>
+    /// ChatRoomManager 취소 이벤트 수신 시 UI를 대기 상태로 복구한다.
+    /// </summary>
+    private void HandleChatRoomCreateCanceled()
+    {
+        SetCreateButtonInteractable(true);
+        SetStatusText("채팅방 생성 요청이 취소되었습니다.");
+    }
+
+    /// <summary>
     /// 생성 버튼의 상호작용 가능 여부를 일관되게 제어한다.
     /// null 체크를 내부에서 처리해 호출부를 단순화한다.
     /// </summary>
@@ -183,6 +281,33 @@ public class LobbyUIController : MonoBehaviour
     {
         if (_createRoomButton != null)
             _createRoomButton.interactable = interactable;
+    }
+
+    /// <summary>
+    /// 생성에 필요한 입력값(방 이름, 최대 인원)을 읽고 검증한다.
+    /// 둘 중 하나라도 비어 있으면 false를 반환한다.
+    /// </summary>
+    private bool TryReadCreateInputs(out string roomName, out string maxUserCountRaw)
+    {
+        roomName = _roomNameInputField != null ? _roomNameInputField.text : string.Empty;
+        maxUserCountRaw = _maxUserCountInputField != null ? _maxUserCountInputField.text : string.Empty;
+
+        roomName = string.IsNullOrWhiteSpace(roomName) ? string.Empty : roomName.Trim();
+        maxUserCountRaw = string.IsNullOrWhiteSpace(maxUserCountRaw) ? string.Empty : maxUserCountRaw.Trim();
+
+        if (string.IsNullOrWhiteSpace(roomName))
+        {
+            SetStatusText("방 이름을 입력해 주세요.");
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(maxUserCountRaw))
+        {
+            SetStatusText("최대 인원을 입력해 주세요.");
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
