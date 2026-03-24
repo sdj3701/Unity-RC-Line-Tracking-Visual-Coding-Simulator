@@ -34,7 +34,7 @@ namespace Auth
         [SerializeField] private string _gameSceneName = "01_Lobby";
 
         [Header("Runtime")]
-        [SerializeField] private bool _useAutoLogin = true;
+        [SerializeField] private bool _useAutoLogin = false;
         [SerializeField] private bool _useDeepLinkLogin = true;
 
         [Header("Editor Test")]

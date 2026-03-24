@@ -13,6 +13,9 @@ public class But_RoomList : MonoBehaviour
     [SerializeField] private Transform _roomListContentRoot;
     [SerializeField] private Toggle _roomTogglePrefab;
     [SerializeField] private ToggleGroup _toggleGroup;
+    [SerializeField] private TMP_InputField _requestTokenInput;
+    [SerializeField] private bool _useJoinRequestOnConfirm = true;
+    [SerializeField] private bool _closePanelOnJoinRequestSubmit = true;
     [SerializeField] private bool _moveToSceneOnConfirm = true;
     [SerializeField] private string _targetSceneName = "03_NetworkCarTest";
     [SerializeField] private bool _bindOnEnable = true;
@@ -62,7 +65,6 @@ public class But_RoomList : MonoBehaviour
 
         if (_but_Confirm != null)
             _but_Confirm.onClick.RemoveListener(OnClickConfirm);
-
         UnbindManagerEvents();
     }
 
@@ -92,6 +94,24 @@ public class But_RoomList : MonoBehaviour
         {
             if (_debugLog)
                 Debug.LogWarning("[But_RoomList] No room is selected.");
+            return;
+        }
+
+        if (_useJoinRequestOnConfirm)
+        {
+            TryBindManagerEvents();
+            if (_boundManager == null)
+            {
+                if (_debugLog)
+                    Debug.LogWarning("[But_RoomList] ChatRoomManager.Instance is null.");
+                return;
+            }
+
+            _boundManager.RequestJoinRequest(SelectedRoomId, ResolveTokenOverride());
+
+            if (_closePanelOnJoinRequestSubmit && _roomListPanel != null)
+                _roomListPanel.SetActive(false);
+
             return;
         }
 
@@ -127,6 +147,8 @@ public class But_RoomList : MonoBehaviour
 
         _boundManager = manager;
         _boundManager.OnListSucceeded += HandleRoomListSucceeded;
+        _boundManager.OnJoinRequestSucceeded += HandleJoinRequestSucceeded;
+        _boundManager.OnJoinRequestFailed += HandleJoinRequestFailed;
     }
 
     private void UnbindManagerEvents()
@@ -135,6 +157,8 @@ public class But_RoomList : MonoBehaviour
             return;
 
         _boundManager.OnListSucceeded -= HandleRoomListSucceeded;
+        _boundManager.OnJoinRequestSucceeded -= HandleJoinRequestSucceeded;
+        _boundManager.OnJoinRequestFailed -= HandleJoinRequestFailed;
         _boundManager = null;
     }
 
@@ -225,6 +249,34 @@ public class But_RoomList : MonoBehaviour
         _spawnedToggles.Clear();
         _roomMap.Clear();
         SelectedRoomId = null;
+    }
+
+    private string ResolveTokenOverride()
+    {
+        if (_requestTokenInput == null)
+            return null;
+
+        string token = _requestTokenInput.text;
+        return string.IsNullOrWhiteSpace(token) ? null : token.Trim();
+    }
+
+    private void HandleJoinRequestSucceeded(ChatRoomJoinRequestInfo info)
+    {
+        if (!_debugLog)
+            return;
+
+        string roomId = info != null ? info.RoomId : string.Empty;
+        string requestId = info != null ? info.RequestId : string.Empty;
+        string status = info != null ? info.Status : string.Empty;
+        Debug.Log($"[But_RoomList] Join request sent. roomId={roomId}, requestId={requestId}, status={status}");
+    }
+
+    private void HandleJoinRequestFailed(string message)
+    {
+        if (!_debugLog)
+            return;
+
+        Debug.LogWarning($"[But_RoomList] Join request failed: {message}");
     }
 
     private static void SetToggleLabel(Toggle toggle, string label)

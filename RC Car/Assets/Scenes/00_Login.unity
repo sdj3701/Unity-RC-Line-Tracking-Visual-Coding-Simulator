@@ -1264,6 +1264,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 83746c9fb71cd25409ff328914455a8a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  _enableDeepLinkLogin: 0
 --- !u!114 &1831112858
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1276,12 +1277,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5d30cf1bca0988b459cec29ac22d38dd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _serverBaseUrl: http://ioteacher.com/api/users/me-by-token
-  _validateEndpoint: /api/auth/validate
+  _loginEndpoint: http://ioteacher.com/api/auth/login
+  _tokenValidationUrl: http://ioteacher.com/api/users/me-by-token
+  _requestTimeoutSeconds: 15
   _loginSceneName: 00_Login
   _gameSceneName: 01_Lobby
+  _useAutoLogin: 0
+  _useDeepLinkLogin: 1
   _useTestTokenInEditor: 1
   _testToken: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZGozNzAxIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3NzI2ODkwMjUsImV4cCI6MTc3MzI5MzgyNX0.jhiRYNkcYoaTkHGMuUp9SbTs5OS9JLiVt7SWhmmkofU
+  _debugLogLoginPayload: 1
 --- !u!4 &1831112859
 Transform:
   m_ObjectHideFlags: 0
