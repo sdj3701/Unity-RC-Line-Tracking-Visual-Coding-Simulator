@@ -328,3 +328,27 @@ Unity 영향:
 - 전달된 스키마 기준으로 채팅의 핵심 도메인(방/멤버/메시지/로그)은 충분히 구성되어 있다.
 - 현재 Unity 구조에서 가장 중요한 선결 과제는 "게임 룸과 채팅 룸 식별자 관계"와 "실시간 수신 방식" 확정이다.
 - 위 두 항목이 고정되면, Lobby -> `03_NetworkCarTest` 전환 흐름에 채팅을 안전하게 붙일 수 있다.
+
+## 15) 현재까지 구현 체크 (2026-03-25)
+
+### 15-1. 완료
+
+- [x] `ChatRoomManager` 채팅방 생성 API 연동 (`POST /api/chat/rooms`)
+- [x] `ChatRoomManager` 채팅방 목록 조회 API 연동 (`GET /api/chat/rooms`)
+- [x] `ChatRoomManager` 입장 요청 생성 API 연동 (`POST /api/chat/rooms/{roomId}/join-request`)
+- [x] `ChatRoomManager` 입장 요청 목록 조회 API 연동 (`GET /api/chat/rooms/{roomId}/join-requests`)
+- [x] `ChatRoomManager` 호스트 수락/거절 API 연동  
+  (`POST /api/chat/join-requests/{requestId}/decision`, `Authorization: Bearer <token>`, body: `decision`, `reviewComment`)
+- [x] `ChatRoomManager` 클라이언트 본인 입장요청 상태 조회 API 연동  
+  (`GET /api/chat/my/join-request/{requestId}`, `Authorization: Bearer <token>`)
+- [x] `HostJoinRequestMonitorGUI` 폴링 기반 입장 요청 모니터링 UI 구현
+- [x] `HostJoinRequestMonitorGUI`에서 요청별 수락/거절 버튼 및 결과 상태 반영
+- [x] `But_RoomList`에서 입장요청 승인 대기 폴링 후 `APPROVED` 시 씬 전환 처리
+- [x] `03_NetworkCarTest` 진입 시 Host 모니터 GUI 자동 부트스트랩
+
+### 15-2. 미완료
+
+- [ ] 메시지 API 연동 (`GET/POST/DELETE /messages`)
+- [ ] 실시간 수신(WebSocket/SSE) 또는 폴링 표준화 확정
+- [ ] `ChatSessionContext` 도입 여부 및 게임 룸 ID/채팅 룸 ID 매핑 계약 확정
+- [ ] 채팅 전용 QA 시나리오 실행 및 릴리즈 체크리스트 완료

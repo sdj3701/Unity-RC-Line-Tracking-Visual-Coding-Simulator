@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Auth;
@@ -16,7 +17,8 @@ public class ChatRoomManager : MonoBehaviour
     [SerializeField] private string _listRoomEndpoint = "http://ioteacher.com/api/chat/rooms";
     [SerializeField] private string _joinRequestEndpointTemplate = "http://ioteacher.com/api/chat/rooms/{roomId}/join-request";
     [SerializeField] private string _joinRequestsEndpointTemplate = "http://ioteacher.com/api/chat/rooms/{roomId}/join-requests";
-    [SerializeField] private string _joinRequestDecisionEndpointTemplate = "http://ioteacher.com/api/chat/rooms/{roomId}/join-requests/{requestId}";
+    [SerializeField] private string _joinRequestDecisionEndpointTemplate = "http://ioteacher.com/api/chat/join-requests/{requestId}/decision";
+    [SerializeField] private string _myJoinRequestStatusEndpointTemplate = "http://ioteacher.com/api/chat/my/join-request/{requestId}";
 
     [Header("Timeout")]
     [SerializeField] private int _requestTimeoutSeconds = 15;
@@ -44,6 +46,10 @@ public class ChatRoomManager : MonoBehaviour
     public event Action<ChatRoomJoinRequestDecisionInfo> OnJoinRequestDecisionSucceeded;
     public event Action<string, string, bool, string> OnJoinRequestDecisionFailed;
     public event Action<string, string, bool> OnJoinRequestDecisionCanceled;
+    public event Action<string> OnMyJoinRequestStatusFetchStarted;
+    public event Action<ChatRoomJoinRequestInfo> OnMyJoinRequestStatusFetchSucceeded;
+    public event Action<string, string> OnMyJoinRequestStatusFetchFailed;
+    public event Action<string> OnMyJoinRequestStatusFetchCanceled;
 
     public bool IsBusy { get; private set; }
 
@@ -114,6 +120,16 @@ public class ChatRoomManager : MonoBehaviour
         string accessTokenOverride = null)
     {
         _ = DecideJoinRequestAsync(roomIdRaw, requestIdRaw, approve, accessTokenOverride);
+    }
+
+    /// <summary>
+    /// Client 본인의 입장 요청 상태를 조회한다.
+    /// </summary>
+    /// <param name="requestIdRaw">입장 요청 ID</param>
+    /// <param name="accessTokenOverride">옵션: 기본 토큰 대신 사용할 Bearer 토큰</param>
+    public void FetchMyJoinRequestStatus(string requestIdRaw, string accessTokenOverride = null)
+    {
+        _ = FetchMyJoinRequestStatusAsync(requestIdRaw, accessTokenOverride);
     }
 
     /// <summary>
@@ -483,22 +499,21 @@ public class ChatRoomManager : MonoBehaviour
             return;
         }
 
-        string listEndpoint = BuildRoomScopedEndpoint(_joinRequestsEndpointTemplate, roomId, "join-requests");
-        if (string.IsNullOrWhiteSpace(listEndpoint))
-        {
-            EmitJoinRequestDecisionFailure(roomId, requestId, approve, "입장 요청 처리 API URL이 비어 있습니다.");
-            return;
-        }
-
         string decisionEndpoint = BuildJoinRequestDecisionEndpoint(
             _joinRequestDecisionEndpointTemplate,
-            listEndpoint,
             roomId,
             requestId);
 
         if (string.IsNullOrWhiteSpace(decisionEndpoint))
         {
             EmitJoinRequestDecisionFailure(roomId, requestId, approve, "입장 요청 처리 API URL이 비어 있습니다.");
+            return;
+        }
+
+        string accessToken = ResolveAccessToken(accessTokenOverride);
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            EmitJoinRequestDecisionFailure(roomId, requestId, approve, "입장 요청 처리에는 로그인 토큰이 필요합니다.");
             return;
         }
 
@@ -509,92 +524,55 @@ public class ChatRoomManager : MonoBehaviour
         {
             OnJoinRequestDecisionStarted?.Invoke(roomId, requestId, approve);
 
-            string accessToken = ResolveAccessToken(accessTokenOverride);
             string status = approve ? "APPROVED" : "REJECTED";
 
             var payload = new JoinRequestDecisionRequestPayload
             {
-                requestId = requestId,
-                request_id = requestId,
-                roomId = roomId,
-                room_id = roomId,
-                status = status,
-                decision = approve ? "APPROVE" : "REJECT",
-                action = approve ? "accept" : "reject",
-                approve = approve,
-                approved = approve
+                decision = status,
+                reviewComment = approve ? "승인합니다." : "거절합니다."
             };
 
             string requestJson = JsonUtility.ToJson(payload);
-            string[] endpoints = { decisionEndpoint, listEndpoint };
-            string[] methods = { "PATCH", UnityWebRequest.kHttpVerbPOST };
+            JoinRequestDecisionAttemptResult attempt = await SendJoinRequestDecisionAttemptAsync(
+                decisionEndpoint,
+                UnityWebRequest.kHttpVerbPOST,
+                requestJson,
+                accessToken,
+                _requestCancellation.Token);
 
-            string lastError = "방 입장 요청 처리에 실패했습니다.";
-            long lastResponseCode = 0;
-            string lastBody = string.Empty;
-            bool shouldStop = false;
-
-            for (int endpointIndex = 0; endpointIndex < endpoints.Length && !shouldStop; endpointIndex++)
+            if (attempt.IsCanceled)
             {
-                string endpoint = endpoints[endpointIndex];
-                for (int methodIndex = 0; methodIndex < methods.Length; methodIndex++)
-                {
-                    string method = methods[methodIndex];
-                    JoinRequestDecisionAttemptResult attempt = await SendJoinRequestDecisionAttemptAsync(
-                        endpoint,
-                        method,
-                        requestJson,
-                        accessToken,
-                        _requestCancellation.Token);
-
-                    if (attempt.IsCanceled)
-                    {
-                        OnJoinRequestDecisionCanceled?.Invoke(roomId, requestId, approve);
-                        Log($"Join request decision canceled. roomId={roomId}, requestId={requestId}, approve={approve}");
-                        return;
-                    }
-
-                    lastError = string.IsNullOrWhiteSpace(attempt.ErrorMessage)
-                        ? lastError
-                        : attempt.ErrorMessage;
-                    lastResponseCode = attempt.ResponseCode;
-                    lastBody = attempt.ResponseBody;
-
-                    if (attempt.IsSuccess)
-                    {
-                        var result = new ChatRoomJoinRequestDecisionInfo
-                        {
-                            RoomId = roomId,
-                            RequestId = requestId,
-                            Approved = approve,
-                            Status = status,
-                            ResponseCode = attempt.ResponseCode,
-                            ResponseBody = attempt.ResponseBody
-                        };
-
-                        OnJoinRequestDecisionSucceeded?.Invoke(result);
-                        Log(
-                            $"Join request decision succeeded. roomId={roomId}, requestId={requestId}, approve={approve}, method={method}, endpoint={endpoint}, code={attempt.ResponseCode}");
-                        return;
-                    }
-
-                    Log(
-                        $"Join request decision attempt failed. roomId={roomId}, requestId={requestId}, approve={approve}, method={method}, endpoint={endpoint}, code={attempt.ResponseCode}, error={attempt.ErrorMessage}, body={attempt.ResponseBody}");
-
-                    if (attempt.ResponseCode == 401 || attempt.ResponseCode == 403)
-                    {
-                        shouldStop = true;
-                        break;
-                    }
-                }
+                OnJoinRequestDecisionCanceled?.Invoke(roomId, requestId, approve);
+                Log($"Join request decision canceled. roomId={roomId}, requestId={requestId}, approve={approve}");
+                return;
             }
 
-            if (lastResponseCode > 0)
-                lastError = FirstNonEmpty(lastError, $"HTTP {lastResponseCode}", "방 입장 요청 처리에 실패했습니다.");
+            if (attempt.IsSuccess)
+            {
+                var result = new ChatRoomJoinRequestDecisionInfo
+                {
+                    RoomId = roomId,
+                    RequestId = requestId,
+                    Approved = approve,
+                    Status = status,
+                    ResponseCode = attempt.ResponseCode,
+                    ResponseBody = attempt.ResponseBody
+                };
+
+                OnJoinRequestDecisionSucceeded?.Invoke(result);
+                Log(
+                    $"Join request decision succeeded. roomId={roomId}, requestId={requestId}, approve={approve}, endpoint={decisionEndpoint}, code={attempt.ResponseCode}");
+                return;
+            }
+
+            string lastError = FirstNonEmpty(
+                attempt.ErrorMessage,
+                attempt.ResponseCode > 0 ? $"HTTP {attempt.ResponseCode}" : null,
+                "방 입장 요청 처리에 실패했습니다.");
 
             EmitJoinRequestDecisionFailure(roomId, requestId, approve, lastError);
             Log(
-                $"Join request decision failed after all attempts. roomId={roomId}, requestId={requestId}, approve={approve}, lastCode={lastResponseCode}, lastBody={lastBody}");
+                $"Join request decision failed. roomId={roomId}, requestId={requestId}, approve={approve}, endpoint={decisionEndpoint}, code={attempt.ResponseCode}, body={attempt.ResponseBody}");
         }
         catch (OperationCanceledException)
         {
@@ -604,6 +582,83 @@ public class ChatRoomManager : MonoBehaviour
         catch (Exception e)
         {
             EmitJoinRequestDecisionFailure(roomId, requestId, approve, $"입장 요청 처리 중 예외가 발생했습니다. ({e.Message})");
+        }
+        finally
+        {
+            IsBusy = false;
+            _requestCancellation?.Dispose();
+            _requestCancellation = null;
+        }
+    }
+
+    private async Task FetchMyJoinRequestStatusAsync(string requestIdRaw, string accessTokenOverride)
+    {
+        if (IsBusy)
+        {
+            EmitMyJoinRequestStatusFetchFailure(requestIdRaw, "이미 다른 채팅 요청을 처리 중입니다.");
+            return;
+        }
+
+        string requestId = string.IsNullOrWhiteSpace(requestIdRaw) ? string.Empty : requestIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(requestId))
+        {
+            EmitMyJoinRequestStatusFetchFailure(requestIdRaw, "입장 요청 상태 조회 대상 요청 ID가 비어 있습니다.");
+            return;
+        }
+
+        string endpoint = BuildRequestScopedEndpoint(_myJoinRequestStatusEndpointTemplate, requestId);
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            EmitMyJoinRequestStatusFetchFailure(requestId, "입장 요청 상태 조회 API URL이 비어 있습니다.");
+            return;
+        }
+
+        string accessToken = ResolveAccessToken(accessTokenOverride);
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            EmitMyJoinRequestStatusFetchFailure(requestId, "입장 요청 상태 조회에는 로그인 토큰이 필요합니다.");
+            return;
+        }
+
+        IsBusy = true;
+        _requestCancellation = new CancellationTokenSource();
+
+        try
+        {
+            OnMyJoinRequestStatusFetchStarted?.Invoke(requestId);
+
+            using (var request = new UnityWebRequest(endpoint, UnityWebRequest.kHttpVerbGET))
+            {
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.timeout = Mathf.Max(1, _requestTimeoutSeconds);
+                request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+
+                bool isCanceled = await SendRequestAsync(request, _requestCancellation.Token);
+                if (isCanceled)
+                {
+                    OnMyJoinRequestStatusFetchCanceled?.Invoke(requestId);
+                    Log($"My join request status fetch canceled. requestId={requestId}");
+                    return;
+                }
+
+                ChatRoomJoinRequestInfo info = ParseMyJoinRequestStatusResponse(request, requestId);
+                if (info != null)
+                {
+                    OnMyJoinRequestStatusFetchSucceeded?.Invoke(info);
+                    Log($"My join request status fetched. requestId={info.RequestId}, roomId={info.RoomId}, status={info.Status}");
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            OnMyJoinRequestStatusFetchCanceled?.Invoke(requestId);
+            Log($"My join request status fetch canceled by token. requestId={requestId}");
+        }
+        catch (Exception e)
+        {
+            EmitMyJoinRequestStatusFetchFailure(requestId, $"입장 요청 상태 조회 중 예외가 발생했습니다. ({e.Message})");
         }
         finally
         {
@@ -928,22 +983,72 @@ public class ChatRoomManager : MonoBehaviour
             return null;
         }
 
-        JoinRequestPayload payload = FirstNonEmptyJoinRequestPayload(
-            response != null ? response.joinRequest : null,
-            response != null ? response.request : null,
-            response != null ? response.data : null);
+        ChatRoomJoinRequestInfo info = BuildJoinRequestInfoFromSingleResponse(
+            body,
+            response,
+            requestedRoomId,
+            fallbackRequestId: null);
 
-        ChatRoomJoinRequestInfo info = ToJoinRequestInfo(payload, requestedRoomId);
         if (info != null)
             return info;
 
         return new ChatRoomJoinRequestInfo
         {
-            RequestId = response != null ? FirstNonEmpty(response.requestId, response.request_id) : null,
-            RoomId = response != null ? FirstNonEmpty(response.roomId, response.room_id, requestedRoomId) : requestedRoomId,
-            RequestUserId = response != null ? FirstNonEmpty(response.userId, response.user_id) : string.Empty,
-            Status = response != null ? FirstNonEmpty(response.status, "REQUESTED") : "REQUESTED",
-            CreatedAtUtc = response != null ? FirstNonEmpty(response.createdAt, response.created_at, string.Empty) : string.Empty
+            RequestId = null,
+            RoomId = requestedRoomId,
+            RequestUserId = string.Empty,
+            Status = "REQUESTED",
+            CreatedAtUtc = string.Empty
+        };
+    }
+
+    private ChatRoomJoinRequestInfo ParseMyJoinRequestStatusResponse(UnityWebRequest request, string requestedRequestId)
+    {
+        if (request == null)
+        {
+            EmitMyJoinRequestStatusFetchFailure(requestedRequestId, "요청 객체가 없습니다.");
+            return null;
+        }
+
+        if (request.result == UnityWebRequest.Result.ConnectionError ||
+            request.result == UnityWebRequest.Result.DataProcessingError)
+        {
+            EmitMyJoinRequestStatusFetchFailure(requestedRequestId, "네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+            return null;
+        }
+
+        string body = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+        JoinRequestSingleResponse response = TryParseJson<JoinRequestSingleResponse>(body);
+        bool httpSuccess = request.responseCode >= 200 && request.responseCode < 300;
+
+        if (!httpSuccess || HasExplicitFailureFlag(body))
+        {
+            string errorMessage = FirstNonEmpty(
+                response != null ? response.message : null,
+                response != null ? response.error : null,
+                $"HTTP {request.responseCode}",
+                "입장 요청 상태 조회에 실패했습니다.");
+
+            EmitMyJoinRequestStatusFetchFailure(requestedRequestId, errorMessage);
+            return null;
+        }
+
+        ChatRoomJoinRequestInfo info = BuildJoinRequestInfoFromSingleResponse(
+            body,
+            response,
+            fallbackRoomId: string.Empty,
+            fallbackRequestId: requestedRequestId);
+
+        if (info != null)
+            return info;
+
+        return new ChatRoomJoinRequestInfo
+        {
+            RequestId = requestedRequestId,
+            RoomId = string.Empty,
+            RequestUserId = string.Empty,
+            Status = "REQUESTED",
+            CreatedAtUtc = string.Empty
         };
     }
 
@@ -1052,7 +1157,13 @@ public class ChatRoomManager : MonoBehaviour
 
         string requestId = FirstNonEmpty(payload.requestId, payload.request_id, payload.id);
         string roomId = FirstNonEmpty(payload.roomId, payload.room_id, fallbackRoomId);
-        string requestUserId = FirstNonEmpty(payload.userId, payload.user_id, payload.requestUserId, payload.request_user_id);
+        string requestUserId = FirstNonEmpty(
+            payload.requesterUserId,
+            payload.requester_user_id,
+            payload.requestUserId,
+            payload.request_user_id,
+            payload.userId,
+            payload.user_id);
 
         if (string.IsNullOrWhiteSpace(requestId) &&
             string.IsNullOrWhiteSpace(roomId) &&
@@ -1068,6 +1179,83 @@ public class ChatRoomManager : MonoBehaviour
             RequestUserId = requestUserId,
             Status = FirstNonEmpty(payload.status, "REQUESTED"),
             CreatedAtUtc = FirstNonEmpty(payload.createdAt, payload.created_at, string.Empty)
+        };
+    }
+
+    private static ChatRoomJoinRequestInfo BuildJoinRequestInfoFromSingleResponse(
+        string body,
+        JoinRequestSingleResponse response,
+        string fallbackRoomId,
+        string fallbackRequestId)
+    {
+        JoinRequestPayload payload = FirstNonEmptyJoinRequestPayload(
+            response != null ? response.joinRequest : null,
+            response != null ? response.request : null,
+            response != null ? response.data : null);
+
+        ChatRoomJoinRequestInfo payloadInfo = ToJoinRequestInfo(payload, fallbackRoomId);
+
+        string requestId = FirstNonEmpty(
+            payloadInfo != null ? payloadInfo.RequestId : null,
+            response != null ? FirstNonEmpty(response.requestId, response.request_id) : null,
+            ExtractJsonScalarAsString(body, "requestId"),
+            ExtractJsonScalarAsString(body, "request_id"),
+            ExtractJsonScalarAsString(body, "id"),
+            fallbackRequestId);
+
+        string roomId = FirstNonEmpty(
+            payloadInfo != null ? payloadInfo.RoomId : null,
+            response != null ? FirstNonEmpty(response.roomId, response.room_id) : null,
+            ExtractJsonScalarAsString(body, "roomId"),
+            ExtractJsonScalarAsString(body, "room_id"),
+            fallbackRoomId);
+
+        string requestUserId = FirstNonEmpty(
+            payloadInfo != null ? payloadInfo.RequestUserId : null,
+            response != null ? FirstNonEmpty(
+                response.requesterUserId,
+                response.requester_user_id,
+                response.requestUserId,
+                response.request_user_id,
+                response.userId,
+                response.user_id) : null,
+            ExtractJsonScalarAsString(body, "requesterUserId"),
+            ExtractJsonScalarAsString(body, "requester_user_id"),
+            ExtractJsonScalarAsString(body, "requestUserId"),
+            ExtractJsonScalarAsString(body, "request_user_id"),
+            ExtractJsonScalarAsString(body, "userId"),
+            ExtractJsonScalarAsString(body, "user_id"),
+            string.Empty);
+
+        string status = FirstNonEmpty(
+            payloadInfo != null ? payloadInfo.Status : null,
+            response != null ? response.status : null,
+            ExtractJsonScalarAsString(body, "status"),
+            "REQUESTED");
+
+        string createdAt = FirstNonEmpty(
+            payloadInfo != null ? payloadInfo.CreatedAtUtc : null,
+            response != null ? FirstNonEmpty(response.createdAt, response.created_at) : null,
+            ExtractJsonScalarAsString(body, "createdAt"),
+            ExtractJsonScalarAsString(body, "created_at"),
+            string.Empty);
+
+        if (string.IsNullOrWhiteSpace(requestId) &&
+            string.IsNullOrWhiteSpace(roomId) &&
+            string.IsNullOrWhiteSpace(requestUserId) &&
+            string.IsNullOrWhiteSpace(status) &&
+            string.IsNullOrWhiteSpace(createdAt))
+        {
+            return null;
+        }
+
+        return new ChatRoomJoinRequestInfo
+        {
+            RequestId = requestId,
+            RoomId = roomId,
+            RequestUserId = requestUserId,
+            Status = status,
+            CreatedAtUtc = createdAt
         };
     }
 
@@ -1141,6 +1329,43 @@ public class ChatRoomManager : MonoBehaviour
         }
     }
 
+    private static string ExtractJsonScalarAsString(string json, string key)
+    {
+        if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(key))
+            return null;
+
+        string pattern = $"\"{Regex.Escape(key)}\"\\s*:\\s*(\"(?<text>(?:\\\\.|[^\"\\\\])*)\"|(?<number>-?\\d+(?:\\.\\d+)?)|(?<bool>true|false)|null)";
+        Match match = Regex.Match(json, pattern, RegexOptions.IgnoreCase);
+        if (!match.Success)
+            return null;
+
+        if (match.Groups["text"].Success)
+            return UnescapeJsonString(match.Groups["text"].Value);
+
+        if (match.Groups["number"].Success)
+            return match.Groups["number"].Value;
+
+        if (match.Groups["bool"].Success)
+            return match.Groups["bool"].Value;
+
+        return null;
+    }
+
+    private static string UnescapeJsonString(string escaped)
+    {
+        if (escaped == null)
+            return null;
+
+        try
+        {
+            return Regex.Unescape(escaped);
+        }
+        catch (Exception)
+        {
+            return escaped;
+        }
+    }
+
     private static string BuildRoomScopedEndpoint(string endpointTemplate, string roomId, string fallbackSuffix)
     {
         if (string.IsNullOrWhiteSpace(roomId))
@@ -1164,46 +1389,54 @@ public class ChatRoomManager : MonoBehaviour
         return $"{template.TrimEnd('/')}/{encodedRoomId}{suffix}";
     }
 
+    private static string BuildRequestScopedEndpoint(string endpointTemplate, string requestId)
+    {
+        if (string.IsNullOrWhiteSpace(requestId))
+            return string.Empty;
+
+        if (string.IsNullOrWhiteSpace(endpointTemplate))
+            return string.Empty;
+
+        string encodedRequestId = UnityWebRequest.EscapeURL(requestId.Trim());
+        string template = endpointTemplate.Trim();
+
+        if (template.IndexOf("{requestId}", StringComparison.Ordinal) >= 0)
+            return template.Replace("{requestId}", encodedRequestId);
+
+        return $"{template.TrimEnd('/')}/{encodedRequestId}";
+    }
+
     private static string BuildJoinRequestDecisionEndpoint(
         string endpointTemplate,
-        string listEndpoint,
         string roomId,
         string requestId)
     {
-        if (string.IsNullOrWhiteSpace(requestId))
+        if (string.IsNullOrWhiteSpace(endpointTemplate) || string.IsNullOrWhiteSpace(requestId))
             return string.Empty;
 
         string encodedRoomId = string.IsNullOrWhiteSpace(roomId)
             ? string.Empty
             : UnityWebRequest.EscapeURL(roomId.Trim());
         string encodedRequestId = UnityWebRequest.EscapeURL(requestId.Trim());
+        string resolved = endpointTemplate.Trim();
 
-        string template = string.IsNullOrWhiteSpace(endpointTemplate)
-            ? string.Empty
-            : endpointTemplate.Trim();
+        if (resolved.IndexOf("{roomId}", StringComparison.Ordinal) >= 0)
+            resolved = resolved.Replace("{roomId}", encodedRoomId);
 
-        if (!string.IsNullOrWhiteSpace(template))
+        bool hasRequestIdPlaceholder = resolved.IndexOf("{requestId}", StringComparison.Ordinal) >= 0;
+        if (hasRequestIdPlaceholder)
         {
-            if (template.IndexOf("{roomId}", StringComparison.Ordinal) >= 0)
-                template = template.Replace("{roomId}", encodedRoomId);
-
-            if (template.IndexOf("{requestId}", StringComparison.Ordinal) >= 0)
-                template = template.Replace("{requestId}", encodedRequestId);
-
-            if (template.IndexOf("{roomId}", StringComparison.Ordinal) < 0 &&
-                template.IndexOf("{requestId}", StringComparison.Ordinal) < 0 &&
-                !template.EndsWith(encodedRequestId, StringComparison.Ordinal))
-            {
-                template = $"{template.TrimEnd('/')}/{encodedRequestId}";
-            }
-
-            return template;
+            resolved = resolved.Replace("{requestId}", encodedRequestId);
+        }
+        else if (!resolved.EndsWith($"/{encodedRequestId}", StringComparison.Ordinal))
+        {
+            resolved = $"{resolved.TrimEnd('/')}/{encodedRequestId}";
         }
 
-        if (string.IsNullOrWhiteSpace(listEndpoint))
-            return string.Empty;
+        if (!resolved.EndsWith("/decision", StringComparison.OrdinalIgnoreCase))
+            resolved = $"{resolved.TrimEnd('/')}/decision";
 
-        return $"{listEndpoint.TrimEnd('/')}/{encodedRequestId}";
+        return resolved;
     }
 
     private static bool HasExplicitFailureFlag(string body)
@@ -1311,6 +1544,16 @@ public class ChatRoomManager : MonoBehaviour
             message);
 
         Log($"Join request decision failed: roomId={roomId}, requestId={requestId}, approve={approve}, message={message}");
+    }
+
+    private void EmitMyJoinRequestStatusFetchFailure(string requestId, string userMessage)
+    {
+        string message = string.IsNullOrWhiteSpace(userMessage)
+            ? "입장 요청 상태 조회에 실패했습니다."
+            : userMessage;
+
+        OnMyJoinRequestStatusFetchFailed?.Invoke(requestId ?? string.Empty, message);
+        Log($"My join request status fetch failed: requestId={requestId}, message={message}");
     }
 
     private static string BuildRoomTitlesLog(ChatRoomSummaryInfo[] rooms)
@@ -1465,6 +1708,10 @@ public class ChatRoomManager : MonoBehaviour
         public string request_id;
         public string roomId;
         public string room_id;
+        public string requesterUserId;
+        public string requester_user_id;
+        public string requestUserId;
+        public string request_user_id;
         public string userId;
         public string user_id;
         public string createdAt;
@@ -1484,6 +1731,8 @@ public class ChatRoomManager : MonoBehaviour
 
         public string roomId;
         public string room_id;
+        public string requesterUserId;
+        public string requester_user_id;
         public string userId;
         public string user_id;
         public string requestUserId;
@@ -1496,15 +1745,8 @@ public class ChatRoomManager : MonoBehaviour
     [Serializable]
     private class JoinRequestDecisionRequestPayload
     {
-        public string requestId;
-        public string request_id;
-        public string roomId;
-        public string room_id;
-        public string status;
         public string decision;
-        public string action;
-        public bool approve;
-        public bool approved;
+        public string reviewComment;
     }
 
     private struct JoinRequestDecisionAttemptResult

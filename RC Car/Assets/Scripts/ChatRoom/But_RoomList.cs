@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -18,13 +19,21 @@ public class But_RoomList : MonoBehaviour
     [SerializeField] private bool _closePanelOnJoinRequestSubmit = true;
     [SerializeField] private bool _moveToSceneOnConfirm = true;
     [SerializeField] private string _targetSceneName = "03_NetworkCarTest";
+    [SerializeField] private bool _waitForJoinApproval = true;
+    [SerializeField] private float _joinApprovalPollIntervalSeconds = 2f;
+    [SerializeField] private bool _stopPollingWhenRejected = true;
     [SerializeField] private bool _bindOnEnable = true;
     [SerializeField] private bool _clearPreviousItemsOnRefresh = true;
     [SerializeField] private bool _debugLog = true;
 
+    private const float MinJoinApprovalPollIntervalSeconds = 0.5f;
     private readonly List<Toggle> _spawnedToggles = new List<Toggle>();
     private readonly Dictionary<string, ChatRoomSummaryInfo> _roomMap = new Dictionary<string, ChatRoomSummaryInfo>();
     private ChatRoomManager _boundManager;
+    private string _pendingJoinRequestId = string.Empty;
+    private string _pendingJoinRoomId = string.Empty;
+    private bool _isWaitingJoinApproval;
+    private float _nextJoinApprovalPollTime;
 
     public string SelectedRoomId { get; private set; }
 
@@ -66,6 +75,12 @@ public class But_RoomList : MonoBehaviour
         if (_but_Confirm != null)
             _but_Confirm.onClick.RemoveListener(OnClickConfirm);
         UnbindManagerEvents();
+        StopJoinApprovalPolling();
+    }
+
+    private void Update()
+    {
+        TryPollJoinApprovalStatus();
     }
 
     public void OnClickFetchRoomList()
@@ -107,6 +122,7 @@ public class But_RoomList : MonoBehaviour
                 return;
             }
 
+            StopJoinApprovalPolling();
             _boundManager.RequestJoinRequest(SelectedRoomId, ResolveTokenOverride());
 
             if (_closePanelOnJoinRequestSubmit && _roomListPanel != null)
@@ -149,6 +165,9 @@ public class But_RoomList : MonoBehaviour
         _boundManager.OnListSucceeded += HandleRoomListSucceeded;
         _boundManager.OnJoinRequestSucceeded += HandleJoinRequestSucceeded;
         _boundManager.OnJoinRequestFailed += HandleJoinRequestFailed;
+        _boundManager.OnMyJoinRequestStatusFetchSucceeded += HandleMyJoinRequestStatusFetchSucceeded;
+        _boundManager.OnMyJoinRequestStatusFetchFailed += HandleMyJoinRequestStatusFetchFailed;
+        _boundManager.OnMyJoinRequestStatusFetchCanceled += HandleMyJoinRequestStatusFetchCanceled;
     }
 
     private void UnbindManagerEvents()
@@ -159,7 +178,41 @@ public class But_RoomList : MonoBehaviour
         _boundManager.OnListSucceeded -= HandleRoomListSucceeded;
         _boundManager.OnJoinRequestSucceeded -= HandleJoinRequestSucceeded;
         _boundManager.OnJoinRequestFailed -= HandleJoinRequestFailed;
+        _boundManager.OnMyJoinRequestStatusFetchSucceeded -= HandleMyJoinRequestStatusFetchSucceeded;
+        _boundManager.OnMyJoinRequestStatusFetchFailed -= HandleMyJoinRequestStatusFetchFailed;
+        _boundManager.OnMyJoinRequestStatusFetchCanceled -= HandleMyJoinRequestStatusFetchCanceled;
         _boundManager = null;
+    }
+
+    private void TryPollJoinApprovalStatus()
+    {
+        if (!_useJoinRequestOnConfirm || !_waitForJoinApproval || !_isWaitingJoinApproval)
+            return;
+
+        if (Time.unscaledTime < _nextJoinApprovalPollTime)
+            return;
+
+        TryBindManagerEvents();
+        if (_boundManager == null)
+        {
+            _nextJoinApprovalPollTime = Time.unscaledTime + Mathf.Max(MinJoinApprovalPollIntervalSeconds, _joinApprovalPollIntervalSeconds);
+            return;
+        }
+
+        if (_boundManager.IsBusy)
+        {
+            _nextJoinApprovalPollTime = Time.unscaledTime + MinJoinApprovalPollIntervalSeconds;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_pendingJoinRequestId))
+        {
+            StopJoinApprovalPolling();
+            return;
+        }
+
+        _boundManager.FetchMyJoinRequestStatus(_pendingJoinRequestId, ResolveTokenOverride());
+        _nextJoinApprovalPollTime = Time.unscaledTime + Mathf.Max(MinJoinApprovalPollIntervalSeconds, _joinApprovalPollIntervalSeconds);
     }
 
     private void TryResolveContentRoot()
@@ -262,6 +315,8 @@ public class But_RoomList : MonoBehaviour
 
     private void HandleJoinRequestSucceeded(ChatRoomJoinRequestInfo info)
     {
+        StartJoinApprovalPolling(info);
+
         if (!_debugLog)
             return;
 
@@ -273,10 +328,159 @@ public class But_RoomList : MonoBehaviour
 
     private void HandleJoinRequestFailed(string message)
     {
+        StopJoinApprovalPolling();
+
         if (!_debugLog)
             return;
 
         Debug.LogWarning($"[But_RoomList] Join request failed: {message}");
+    }
+
+    private void StartJoinApprovalPolling(ChatRoomJoinRequestInfo info)
+    {
+        if (!_useJoinRequestOnConfirm || !_waitForJoinApproval)
+            return;
+
+        string requestId = info != null && !string.IsNullOrWhiteSpace(info.RequestId)
+            ? info.RequestId.Trim()
+            : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(requestId))
+        {
+            if (_debugLog)
+                Debug.LogWarning("[But_RoomList] Join request id is empty. Approval polling skipped.");
+            return;
+        }
+
+        _pendingJoinRequestId = requestId;
+        _pendingJoinRoomId = info != null && !string.IsNullOrWhiteSpace(info.RoomId)
+            ? info.RoomId.Trim()
+            : (SelectedRoomId ?? string.Empty);
+        _isWaitingJoinApproval = true;
+        _nextJoinApprovalPollTime = Time.unscaledTime + Mathf.Max(MinJoinApprovalPollIntervalSeconds, _joinApprovalPollIntervalSeconds);
+    }
+
+    private void StopJoinApprovalPolling()
+    {
+        _isWaitingJoinApproval = false;
+        _pendingJoinRequestId = string.Empty;
+        _pendingJoinRoomId = string.Empty;
+        _nextJoinApprovalPollTime = 0f;
+    }
+
+    private void HandleMyJoinRequestStatusFetchSucceeded(ChatRoomJoinRequestInfo info)
+    {
+        if (!_isWaitingJoinApproval)
+            return;
+
+        string status = NormalizeStatus(info != null ? info.Status : string.Empty);
+        string requestId = info != null ? info.RequestId : string.Empty;
+        string roomId = info != null ? info.RoomId : string.Empty;
+
+        if (_debugLog)
+            Debug.Log($"[But_RoomList] Join request status fetched. requestId={requestId}, roomId={roomId}, status={status}");
+
+        if (IsApprovedStatus(status))
+        {
+            string targetRoomId = !string.IsNullOrWhiteSpace(roomId) ? roomId : _pendingJoinRoomId;
+            StopJoinApprovalPolling();
+            NavigateToApprovedRoom(targetRoomId);
+            return;
+        }
+
+        if (_stopPollingWhenRejected && IsRejectedStatus(status))
+        {
+            StopJoinApprovalPolling();
+
+            if (_debugLog)
+                Debug.LogWarning($"[But_RoomList] Join request rejected. requestId={requestId}, status={status}");
+        }
+    }
+
+    private void HandleMyJoinRequestStatusFetchFailed(string requestId, string message)
+    {
+        if (!_isWaitingJoinApproval)
+            return;
+
+        if (_debugLog)
+            Debug.LogWarning($"[But_RoomList] Join request status fetch failed. requestId={requestId}, message={message}");
+
+        if (ContainsAuthErrorCode(message))
+            StopJoinApprovalPolling();
+    }
+
+    private void HandleMyJoinRequestStatusFetchCanceled(string requestId)
+    {
+        if (!_isWaitingJoinApproval)
+            return;
+
+        if (_debugLog)
+            Debug.LogWarning($"[But_RoomList] Join request status fetch canceled. requestId={requestId}");
+    }
+
+    private void NavigateToApprovedRoom(string roomId)
+    {
+        string resolvedRoomId = !string.IsNullOrWhiteSpace(roomId)
+            ? roomId.Trim()
+            : (!string.IsNullOrWhiteSpace(SelectedRoomId) ? SelectedRoomId.Trim() : string.Empty);
+
+        ChatRoomSummaryInfo selectedRoom = ResolveRoomForNavigation(resolvedRoomId);
+
+        RoomSessionContext.Set(new RoomInfo
+        {
+            RoomId = selectedRoom.RoomId,
+            RoomName = selectedRoom.Title,
+            HostUserId = selectedRoom.OwnerUserId,
+            CreatedAtUtc = selectedRoom.CreatedAtUtc
+        });
+
+        if (_moveToSceneOnConfirm && !string.IsNullOrWhiteSpace(_targetSceneName))
+            SceneManager.LoadScene(_targetSceneName);
+    }
+
+    private ChatRoomSummaryInfo ResolveRoomForNavigation(string roomId)
+    {
+        if (!string.IsNullOrWhiteSpace(roomId) && _roomMap.TryGetValue(roomId, out ChatRoomSummaryInfo room))
+            return room;
+
+        if (!string.IsNullOrWhiteSpace(SelectedRoomId) && _roomMap.TryGetValue(SelectedRoomId, out ChatRoomSummaryInfo selected))
+            return selected;
+
+        return new ChatRoomSummaryInfo
+        {
+            RoomId = roomId ?? string.Empty,
+            Title = string.Empty,
+            OwnerUserId = string.Empty,
+            CreatedAtUtc = string.Empty
+        };
+    }
+
+    private static string NormalizeStatus(string status)
+    {
+        return string.IsNullOrWhiteSpace(status)
+            ? string.Empty
+            : status.Trim().ToUpperInvariant();
+    }
+
+    private static bool IsApprovedStatus(string status)
+    {
+        string normalized = NormalizeStatus(status);
+        return normalized == "APPROVED" || normalized == "ACCEPTED";
+    }
+
+    private static bool IsRejectedStatus(string status)
+    {
+        string normalized = NormalizeStatus(status);
+        return normalized == "REJECTED" || normalized == "DENIED" || normalized == "CANCELED" || normalized == "CANCELLED";
+    }
+
+    private static bool ContainsAuthErrorCode(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+
+        return message.IndexOf("401", StringComparison.Ordinal) >= 0 ||
+               message.IndexOf("403", StringComparison.Ordinal) >= 0;
     }
 
     private static void SetToggleLabel(Toggle toggle, string label)
