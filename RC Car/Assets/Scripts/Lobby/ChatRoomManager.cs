@@ -19,6 +19,9 @@ public class ChatRoomManager : MonoBehaviour
     [SerializeField] private string _joinRequestsEndpointTemplate = "http://ioteacher.com/api/chat/rooms/{roomId}/join-requests";
     [SerializeField] private string _joinRequestDecisionEndpointTemplate = "http://ioteacher.com/api/chat/join-requests/{requestId}/decision";
     [SerializeField] private string _myJoinRequestStatusEndpointTemplate = "http://ioteacher.com/api/chat/my/join-request/{requestId}";
+    [SerializeField] private string _blockShareEndpointTemplate = "http://ioteacher.com/api/chat/rooms/{roomId}/block-shares";
+    [SerializeField] private string _blockShareDetailEndpointTemplate = "http://ioteacher.com/api/chat/rooms/{roomId}/block-shares/{shareId}";
+    [SerializeField] private string _saveBlockShareToMyLevelEndpointTemplate = "http://ioteacher.com/api/chat/block-shares/{shareId}/save-to-my-level";
 
     [Header("Timeout")]
     [SerializeField] private int _requestTimeoutSeconds = 15;
@@ -50,6 +53,22 @@ public class ChatRoomManager : MonoBehaviour
     public event Action<ChatRoomJoinRequestInfo> OnMyJoinRequestStatusFetchSucceeded;
     public event Action<string, string> OnMyJoinRequestStatusFetchFailed;
     public event Action<string> OnMyJoinRequestStatusFetchCanceled;
+    public event Action<string, int, int> OnBlockShareListFetchStarted;
+    public event Action<ChatRoomBlockShareListInfo> OnBlockShareListFetchSucceeded;
+    public event Action<string, int, int, string> OnBlockShareListFetchFailed;
+    public event Action<string, int, int> OnBlockShareListFetchCanceled;
+    public event Action<string, string> OnBlockShareDetailFetchStarted;
+    public event Action<ChatRoomBlockShareInfo> OnBlockShareDetailFetchSucceeded;
+    public event Action<string, string, string> OnBlockShareDetailFetchFailed;
+    public event Action<string, string> OnBlockShareDetailFetchCanceled;
+    public event Action<string, int, string> OnBlockShareUploadStarted;
+    public event Action<ChatRoomBlockShareUploadInfo> OnBlockShareUploadSucceeded;
+    public event Action<string, int, string> OnBlockShareUploadFailed;
+    public event Action<string, int> OnBlockShareUploadCanceled;
+    public event Action<string> OnBlockShareSaveStarted;
+    public event Action<ChatRoomBlockShareSaveInfo> OnBlockShareSaveSucceeded;
+    public event Action<string, string> OnBlockShareSaveFailed;
+    public event Action<string> OnBlockShareSaveCanceled;
 
     public bool IsBusy { get; private set; }
 
@@ -68,18 +87,18 @@ public class ChatRoomManager : MonoBehaviour
     }
 
     /// <summary>
-    /// 채팅방 생성 요청 진입점.
-    /// room title / max user count를 검증한 뒤 웹 API에 생성을 요청한다.
+    /// 梨꾪똿諛??앹꽦 ?붿껌 吏꾩엯??
+    /// room title / max user count瑜?寃利앺븳 ????API???앹꽦???붿껌?쒕떎.
     /// </summary>
-    /// <param name="roomTitleRaw">사용자 입력 방 제목</param>
-    /// <param name="maxUserCountRaw">사용자 입력 최대 인원 문자열</param>
+    /// <param name="roomTitleRaw">?ъ슜???낅젰 諛??쒕ぉ</param>
+    /// <param name="maxUserCountRaw">?ъ슜???낅젰 理쒕? ?몄썝 臾몄옄??/param>
     public void CreateRoom(string roomTitleRaw, string maxUserCountRaw)
     {
         _ = CreateRoomAsync(roomTitleRaw, maxUserCountRaw);
     }
 
     /// <summary>
-    /// 채팅방 목록 조회 요청 진입점.
+    /// 梨꾪똿諛?紐⑸줉 議고쉶 ?붿껌 吏꾩엯??
     /// </summary>
     public void FetchRoomList()
     {
@@ -87,32 +106,32 @@ public class ChatRoomManager : MonoBehaviour
     }
 
     /// <summary>
-    /// 특정 방에 대한 입장 요청을 생성한다.
+    /// ?뱀젙 諛⑹뿉 ????낆옣 ?붿껌???앹꽦?쒕떎.
     /// </summary>
-    /// <param name="roomIdRaw">대상 방 ID</param>
-    /// <param name="accessTokenOverride">옵션: 기본 토큰 대신 사용할 Bearer 토큰</param>
+    /// <param name="roomIdRaw">???諛?ID</param>
+    /// <param name="accessTokenOverride">?듭뀡: 湲곕낯 ?좏겙 ????ъ슜??Bearer ?좏겙</param>
     public void RequestJoinRequest(string roomIdRaw, string accessTokenOverride = null)
     {
         _ = RequestJoinRequestAsync(roomIdRaw, accessTokenOverride);
     }
 
     /// <summary>
-    /// 특정 방의 입장 요청 목록을 조회한다.
+    /// ?뱀젙 諛⑹쓽 ?낆옣 ?붿껌 紐⑸줉??議고쉶?쒕떎.
     /// </summary>
-    /// <param name="roomIdRaw">대상 방 ID</param>
-    /// <param name="accessTokenOverride">옵션: 기본 토큰 대신 사용할 Bearer 토큰</param>
+    /// <param name="roomIdRaw">???諛?ID</param>
+    /// <param name="accessTokenOverride">?듭뀡: 湲곕낯 ?좏겙 ????ъ슜??Bearer ?좏겙</param>
     public void FetchJoinRequests(string roomIdRaw, string accessTokenOverride = null)
     {
         _ = FetchJoinRequestsAsync(roomIdRaw, accessTokenOverride);
     }
 
     /// <summary>
-    /// Host가 입장 요청을 수락/거절 처리한다.
+    /// Host媛 ?낆옣 ?붿껌???섎씫/嫄곗젅 泥섎━?쒕떎.
     /// </summary>
-    /// <param name="roomIdRaw">대상 방 ID</param>
-    /// <param name="requestIdRaw">대상 입장 요청 ID</param>
-    /// <param name="approve">true: 수락, false: 거절</param>
-    /// <param name="accessTokenOverride">옵션: 기본 토큰 대신 사용할 Bearer 토큰</param>
+    /// <param name="roomIdRaw">???諛?ID</param>
+    /// <param name="requestIdRaw">????낆옣 ?붿껌 ID</param>
+    /// <param name="approve">true: ?섎씫, false: 嫄곗젅</param>
+    /// <param name="accessTokenOverride">?듭뀡: 湲곕낯 ?좏겙 ????ъ슜??Bearer ?좏겙</param>
     public void DecideJoinRequest(
         string roomIdRaw,
         string requestIdRaw,
@@ -123,17 +142,62 @@ public class ChatRoomManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Client 본인의 입장 요청 상태를 조회한다.
+    /// Client 蹂몄씤???낆옣 ?붿껌 ?곹깭瑜?議고쉶?쒕떎.
     /// </summary>
-    /// <param name="requestIdRaw">입장 요청 ID</param>
-    /// <param name="accessTokenOverride">옵션: 기본 토큰 대신 사용할 Bearer 토큰</param>
+    /// <param name="requestIdRaw">?낆옣 ?붿껌 ID</param>
+    /// <param name="accessTokenOverride">?듭뀡: 湲곕낯 ?좏겙 ????ъ슜??Bearer ?좏겙</param>
     public void FetchMyJoinRequestStatus(string requestIdRaw, string accessTokenOverride = null)
     {
         _ = FetchMyJoinRequestStatusAsync(requestIdRaw, accessTokenOverride);
     }
 
     /// <summary>
-    /// 진행 중인 채팅방 생성 요청을 취소한다.
+    /// ?뱀젙 諛⑹쓽 釉붾줉 怨듭쑀 紐⑸줉??議고쉶?쒕떎.
+    /// </summary>
+    /// <param name="roomIdRaw">???諛?ID</param>
+    /// <param name="page">?섏씠吏 踰덊샇(1遺???쒖옉)</param>
+    /// <param name="size">?섏씠吏 ?ш린</param>
+    /// <param name="accessTokenOverride">?듭뀡: 湲곕낯 ?좏겙 ????ъ슜??Bearer ?좏겙</param>
+    public void FetchBlockShares(
+        string roomIdRaw,
+        int page = 1,
+        int size = 20,
+        string accessTokenOverride = null)
+    {
+        _ = FetchBlockSharesAsync(roomIdRaw, page, size, accessTokenOverride);
+    }
+
+    /// <summary>
+    /// ?뱀젙 諛⑹뿉 釉붾줉 肄붾뱶瑜?怨듭쑀?쒕떎.
+    /// </summary>
+    /// <param name="roomIdRaw">???諛?ID</param>
+    /// <param name="userLevelSeq">怨듭쑀???ъ슜???덈꺼 ?쒗??/param>
+    /// <param name="message">怨듭쑀 硫붿떆吏</param>
+    /// <param name="accessTokenOverride">?듭뀡: 湲곕낯 ?좏겙 ????ъ슜??Bearer ?좏겙</param>
+    public void UploadBlockShare(
+        string roomIdRaw,
+        int userLevelSeq,
+        string message,
+        string accessTokenOverride = null)
+    {
+        _ = UploadBlockShareAsync(roomIdRaw, userLevelSeq, message, accessTokenOverride);
+    }
+
+    public void FetchBlockShareDetail(
+        string roomIdRaw,
+        string shareIdRaw,
+        string accessTokenOverride = null)
+    {
+        _ = FetchBlockShareDetailAsync(roomIdRaw, shareIdRaw, accessTokenOverride);
+    }
+
+    public void SaveBlockShareToMyLevel(string shareIdRaw, string accessTokenOverride = null)
+    {
+        _ = SaveBlockShareToMyLevelAsync(shareIdRaw, accessTokenOverride);
+    }
+
+    /// <summary>
+    /// 吏꾪뻾 以묒씤 梨꾪똿諛??앹꽦 ?붿껌??痍⑥냼?쒕떎.
     /// </summary>
     public void CancelCurrentRequest()
     {
@@ -147,32 +211,32 @@ public class ChatRoomManager : MonoBehaviour
     {
         if (IsBusy)
         {
-            EmitFailure("이미 채팅방 생성 요청을 처리 중입니다.");
+            EmitFailure("?대? 梨꾪똿諛??앹꽦 ?붿껌??泥섎━ 以묒엯?덈떎.");
             return;
         }
 
         string roomTitle = string.IsNullOrWhiteSpace(roomTitleRaw) ? string.Empty : roomTitleRaw.Trim();
         if (string.IsNullOrWhiteSpace(roomTitle))
         {
-            EmitFailure("방 제목을 입력해 주세요.");
+            EmitFailure("諛??쒕ぉ???낅젰??二쇱꽭??");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(maxUserCountRaw))
         {
-            EmitFailure("최대 인원을 입력해 주세요.");
+            EmitFailure("理쒕? ?몄썝???낅젰??二쇱꽭??");
             return;
         }
 
         if (!int.TryParse(maxUserCountRaw.Trim(), out int maxUserCount) || maxUserCount <= 0)
         {
-            EmitFailure("최대 인원은 1 이상의 숫자여야 합니다.");
+            EmitFailure("理쒕? ?몄썝? 1 ?댁긽???レ옄?ъ빞 ?⑸땲??");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(_createRoomEndpoint))
         {
-            EmitFailure("채팅방 생성 API URL이 비어 있습니다.");
+            EmitFailure("梨꾪똿諛??앹꽦 API URL??鍮꾩뼱 ?덉뒿?덈떎.");
             return;
         }
 
@@ -229,8 +293,8 @@ public class ChatRoomManager : MonoBehaviour
                     return;
                 }
 
-                // ParseCreateResponse에서 실패 이벤트를 발행하지 못한 경우를 대비한 기본 처리.
-                EmitFailure("채팅방 생성에 실패했습니다.");
+                // ParseCreateResponse?먯꽌 ?ㅽ뙣 ?대깽?몃? 諛쒗뻾?섏? 紐삵븳 寃쎌슦瑜??鍮꾪븳 湲곕낯 泥섎━.
+                EmitFailure("梨꾪똿諛??앹꽦???ㅽ뙣?덉뒿?덈떎.");
             }
         }
         catch (OperationCanceledException)
@@ -240,7 +304,7 @@ public class ChatRoomManager : MonoBehaviour
         }
         catch (Exception e)
         {
-            EmitFailure($"채팅방 생성 중 예외가 발생했습니다. ({e.Message})");
+            EmitFailure($"梨꾪똿諛??앹꽦 以??덉쇅媛 諛쒖깮?덉뒿?덈떎. ({e.Message})");
         }
         finally
         {
@@ -254,7 +318,7 @@ public class ChatRoomManager : MonoBehaviour
     {
         if (IsBusy)
         {
-            EmitListFailure("이미 다른 채팅 요청을 처리 중입니다.");
+            EmitListFailure("?대? ?ㅻⅨ 梨꾪똿 ?붿껌??泥섎━ 以묒엯?덈떎.");
             return;
         }
 
@@ -264,7 +328,7 @@ public class ChatRoomManager : MonoBehaviour
 
         if (string.IsNullOrWhiteSpace(endpoint))
         {
-            EmitListFailure("채팅방 목록 API URL이 비어 있습니다.");
+            EmitListFailure("梨꾪똿諛?紐⑸줉 API URL??鍮꾩뼱 ?덉뒿?덈떎.");
             return;
         }
 
@@ -310,7 +374,7 @@ public class ChatRoomManager : MonoBehaviour
         }
         catch (Exception e)
         {
-            EmitListFailure($"채팅방 목록 조회 중 예외가 발생했습니다. ({e.Message})");
+            EmitListFailure($"梨꾪똿諛?紐⑸줉 議고쉶 以??덉쇅媛 諛쒖깮?덉뒿?덈떎. ({e.Message})");
         }
         finally
         {
@@ -324,14 +388,14 @@ public class ChatRoomManager : MonoBehaviour
     {
         if (IsBusy)
         {
-            EmitJoinRequestFailure("이미 다른 채팅 요청을 처리 중입니다.");
+            EmitJoinRequestFailure("?대? ?ㅻⅨ 梨꾪똿 ?붿껌??泥섎━ 以묒엯?덈떎.");
             return;
         }
 
         string roomId = string.IsNullOrWhiteSpace(roomIdRaw) ? string.Empty : roomIdRaw.Trim();
         if (string.IsNullOrWhiteSpace(roomId))
         {
-            EmitJoinRequestFailure("입장 요청 대상 방 ID가 비어 있습니다.");
+            EmitJoinRequestFailure("?낆옣 ?붿껌 ???諛?ID媛 鍮꾩뼱 ?덉뒿?덈떎.");
             return;
         }
 
@@ -339,7 +403,7 @@ public class ChatRoomManager : MonoBehaviour
         Log($"Join request endpoint resolved. template={_joinRequestEndpointTemplate}, roomIdRaw={roomIdRaw}, roomId={roomId}, endpoint={endpoint}");
         if (string.IsNullOrWhiteSpace(endpoint))
         {
-            EmitJoinRequestFailure("입장 요청 API URL이 비어 있습니다.");
+            EmitJoinRequestFailure("?낆옣 ?붿껌 API URL??鍮꾩뼱 ?덉뒿?덈떎.");
             return;
         }
 
@@ -389,7 +453,7 @@ public class ChatRoomManager : MonoBehaviour
         }
         catch (Exception e)
         {
-            EmitJoinRequestFailure($"방 입장 요청 중 예외가 발생했습니다. ({e.Message})");
+            EmitJoinRequestFailure($"諛??낆옣 ?붿껌 以??덉쇅媛 諛쒖깮?덉뒿?덈떎. ({e.Message})");
         }
         finally
         {
@@ -403,21 +467,21 @@ public class ChatRoomManager : MonoBehaviour
     {
         if (IsBusy)
         {
-            EmitJoinRequestsFetchFailure("이미 다른 채팅 요청을 처리 중입니다.");
+            EmitJoinRequestsFetchFailure("?대? ?ㅻⅨ 梨꾪똿 ?붿껌??泥섎━ 以묒엯?덈떎.");
             return;
         }
 
         string roomId = string.IsNullOrWhiteSpace(roomIdRaw) ? string.Empty : roomIdRaw.Trim();
         if (string.IsNullOrWhiteSpace(roomId))
         {
-            EmitJoinRequestsFetchFailure("입장 요청 목록 대상 방 ID가 비어 있습니다.");
+            EmitJoinRequestsFetchFailure("?낆옣 ?붿껌 紐⑸줉 ???諛?ID媛 鍮꾩뼱 ?덉뒿?덈떎.");
             return;
         }
 
         string endpoint = BuildRoomScopedEndpoint(_joinRequestsEndpointTemplate, roomId, "join-requests");
         if (string.IsNullOrWhiteSpace(endpoint))
         {
-            EmitJoinRequestsFetchFailure("입장 요청 목록 API URL이 비어 있습니다.");
+            EmitJoinRequestsFetchFailure("?낆옣 ?붿껌 紐⑸줉 API URL??鍮꾩뼱 ?덉뒿?덈떎.");
             return;
         }
 
@@ -463,7 +527,7 @@ public class ChatRoomManager : MonoBehaviour
         }
         catch (Exception e)
         {
-            EmitJoinRequestsFetchFailure($"입장 요청 목록 조회 중 예외가 발생했습니다. ({e.Message})");
+            EmitJoinRequestsFetchFailure($"?낆옣 ?붿껌 紐⑸줉 議고쉶 以??덉쇅媛 諛쒖깮?덉뒿?덈떎. ({e.Message})");
         }
         finally
         {
@@ -481,21 +545,21 @@ public class ChatRoomManager : MonoBehaviour
     {
         if (IsBusy)
         {
-            EmitJoinRequestDecisionFailure(roomIdRaw, requestIdRaw, approve, "이미 다른 채팅 요청을 처리 중입니다.");
+            EmitJoinRequestDecisionFailure(roomIdRaw, requestIdRaw, approve, "?대? ?ㅻⅨ 梨꾪똿 ?붿껌??泥섎━ 以묒엯?덈떎.");
             return;
         }
 
         string roomId = string.IsNullOrWhiteSpace(roomIdRaw) ? string.Empty : roomIdRaw.Trim();
         if (string.IsNullOrWhiteSpace(roomId))
         {
-            EmitJoinRequestDecisionFailure(roomIdRaw, requestIdRaw, approve, "입장 요청 처리 대상 방 ID가 비어 있습니다.");
+            EmitJoinRequestDecisionFailure(roomIdRaw, requestIdRaw, approve, "?낆옣 ?붿껌 泥섎━ ???諛?ID媛 鍮꾩뼱 ?덉뒿?덈떎.");
             return;
         }
 
         string requestId = string.IsNullOrWhiteSpace(requestIdRaw) ? string.Empty : requestIdRaw.Trim();
         if (string.IsNullOrWhiteSpace(requestId))
         {
-            EmitJoinRequestDecisionFailure(roomId, requestIdRaw, approve, "입장 요청 처리 대상 요청 ID가 비어 있습니다.");
+            EmitJoinRequestDecisionFailure(roomId, requestIdRaw, approve, "?낆옣 ?붿껌 泥섎━ ????붿껌 ID媛 鍮꾩뼱 ?덉뒿?덈떎.");
             return;
         }
 
@@ -506,14 +570,14 @@ public class ChatRoomManager : MonoBehaviour
 
         if (string.IsNullOrWhiteSpace(decisionEndpoint))
         {
-            EmitJoinRequestDecisionFailure(roomId, requestId, approve, "입장 요청 처리 API URL이 비어 있습니다.");
+            EmitJoinRequestDecisionFailure(roomId, requestId, approve, "?낆옣 ?붿껌 泥섎━ API URL??鍮꾩뼱 ?덉뒿?덈떎.");
             return;
         }
 
         string accessToken = ResolveAccessToken(accessTokenOverride);
         if (string.IsNullOrWhiteSpace(accessToken))
         {
-            EmitJoinRequestDecisionFailure(roomId, requestId, approve, "입장 요청 처리에는 로그인 토큰이 필요합니다.");
+            EmitJoinRequestDecisionFailure(roomId, requestId, approve, "?낆옣 ?붿껌 泥섎━?먮뒗 濡쒓렇???좏겙???꾩슂?⑸땲??");
             return;
         }
 
@@ -529,7 +593,7 @@ public class ChatRoomManager : MonoBehaviour
             var payload = new JoinRequestDecisionRequestPayload
             {
                 decision = status,
-                reviewComment = approve ? "승인합니다." : "거절합니다."
+                reviewComment = approve ? "?뱀씤?⑸땲??" : "嫄곗젅?⑸땲??"
             };
 
             string requestJson = JsonUtility.ToJson(payload);
@@ -568,7 +632,7 @@ public class ChatRoomManager : MonoBehaviour
             string lastError = FirstNonEmpty(
                 attempt.ErrorMessage,
                 attempt.ResponseCode > 0 ? $"HTTP {attempt.ResponseCode}" : null,
-                "방 입장 요청 처리에 실패했습니다.");
+                "諛??낆옣 ?붿껌 泥섎━???ㅽ뙣?덉뒿?덈떎.");
 
             EmitJoinRequestDecisionFailure(roomId, requestId, approve, lastError);
             Log(
@@ -581,7 +645,7 @@ public class ChatRoomManager : MonoBehaviour
         }
         catch (Exception e)
         {
-            EmitJoinRequestDecisionFailure(roomId, requestId, approve, $"입장 요청 처리 중 예외가 발생했습니다. ({e.Message})");
+            EmitJoinRequestDecisionFailure(roomId, requestId, approve, $"?낆옣 ?붿껌 泥섎━ 以??덉쇅媛 諛쒖깮?덉뒿?덈떎. ({e.Message})");
         }
         finally
         {
@@ -595,28 +659,28 @@ public class ChatRoomManager : MonoBehaviour
     {
         if (IsBusy)
         {
-            EmitMyJoinRequestStatusFetchFailure(requestIdRaw, "이미 다른 채팅 요청을 처리 중입니다.");
+            EmitMyJoinRequestStatusFetchFailure(requestIdRaw, "?대? ?ㅻⅨ 梨꾪똿 ?붿껌??泥섎━ 以묒엯?덈떎.");
             return;
         }
 
         string requestId = string.IsNullOrWhiteSpace(requestIdRaw) ? string.Empty : requestIdRaw.Trim();
         if (string.IsNullOrWhiteSpace(requestId))
         {
-            EmitMyJoinRequestStatusFetchFailure(requestIdRaw, "입장 요청 상태 조회 대상 요청 ID가 비어 있습니다.");
+            EmitMyJoinRequestStatusFetchFailure(requestIdRaw, "?낆옣 ?붿껌 ?곹깭 議고쉶 ????붿껌 ID媛 鍮꾩뼱 ?덉뒿?덈떎.");
             return;
         }
 
         string endpoint = BuildRequestScopedEndpoint(_myJoinRequestStatusEndpointTemplate, requestId);
         if (string.IsNullOrWhiteSpace(endpoint))
         {
-            EmitMyJoinRequestStatusFetchFailure(requestId, "입장 요청 상태 조회 API URL이 비어 있습니다.");
+            EmitMyJoinRequestStatusFetchFailure(requestId, "?낆옣 ?붿껌 ?곹깭 議고쉶 API URL??鍮꾩뼱 ?덉뒿?덈떎.");
             return;
         }
 
         string accessToken = ResolveAccessToken(accessTokenOverride);
         if (string.IsNullOrWhiteSpace(accessToken))
         {
-            EmitMyJoinRequestStatusFetchFailure(requestId, "입장 요청 상태 조회에는 로그인 토큰이 필요합니다.");
+            EmitMyJoinRequestStatusFetchFailure(requestId, "?낆옣 ?붿껌 ?곹깭 議고쉶?먮뒗 濡쒓렇???좏겙???꾩슂?⑸땲??");
             return;
         }
 
@@ -658,7 +722,470 @@ public class ChatRoomManager : MonoBehaviour
         }
         catch (Exception e)
         {
-            EmitMyJoinRequestStatusFetchFailure(requestId, $"입장 요청 상태 조회 중 예외가 발생했습니다. ({e.Message})");
+            EmitMyJoinRequestStatusFetchFailure(requestId, $"?낆옣 ?붿껌 ?곹깭 議고쉶 以??덉쇅媛 諛쒖깮?덉뒿?덈떎. ({e.Message})");
+        }
+        finally
+        {
+            IsBusy = false;
+            _requestCancellation?.Dispose();
+            _requestCancellation = null;
+        }
+    }
+
+    private async Task FetchBlockSharesAsync(
+        string roomIdRaw,
+        int page,
+        int size,
+        string accessTokenOverride)
+    {
+        if (IsBusy)
+        {
+            EmitBlockShareListFetchFailure(roomIdRaw, page, size, "?대? ?ㅻⅨ 梨꾪똿 ?붿껌??泥섎━ 以묒엯?덈떎.");
+            return;
+        }
+
+        string roomId = string.IsNullOrWhiteSpace(roomIdRaw) ? string.Empty : roomIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(roomId))
+        {
+            EmitBlockShareListFetchFailure(roomIdRaw, page, size, "釉붾줉 怨듭쑀 紐⑸줉 ???諛?ID媛 鍮꾩뼱 ?덉뒿?덈떎.");
+            return;
+        }
+
+        int normalizedPage = page < 1 ? 1 : page;
+        int normalizedSize = size < 1 ? 20 : size;
+
+        string baseEndpoint = BuildRoomScopedEndpoint(_blockShareEndpointTemplate, roomId, "block-shares");
+        if (string.IsNullOrWhiteSpace(baseEndpoint))
+        {
+            EmitBlockShareListFetchFailure(roomId, normalizedPage, normalizedSize, "釉붾줉 怨듭쑀 紐⑸줉 API URL??鍮꾩뼱 ?덉뒿?덈떎.");
+            return;
+        }
+
+        string endpoint = $"{baseEndpoint}?page={normalizedPage}&size={normalizedSize}";
+        string accessToken = ResolveAccessToken(accessTokenOverride);
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            EmitBlockShareListFetchFailure(roomId, normalizedPage, normalizedSize, "釉붾줉 怨듭쑀 紐⑸줉 議고쉶?먮뒗 濡쒓렇???좏겙???꾩슂?⑸땲??");
+            return;
+        }
+
+        IsBusy = true;
+        _requestCancellation = new CancellationTokenSource();
+
+        try
+        {
+            OnBlockShareListFetchStarted?.Invoke(roomId, normalizedPage, normalizedSize);
+
+            using (var request = new UnityWebRequest(endpoint, UnityWebRequest.kHttpVerbGET))
+            {
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.timeout = Mathf.Max(1, _requestTimeoutSeconds);
+                request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+
+                bool isCanceled = await SendRequestAsync(request, _requestCancellation.Token);
+                if (isCanceled)
+                {
+                    OnBlockShareListFetchCanceled?.Invoke(roomId, normalizedPage, normalizedSize);
+                    Log($"Block share list fetch canceled. roomId={roomId}, page={normalizedPage}, size={normalizedSize}");
+                    return;
+                }
+
+                string responseBody = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+                Log(
+                    $"Block share list raw response. result={request.result}, code={request.responseCode}, error={request.error}, body={responseBody}");
+
+                ChatRoomBlockShareListInfo listInfo = ParseBlockShareListResponse(
+                    request,
+                    roomId,
+                    normalizedPage,
+                    normalizedSize);
+
+                if (listInfo != null)
+                {
+                    OnBlockShareListFetchSucceeded?.Invoke(listInfo);
+                    Log(
+                        $"Block share list fetched. roomId={roomId}, page={listInfo.Page}, size={listInfo.Size}, count={listInfo.Items.Length}");
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            OnBlockShareListFetchCanceled?.Invoke(roomId, normalizedPage, normalizedSize);
+            Log($"Block share list fetch canceled by token. roomId={roomId}, page={normalizedPage}, size={normalizedSize}");
+        }
+        catch (Exception e)
+        {
+            EmitBlockShareListFetchFailure(roomId, normalizedPage, normalizedSize, $"釉붾줉 怨듭쑀 紐⑸줉 議고쉶 以??덉쇅媛 諛쒖깮?덉뒿?덈떎. ({e.Message})");
+        }
+        finally
+        {
+            IsBusy = false;
+            _requestCancellation?.Dispose();
+            _requestCancellation = null;
+        }
+    }
+
+    private async Task UploadBlockShareAsync(
+        string roomIdRaw,
+        int userLevelSeq,
+        string messageRaw,
+        string accessTokenOverride)
+    {
+        if (IsBusy)
+        {
+            EmitBlockShareUploadFailure(roomIdRaw, userLevelSeq, "?대? ?ㅻⅨ 梨꾪똿 ?붿껌??泥섎━ 以묒엯?덈떎.");
+            return;
+        }
+
+        string roomId = string.IsNullOrWhiteSpace(roomIdRaw) ? string.Empty : roomIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(roomId))
+        {
+            EmitBlockShareUploadFailure(roomIdRaw, userLevelSeq, "釉붾줉 怨듭쑀 ???諛?ID媛 鍮꾩뼱 ?덉뒿?덈떎.");
+            return;
+        }
+
+        if (userLevelSeq <= 0)
+        {
+            EmitBlockShareUploadFailure(roomId, userLevelSeq, "userLevelSeq??1 ?댁긽??媛믪씠?댁빞 ?⑸땲??");
+            return;
+        }
+
+        string endpoint = BuildRoomScopedEndpoint(_blockShareEndpointTemplate, roomId, "block-shares");
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            EmitBlockShareUploadFailure(roomId, userLevelSeq, "釉붾줉 怨듭쑀 API URL??鍮꾩뼱 ?덉뒿?덈떎.");
+            return;
+        }
+
+        string accessToken = ResolveAccessToken(accessTokenOverride);
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            EmitBlockShareUploadFailure(roomId, userLevelSeq, "釉붾줉 怨듭쑀?먮뒗 濡쒓렇???좏겙???꾩슂?⑸땲??");
+            return;
+        }
+
+        string message = string.IsNullOrWhiteSpace(messageRaw) ? string.Empty : messageRaw.Trim();
+
+        IsBusy = true;
+        _requestCancellation = new CancellationTokenSource();
+
+        try
+        {
+            OnBlockShareUploadStarted?.Invoke(roomId, userLevelSeq, message);
+
+            var payload = new BlockShareUploadRequestPayload
+            {
+                userLevelSeq = userLevelSeq,
+                message = message
+            };
+
+            string requestJson = JsonUtility.ToJson(payload);
+
+            using (var request = new UnityWebRequest(endpoint, UnityWebRequest.kHttpVerbPOST))
+            {
+                byte[] bodyBytes = Encoding.UTF8.GetBytes(requestJson);
+                request.uploadHandler = new UploadHandlerRaw(bodyBytes);
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.timeout = Mathf.Max(1, _requestTimeoutSeconds);
+                request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+
+                bool isCanceled = await SendRequestAsync(request, _requestCancellation.Token);
+                if (isCanceled)
+                {
+                    OnBlockShareUploadCanceled?.Invoke(roomId, userLevelSeq);
+                    Log($"Block share upload canceled. roomId={roomId}, userLevelSeq={userLevelSeq}");
+                    return;
+                }
+
+                string body = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+                BasicServiceResponse response = TryParseJson<BasicServiceResponse>(body);
+                bool httpSuccess = request.responseCode >= 200 && request.responseCode < 300;
+
+                if (request.result == UnityWebRequest.Result.ConnectionError ||
+                    request.result == UnityWebRequest.Result.DataProcessingError)
+                {
+                    EmitBlockShareUploadFailure(roomId, userLevelSeq, "?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??");
+                    Log($"Block share upload network failure. roomId={roomId}, userLevelSeq={userLevelSeq}, error={request.error}");
+                    return;
+                }
+
+                if (!httpSuccess || HasExplicitFailureFlag(body))
+                {
+                    string errorMessage = FirstNonEmpty(
+                        response != null ? response.message : null,
+                        response != null ? response.error : null,
+                        request.error,
+                        $"HTTP {request.responseCode}",
+                        "釉붾줉 怨듭쑀 ?낅줈?쒖뿉 ?ㅽ뙣?덉뒿?덈떎.");
+
+                    EmitBlockShareUploadFailure(roomId, userLevelSeq, errorMessage);
+                    Log(
+                        $"Block share upload failed. roomId={roomId}, userLevelSeq={userLevelSeq}, code={request.responseCode}, body={body}, error={errorMessage}");
+                    return;
+                }
+
+                var result = new ChatRoomBlockShareUploadInfo
+                {
+                    RoomId = FirstNonEmpty(
+                        response != null ? response.roomId : null,
+                        response != null ? response.room_id : null,
+                        ExtractJsonScalarAsString(body, "roomId"),
+                        ExtractJsonScalarAsString(body, "room_id"),
+                        roomId),
+                    UserLevelSeq = userLevelSeq,
+                    Message = message,
+                    BlockShareId = FirstNonEmpty(
+                        response != null ? response.blockShareId : null,
+                        response != null ? response.block_share_id : null,
+                        response != null ? response.id : null,
+                        ExtractJsonScalarAsString(body, "blockShareId"),
+                        ExtractJsonScalarAsString(body, "block_share_id"),
+                        ExtractJsonScalarAsString(body, "id"),
+                        string.Empty),
+                    CreatedAtUtc = FirstNonEmpty(
+                        response != null ? response.createdAt : null,
+                        response != null ? response.created_at : null,
+                        ExtractJsonScalarAsString(body, "createdAt"),
+                        ExtractJsonScalarAsString(body, "created_at"),
+                        string.Empty),
+                    ResponseCode = request.responseCode,
+                    ResponseBody = body
+                };
+
+                OnBlockShareUploadSucceeded?.Invoke(result);
+                Log(
+                    $"Block share upload succeeded. roomId={result.RoomId}, userLevelSeq={result.UserLevelSeq}, blockShareId={result.BlockShareId}, code={result.ResponseCode}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            OnBlockShareUploadCanceled?.Invoke(roomId, userLevelSeq);
+            Log($"Block share upload canceled by token. roomId={roomId}, userLevelSeq={userLevelSeq}");
+        }
+        catch (Exception e)
+        {
+            EmitBlockShareUploadFailure(roomId, userLevelSeq, $"釉붾줉 怨듭쑀 ?낅줈??以??덉쇅媛 諛쒖깮?덉뒿?덈떎. ({e.Message})");
+        }
+        finally
+        {
+            IsBusy = false;
+            _requestCancellation?.Dispose();
+            _requestCancellation = null;
+        }
+    }
+
+    private async Task FetchBlockShareDetailAsync(
+        string roomIdRaw,
+        string shareIdRaw,
+        string accessTokenOverride)
+    {
+        if (IsBusy)
+        {
+            EmitBlockShareDetailFetchFailure(roomIdRaw, shareIdRaw, "??? ??삘뀲 筌?쑵???遺욧퍕??筌ｌ꼶??餓λ쵐???덈뼄.");
+            return;
+        }
+
+        string roomId = string.IsNullOrWhiteSpace(roomIdRaw) ? string.Empty : roomIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(roomId))
+        {
+            EmitBlockShareDetailFetchFailure(roomIdRaw, shareIdRaw, "?됰뗀以??⑤벊? ??곸뵠 ??????獄?ID揶쎛 ??쑴堉???됰뮸??덈뼄.");
+            return;
+        }
+
+        string shareId = string.IsNullOrWhiteSpace(shareIdRaw) ? string.Empty : shareIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(shareId))
+        {
+            EmitBlockShareDetailFetchFailure(roomId, shareIdRaw, "?됰뗀以??⑤벊? ??곸뵠 ??????shareId揶쎛 ??쑴堉???됰뮸??덈뼄.");
+            return;
+        }
+
+        string endpoint = BuildRoomShareScopedEndpoint(_blockShareDetailEndpointTemplate, roomId, shareId);
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            EmitBlockShareDetailFetchFailure(roomId, shareId, "?됰뗀以??⑤벊? ??곸뵠 API URL????쑴堉???됰뮸??덈뼄.");
+            return;
+        }
+
+        string accessToken = ResolveAccessToken(accessTokenOverride);
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            EmitBlockShareDetailFetchFailure(roomId, shareId, "?됰뗀以??⑤벊? ??곸뵠?癒?뮉 嚥≪뮄????醫뤾쿃???袁⑹뒄??몃빍??");
+            return;
+        }
+
+        IsBusy = true;
+        _requestCancellation = new CancellationTokenSource();
+
+        try
+        {
+            OnBlockShareDetailFetchStarted?.Invoke(roomId, shareId);
+
+            using (var request = new UnityWebRequest(endpoint, UnityWebRequest.kHttpVerbPOST))
+            {
+                byte[] bodyBytes = Encoding.UTF8.GetBytes("{}");
+                request.uploadHandler = new UploadHandlerRaw(bodyBytes);
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.timeout = Mathf.Max(1, _requestTimeoutSeconds);
+                request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+
+                bool isCanceled = await SendRequestAsync(request, _requestCancellation.Token);
+                if (isCanceled)
+                {
+                    OnBlockShareDetailFetchCanceled?.Invoke(roomId, shareId);
+                    Log($"Block share detail fetch canceled. roomId={roomId}, shareId={shareId}");
+                    return;
+                }
+
+                string responseBody = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+                Log(
+                    $"Block share detail raw response. result={request.result}, code={request.responseCode}, error={request.error}, body={responseBody}");
+
+                ChatRoomBlockShareInfo detailInfo = ParseBlockShareDetailResponse(request, roomId, shareId);
+                if (detailInfo != null)
+                {
+                    OnBlockShareDetailFetchSucceeded?.Invoke(detailInfo);
+                    Log(
+                        $"Block share detail fetched. roomId={detailInfo.RoomId}, shareId={detailInfo.BlockShareId}, userLevelSeq={detailInfo.UserLevelSeq}");
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            OnBlockShareDetailFetchCanceled?.Invoke(roomId, shareId);
+            Log($"Block share detail fetch canceled by token. roomId={roomId}, shareId={shareId}");
+        }
+        catch (Exception e)
+        {
+            EmitBlockShareDetailFetchFailure(roomId, shareId, $"?됰뗀以??⑤벊? ??곸뵠 鈺곌퀬??餓???됱뇚揶쎛 獄쏆뮇源??됰뮸??덈뼄. ({e.Message})");
+        }
+        finally
+        {
+            IsBusy = false;
+            _requestCancellation?.Dispose();
+            _requestCancellation = null;
+        }
+    }
+
+    private async Task SaveBlockShareToMyLevelAsync(string shareIdRaw, string accessTokenOverride)
+    {
+        if (IsBusy)
+        {
+            EmitBlockShareSaveFailure(shareIdRaw, "??? ??삘뀲 筌?쑵???遺욧퍕??筌ｌ꼶??餓λ쵐???덈뼄.");
+            return;
+        }
+
+        string shareId = string.IsNullOrWhiteSpace(shareIdRaw) ? string.Empty : shareIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(shareId))
+        {
+            EmitBlockShareSaveFailure(shareIdRaw, "?됰뗀以??⑤벊? ???몄퐧??shareId揶쎛 ??쑴堉???됰뮸??덈뼄.");
+            return;
+        }
+
+        string endpoint = BuildShareScopedEndpoint(
+            _saveBlockShareToMyLevelEndpointTemplate,
+            shareId,
+            "save-to-my-level");
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            EmitBlockShareSaveFailure(shareId, "?됰뗀以??⑤벊? ???몄퐧 API URL????쑴堉???됰뮸??덈뼄.");
+            return;
+        }
+
+        string accessToken = ResolveAccessToken(accessTokenOverride);
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            EmitBlockShareSaveFailure(shareId, "?됰뗀以??⑤벊? ???몄퐧?癒?뮉 嚥≪뮄????醫뤾쿃???袁⑹뒄??몃빍??");
+            return;
+        }
+
+        IsBusy = true;
+        _requestCancellation = new CancellationTokenSource();
+
+        try
+        {
+            OnBlockShareSaveStarted?.Invoke(shareId);
+
+            using (var request = new UnityWebRequest(endpoint, UnityWebRequest.kHttpVerbPOST))
+            {
+                byte[] bodyBytes = Encoding.UTF8.GetBytes("{}");
+                request.uploadHandler = new UploadHandlerRaw(bodyBytes);
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.timeout = Mathf.Max(1, _requestTimeoutSeconds);
+                request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+
+                bool isCanceled = await SendRequestAsync(request, _requestCancellation.Token);
+                if (isCanceled)
+                {
+                    OnBlockShareSaveCanceled?.Invoke(shareId);
+                    Log($"Block share save canceled. shareId={shareId}");
+                    return;
+                }
+
+                string body = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+                BasicServiceResponse response = TryParseJson<BasicServiceResponse>(body);
+                bool httpSuccess = request.responseCode >= 200 && request.responseCode < 300;
+
+                if (request.result == UnityWebRequest.Result.ConnectionError ||
+                    request.result == UnityWebRequest.Result.DataProcessingError)
+                {
+                    EmitBlockShareSaveFailure(shareId, "??쎈뱜??곌쾿 ??살첒揶쎛 獄쏆뮇源??됰뮸??덈뼄. ?醫롫뻻 ????쇰뻻 ??뺣즲??雅뚯눘苑??");
+                    Log($"Block share save network failure. shareId={shareId}, error={request.error}");
+                    return;
+                }
+
+                if (!httpSuccess || HasExplicitFailureFlag(body))
+                {
+                    string errorMessage = FirstNonEmpty(
+                        response != null ? response.message : null,
+                        response != null ? response.error : null,
+                        request.error,
+                        $"HTTP {request.responseCode}",
+                        "?됰뗀以??⑤벊? ???몄퐧???ㅽ뙣?덉뒿?덈떎.");
+
+                    EmitBlockShareSaveFailure(shareId, errorMessage);
+                    Log($"Block share save failed. shareId={shareId}, code={request.responseCode}, body={body}, error={errorMessage}");
+                    return;
+                }
+
+                var result = new ChatRoomBlockShareSaveInfo
+                {
+                    ShareId = FirstNonEmpty(
+                        ExtractJsonScalarAsString(body, "shareId"),
+                        ExtractJsonScalarAsString(body, "blockShareId"),
+                        ExtractJsonScalarAsString(body, "block_share_id"),
+                        ExtractJsonScalarAsString(body, "id"),
+                        shareId),
+                    SavedUserLevelSeq = FirstPositive(
+                        ParseJsonInt(body, "userLevelSeq"),
+                        ParseJsonInt(body, "seq"),
+                        ParseJsonInt(body, "level"),
+                        0),
+                    Message = FirstNonEmpty(
+                        response != null ? response.message : null,
+                        response != null ? response.error : null,
+                        string.Empty),
+                    ResponseCode = request.responseCode,
+                    ResponseBody = body
+                };
+
+                OnBlockShareSaveSucceeded?.Invoke(result);
+                Log($"Block share saved to my level. shareId={result.ShareId}, savedSeq={result.SavedUserLevelSeq}, code={result.ResponseCode}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            OnBlockShareSaveCanceled?.Invoke(shareId);
+            Log($"Block share save canceled by token. shareId={shareId}");
+        }
+        catch (Exception e)
+        {
+            EmitBlockShareSaveFailure(shareId, $"?됰뗀以??⑤벊? ???몄퐧 鈺곌퀬??餓???됱뇚揶쎛 獄쏆뮇源??됰뮸??덈뼄. ({e.Message})");
         }
         finally
         {
@@ -681,7 +1208,7 @@ public class ChatRoomManager : MonoBehaviour
             {
                 IsSuccess = false,
                 IsCanceled = false,
-                ErrorMessage = "입장 요청 처리 API URL이 비어 있습니다."
+                ErrorMessage = "?낆옣 ?붿껌 泥섎━ API URL??鍮꾩뼱 ?덉뒿?덈떎."
             };
         }
 
@@ -719,7 +1246,7 @@ public class ChatRoomManager : MonoBehaviour
                     IsCanceled = false,
                     ResponseCode = request.responseCode,
                     ResponseBody = body,
-                    ErrorMessage = "네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+                    ErrorMessage = "?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??"
                 };
             }
 
@@ -730,7 +1257,7 @@ public class ChatRoomManager : MonoBehaviour
                     response != null ? response.error : null,
                     request.error,
                     $"HTTP {request.responseCode}",
-                    "방 입장 요청 처리에 실패했습니다.");
+                    "諛??낆옣 ?붿껌 泥섎━???ㅽ뙣?덉뒿?덈떎.");
 
                 return new JoinRequestDecisionAttemptResult
                 {
@@ -777,14 +1304,14 @@ public class ChatRoomManager : MonoBehaviour
     {
         if (request == null)
         {
-            EmitFailure("요청 객체가 없습니다.");
+            EmitFailure("?붿껌 媛앹껜媛 ?놁뒿?덈떎.");
             return null;
         }
 
         if (request.result == UnityWebRequest.Result.ConnectionError ||
             request.result == UnityWebRequest.Result.DataProcessingError)
         {
-            EmitFailure("네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+            EmitFailure("?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??");
             return null;
         }
 
@@ -800,7 +1327,7 @@ public class ChatRoomManager : MonoBehaviour
                 response.message,
                 response.error,
                 $"HTTP {request.responseCode}",
-                "채팅방 생성에 실패했습니다.");
+                "梨꾪똿諛??앹꽦???ㅽ뙣?덉뒿?덈떎.");
 
             EmitFailure(errorMessage);
             return null;
@@ -817,7 +1344,7 @@ public class ChatRoomManager : MonoBehaviour
 
         if (string.IsNullOrWhiteSpace(roomId))
         {
-            EmitFailure("채팅방 ID가 응답에 없습니다.");
+            EmitFailure("梨꾪똿諛?ID媛 ?묐떟???놁뒿?덈떎.");
             return null;
         }
 
@@ -877,14 +1404,14 @@ public class ChatRoomManager : MonoBehaviour
     {
         if (request == null)
         {
-            EmitListFailure("요청 객체가 없습니다.");
+            EmitListFailure("?붿껌 媛앹껜媛 ?놁뒿?덈떎.");
             return null;
         }
 
         if (request.result == UnityWebRequest.Result.ConnectionError ||
             request.result == UnityWebRequest.Result.DataProcessingError)
         {
-            EmitListFailure("네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+            EmitListFailure("?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??");
             return null;
         }
 
@@ -898,7 +1425,7 @@ public class ChatRoomManager : MonoBehaviour
                 response.message,
                 response.error,
                 $"HTTP {request.responseCode}",
-                "채팅방 목록 조회에 실패했습니다.");
+                "梨꾪똿諛?紐⑸줉 議고쉶???ㅽ뙣?덉뒿?덈떎.");
 
             EmitListFailure(errorMessage);
             return null;
@@ -910,7 +1437,7 @@ public class ChatRoomManager : MonoBehaviour
         ChatRoomPayload[] payloads = ExtractRoomPayloads(body);
         if (payloads == null)
         {
-            EmitListFailure("채팅방 목록 응답을 해석할 수 없습니다.");
+            EmitListFailure("梨꾪똿諛?紐⑸줉 ?묐떟???댁꽍?????놁뒿?덈떎.");
             return null;
         }
 
@@ -956,14 +1483,14 @@ public class ChatRoomManager : MonoBehaviour
     {
         if (request == null)
         {
-            EmitJoinRequestFailure("요청 객체가 없습니다.");
+            EmitJoinRequestFailure("?붿껌 媛앹껜媛 ?놁뒿?덈떎.");
             return null;
         }
 
         if (request.result == UnityWebRequest.Result.ConnectionError ||
             request.result == UnityWebRequest.Result.DataProcessingError)
         {
-            EmitJoinRequestFailure("네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+            EmitJoinRequestFailure("?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??");
             return null;
         }
 
@@ -977,7 +1504,7 @@ public class ChatRoomManager : MonoBehaviour
                 response != null ? response.message : null,
                 response != null ? response.error : null,
                 $"HTTP {request.responseCode}",
-                "방 입장 요청에 실패했습니다.");
+                "諛??낆옣 ?붿껌???ㅽ뙣?덉뒿?덈떎.");
 
             EmitJoinRequestFailure(errorMessage);
             return null;
@@ -1006,14 +1533,14 @@ public class ChatRoomManager : MonoBehaviour
     {
         if (request == null)
         {
-            EmitMyJoinRequestStatusFetchFailure(requestedRequestId, "요청 객체가 없습니다.");
+            EmitMyJoinRequestStatusFetchFailure(requestedRequestId, "?붿껌 媛앹껜媛 ?놁뒿?덈떎.");
             return null;
         }
 
         if (request.result == UnityWebRequest.Result.ConnectionError ||
             request.result == UnityWebRequest.Result.DataProcessingError)
         {
-            EmitMyJoinRequestStatusFetchFailure(requestedRequestId, "네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+            EmitMyJoinRequestStatusFetchFailure(requestedRequestId, "?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??");
             return null;
         }
 
@@ -1027,7 +1554,7 @@ public class ChatRoomManager : MonoBehaviour
                 response != null ? response.message : null,
                 response != null ? response.error : null,
                 $"HTTP {request.responseCode}",
-                "입장 요청 상태 조회에 실패했습니다.");
+                "?낆옣 ?붿껌 ?곹깭 議고쉶???ㅽ뙣?덉뒿?덈떎.");
 
             EmitMyJoinRequestStatusFetchFailure(requestedRequestId, errorMessage);
             return null;
@@ -1056,14 +1583,14 @@ public class ChatRoomManager : MonoBehaviour
     {
         if (request == null)
         {
-            EmitJoinRequestsFetchFailure("요청 객체가 없습니다.");
+            EmitJoinRequestsFetchFailure("?붿껌 媛앹껜媛 ?놁뒿?덈떎.");
             return null;
         }
 
         if (request.result == UnityWebRequest.Result.ConnectionError ||
             request.result == UnityWebRequest.Result.DataProcessingError)
         {
-            EmitJoinRequestsFetchFailure("네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+            EmitJoinRequestsFetchFailure("?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??");
             return null;
         }
 
@@ -1077,7 +1604,7 @@ public class ChatRoomManager : MonoBehaviour
                 response != null ? response.message : null,
                 response != null ? response.error : null,
                 $"HTTP {request.responseCode}",
-                "방 입장 요청 목록 조회에 실패했습니다.");
+                "諛??낆옣 ?붿껌 紐⑸줉 議고쉶???ㅽ뙣?덉뒿?덈떎.");
 
             EmitJoinRequestsFetchFailure(errorMessage);
             return null;
@@ -1089,7 +1616,7 @@ public class ChatRoomManager : MonoBehaviour
         JoinRequestPayload[] payloads = ExtractJoinRequestPayloads(body);
         if (payloads == null)
         {
-            EmitJoinRequestsFetchFailure("방 입장 요청 목록 응답을 해석할 수 없습니다.");
+            EmitJoinRequestsFetchFailure("諛??낆옣 ?붿껌 紐⑸줉 ?묐떟???댁꽍?????놁뒿?덈떎.");
             return null;
         }
 
@@ -1103,6 +1630,230 @@ public class ChatRoomManager : MonoBehaviour
         }
 
         return results.ToArray();
+    }
+
+    private ChatRoomBlockShareListInfo ParseBlockShareListResponse(
+        UnityWebRequest request,
+        string roomId,
+        int requestedPage,
+        int requestedSize)
+    {
+        if (request == null)
+        {
+            EmitBlockShareListFetchFailure(roomId, requestedPage, requestedSize, "?붿껌 媛앹껜媛 ?놁뒿?덈떎.");
+            return null;
+        }
+
+        if (request.result == UnityWebRequest.Result.ConnectionError ||
+            request.result == UnityWebRequest.Result.DataProcessingError)
+        {
+            EmitBlockShareListFetchFailure(roomId, requestedPage, requestedSize, "?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??");
+            return null;
+        }
+
+        string body = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+        BasicServiceResponse response = TryParseJson<BasicServiceResponse>(body);
+        bool httpSuccess = request.responseCode >= 200 && request.responseCode < 300;
+
+        if (!httpSuccess || HasExplicitFailureFlag(body))
+        {
+            string errorMessage = FirstNonEmpty(
+                response != null ? response.message : null,
+                response != null ? response.error : null,
+                $"HTTP {request.responseCode}",
+                "釉붾줉 怨듭쑀 紐⑸줉 議고쉶???ㅽ뙣?덉뒿?덈떎.");
+
+            EmitBlockShareListFetchFailure(roomId, requestedPage, requestedSize, errorMessage);
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return new ChatRoomBlockShareListInfo
+            {
+                RoomId = roomId,
+                Page = requestedPage,
+                Size = requestedSize,
+                TotalCount = 0,
+                TotalPages = 0,
+                Items = Array.Empty<ChatRoomBlockShareInfo>(),
+                ResponseCode = request.responseCode,
+                ResponseBody = body
+            };
+        }
+
+        BlockSharePayload[] payloads = ExtractBlockSharePayloads(body);
+        if (payloads == null)
+        {
+            Log(
+                $"Block share list parse failed. roomId={roomId}, page={requestedPage}, size={requestedSize}, body={TruncateForLog(body)}");
+            EmitBlockShareListFetchFailure(roomId, requestedPage, requestedSize, "釉붾줉 怨듭쑀 紐⑸줉 ?묐떟???댁꽍?????놁뒿?덈떎.");
+            return null;
+        }
+
+        var items = new List<ChatRoomBlockShareInfo>(payloads.Length);
+        for (int i = 0; i < payloads.Length; i++)
+        {
+            ChatRoomBlockShareInfo info = ToBlockShareInfo(payloads[i], roomId);
+            if (info != null)
+                items.Add(info);
+        }
+
+        int page = FirstPositive(
+            ParseJsonInt(body, "page"),
+            ParseJsonInt(body, "currentPage"),
+            requestedPage);
+
+        int size = FirstPositive(
+            ParseJsonInt(body, "size"),
+            ParseJsonInt(body, "pageSize"),
+            requestedSize);
+
+        int totalCount = FirstPositive(
+            ParseJsonInt(body, "totalCount"),
+            ParseJsonInt(body, "totalElements"),
+            ParseJsonInt(body, "total"),
+            items.Count);
+
+        int totalPages = FirstPositive(
+            ParseJsonInt(body, "totalPages"),
+            ParseJsonInt(body, "pageCount"),
+            totalCount > 0 && size > 0 ? Mathf.CeilToInt(totalCount / (float)size) : 0);
+
+        return new ChatRoomBlockShareListInfo
+        {
+            RoomId = roomId,
+            Page = page,
+            Size = size,
+            TotalCount = totalCount,
+            TotalPages = totalPages,
+            Items = items.ToArray(),
+            ResponseCode = request.responseCode,
+            ResponseBody = body
+        };
+    }
+
+    private ChatRoomBlockShareInfo ParseBlockShareDetailResponse(
+        UnityWebRequest request,
+        string roomId,
+        string requestedShareId)
+    {
+        if (request == null)
+        {
+            EmitBlockShareDetailFetchFailure(roomId, requestedShareId, "?遺욧퍕 揶쏆빘猿쒎첎? ??곷뮸??덈뼄.");
+            return null;
+        }
+
+        if (request.result == UnityWebRequest.Result.ConnectionError ||
+            request.result == UnityWebRequest.Result.DataProcessingError)
+        {
+            EmitBlockShareDetailFetchFailure(roomId, requestedShareId, "??쎈뱜??곌쾿 ??살첒揶쎛 獄쏆뮇源??됰뮸??덈뼄. ?醫롫뻻 ????쇰뻻 ??뺣즲??雅뚯눘苑??");
+            return null;
+        }
+
+        string body = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+        BasicServiceResponse response = TryParseJson<BasicServiceResponse>(body);
+        bool httpSuccess = request.responseCode >= 200 && request.responseCode < 300;
+
+        if (!httpSuccess || HasExplicitFailureFlag(body))
+        {
+            string errorMessage = FirstNonEmpty(
+                response != null ? response.message : null,
+                response != null ? response.error : null,
+                $"HTTP {request.responseCode}",
+                "?됰뗀以??⑤벊? ??곸뵠???ㅽ뙣?덉뒿?덈떎.");
+
+            EmitBlockShareDetailFetchFailure(roomId, requestedShareId, errorMessage);
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return new ChatRoomBlockShareInfo
+            {
+                BlockShareId = requestedShareId,
+                RoomId = roomId,
+                UserId = string.Empty,
+                UserLevelSeq = 0,
+                Message = string.Empty,
+                CreatedAtUtc = string.Empty
+            };
+        }
+
+        BlockShareSingleResponse singleResponse = TryParseJson<BlockShareSingleResponse>(body);
+        BlockSharePayload payload = FirstNonEmptyBlockSharePayload(
+            singleResponse != null ? singleResponse.blockShare : null,
+            singleResponse != null ? singleResponse.share : null,
+            singleResponse != null ? singleResponse.item : null,
+            singleResponse != null ? singleResponse.data : null);
+
+        if (payload == null)
+        {
+            BlockSharePayload[] payloads = ExtractBlockSharePayloads(body);
+            if (payloads != null && payloads.Length > 0)
+            {
+                for (int i = 0; i < payloads.Length; i++)
+                {
+                    if (IsMeaningfulBlockSharePayload(payloads[i]))
+                    {
+                        payload = payloads[i];
+                        break;
+                    }
+                }
+
+                if (payload == null)
+                    payload = payloads[0];
+            }
+        }
+
+        ChatRoomBlockShareInfo info = ToBlockShareInfo(payload, roomId);
+        if (info == null)
+        {
+            info = new ChatRoomBlockShareInfo
+            {
+                BlockShareId = FirstNonEmpty(
+                    ExtractJsonScalarAsString(body, "shareId"),
+                    ExtractJsonScalarAsString(body, "blockShareId"),
+                    ExtractJsonScalarAsString(body, "block_share_id"),
+                    ExtractJsonScalarAsString(body, "id"),
+                    requestedShareId),
+                RoomId = FirstNonEmpty(
+                    ExtractJsonScalarAsString(body, "roomId"),
+                    ExtractJsonScalarAsString(body, "room_id"),
+                    roomId),
+                UserId = FirstNonEmpty(
+                    ExtractJsonScalarAsString(body, "userId"),
+                    ExtractJsonScalarAsString(body, "user_id"),
+                    ExtractJsonScalarAsString(body, "requesterUserId"),
+                    ExtractJsonScalarAsString(body, "requester_user_id"),
+                    string.Empty),
+                UserLevelSeq = FirstPositive(
+                    ParseJsonInt(body, "userLevelSeq"),
+                    ParseJsonInt(body, "user_level_seq"),
+                    0),
+                Message = FirstNonEmpty(ExtractJsonScalarAsString(body, "message"), string.Empty),
+                CreatedAtUtc = FirstNonEmpty(
+                    ExtractJsonScalarAsString(body, "createdAt"),
+                    ExtractJsonScalarAsString(body, "created_at"),
+                    string.Empty)
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(info.BlockShareId))
+            info.BlockShareId = requestedShareId;
+
+        if (string.IsNullOrWhiteSpace(info.RoomId))
+            info.RoomId = roomId;
+
+        if (string.IsNullOrWhiteSpace(info.BlockShareId))
+        {
+            Log(
+                $"Block share detail parse failed. roomId={roomId}, shareId={requestedShareId}, body={TruncateForLog(body)}");
+            EmitBlockShareDetailFetchFailure(roomId, requestedShareId, "?됰뗀以??⑤벊? ??곸뵠 ?묐떟???댁꽍?????놁뒿?덈떎.");
+            return null;
+        }
+
+        return info;
     }
 
     private static JoinRequestPayload[] ExtractJoinRequestPayloads(string body)
@@ -1273,6 +2024,355 @@ public class ChatRoomManager : MonoBehaviour
         return null;
     }
 
+    private static BlockSharePayload[] ExtractBlockSharePayloads(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return Array.Empty<BlockSharePayload>();
+
+        string trimmedBody = body.Trim();
+
+        if (trimmedBody.StartsWith("[", StringComparison.Ordinal))
+        {
+            return ParseBlockSharePayloadArray(trimmedBody);
+        }
+
+        BlockShareListResponse listResponse = TryParseJson<BlockShareListResponse>(trimmedBody);
+        if (listResponse != null)
+        {
+            if (listResponse.blockShares != null)
+                return listResponse.blockShares;
+            if (listResponse.list != null)
+                return listResponse.list;
+            if (listResponse.items != null)
+                return listResponse.items;
+            if (listResponse.content != null)
+                return listResponse.content;
+            if (listResponse.data != null)
+                return listResponse.data;
+        }
+
+        BlockShareDataObjectResponse dataObjectResponse = TryParseJson<BlockShareDataObjectResponse>(trimmedBody);
+        if (dataObjectResponse != null && dataObjectResponse.data != null)
+        {
+            if (dataObjectResponse.data.blockShares != null)
+                return dataObjectResponse.data.blockShares;
+            if (dataObjectResponse.data.list != null)
+                return dataObjectResponse.data.list;
+            if (dataObjectResponse.data.items != null)
+                return dataObjectResponse.data.items;
+            if (dataObjectResponse.data.content != null)
+                return dataObjectResponse.data.content;
+        }
+
+        string[] candidateArrayKeys =
+        {
+            "blockShares",
+            "list",
+            "items",
+            "content",
+            "data",
+            "records",
+            "rows",
+            "result"
+        };
+
+        BlockSharePayload[] emptyCandidate = null;
+
+        for (int i = 0; i < candidateArrayKeys.Length; i++)
+        {
+            string arrayJson = ExtractJsonArrayByKey(trimmedBody, candidateArrayKeys[i]);
+            BlockSharePayload[] payloads = ParseBlockSharePayloadArray(arrayJson);
+            if (payloads == null)
+                continue;
+
+            if (payloads.Length == 0)
+            {
+                if (emptyCandidate == null)
+                    emptyCandidate = payloads;
+
+                continue;
+            }
+
+            if (ContainsMeaningfulBlockSharePayload(payloads))
+                return payloads;
+
+            if (emptyCandidate == null)
+                emptyCandidate = payloads;
+        }
+
+        BlockSharePayload[] firstArrayPayloads = ParseBlockSharePayloadArray(ExtractFirstJsonArray(trimmedBody));
+        if (firstArrayPayloads != null)
+        {
+            if (firstArrayPayloads.Length == 0 || ContainsMeaningfulBlockSharePayload(firstArrayPayloads))
+                return firstArrayPayloads;
+
+            if (emptyCandidate == null)
+                emptyCandidate = firstArrayPayloads;
+        }
+
+        return emptyCandidate;
+    }
+
+    private static BlockSharePayload FirstNonEmptyBlockSharePayload(params BlockSharePayload[] payloads)
+    {
+        if (payloads == null)
+            return null;
+
+        for (int i = 0; i < payloads.Length; i++)
+        {
+            if (payloads[i] != null)
+                return payloads[i];
+        }
+
+        return null;
+    }
+
+    private static BlockSharePayload[] ParseBlockSharePayloadArray(string arrayJson)
+    {
+        if (string.IsNullOrWhiteSpace(arrayJson))
+            return null;
+
+        string trimmedArray = arrayJson.Trim();
+        if (!trimmedArray.StartsWith("[", StringComparison.Ordinal))
+            return null;
+
+        string wrapped = $"{{\"items\":{trimmedArray}}}";
+        BlockShareArrayWrapper wrappedResponse = TryParseJson<BlockShareArrayWrapper>(wrapped);
+        return wrappedResponse != null ? wrappedResponse.items : null;
+    }
+
+    private static bool ContainsMeaningfulBlockSharePayload(BlockSharePayload[] payloads)
+    {
+        if (payloads == null || payloads.Length == 0)
+            return false;
+
+        for (int i = 0; i < payloads.Length; i++)
+        {
+            if (IsMeaningfulBlockSharePayload(payloads[i]))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsMeaningfulBlockSharePayload(BlockSharePayload payload)
+    {
+        if (payload == null)
+            return false;
+
+        return !string.IsNullOrWhiteSpace(FirstNonEmpty(payload.blockShareId, payload.block_share_id, payload.id)) ||
+               !string.IsNullOrWhiteSpace(FirstNonEmpty(payload.roomId, payload.room_id)) ||
+               !string.IsNullOrWhiteSpace(FirstNonEmpty(payload.userId, payload.user_id, payload.requesterUserId, payload.requester_user_id)) ||
+               FirstPositive(payload.userLevelSeq, payload.user_level_seq, 0) > 0 ||
+               !string.IsNullOrWhiteSpace(payload.message) ||
+               !string.IsNullOrWhiteSpace(FirstNonEmpty(payload.createdAt, payload.created_at));
+    }
+
+    private static string ExtractJsonArrayByKey(string json, string key)
+    {
+        if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(key))
+            return null;
+
+        string pattern = $"\"{Regex.Escape(key)}\"\\s*:\\s*\\[";
+        Match match = Regex.Match(json, pattern, RegexOptions.IgnoreCase);
+        if (!match.Success)
+            return null;
+
+        int arrayStart = match.Index + match.Length - 1;
+        int arrayEnd = FindMatchingJsonBracket(json, arrayStart, '[', ']');
+        if (arrayEnd < 0 || arrayEnd < arrayStart)
+            return null;
+
+        return json.Substring(arrayStart, arrayEnd - arrayStart + 1);
+    }
+
+    private static string ExtractFirstJsonArray(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        bool inString = false;
+        bool escaped = false;
+
+        for (int i = 0; i < json.Length; i++)
+        {
+            char c = json[i];
+            if (inString)
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+
+                if (c == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+
+                if (c == '"')
+                    inString = false;
+
+                continue;
+            }
+
+            if (c == '"')
+            {
+                inString = true;
+                continue;
+            }
+
+            if (c != '[')
+                continue;
+
+            int endIndex = FindMatchingJsonBracket(json, i, '[', ']');
+            if (endIndex < i)
+                return null;
+
+            return json.Substring(i, endIndex - i + 1);
+        }
+
+        return null;
+    }
+
+    private static int FindMatchingJsonBracket(string json, int startIndex, char openChar, char closeChar)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return -1;
+
+        if (startIndex < 0 || startIndex >= json.Length || json[startIndex] != openChar)
+            return -1;
+
+        int depth = 0;
+        bool inString = false;
+        bool escaped = false;
+
+        for (int i = startIndex; i < json.Length; i++)
+        {
+            char c = json[i];
+            if (inString)
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+
+                if (c == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+
+                if (c == '"')
+                    inString = false;
+
+                continue;
+            }
+
+            if (c == '"')
+            {
+                inString = true;
+                continue;
+            }
+
+            if (c == openChar)
+            {
+                depth++;
+                continue;
+            }
+
+            if (c != closeChar)
+                continue;
+
+            depth--;
+            if (depth == 0)
+                return i;
+
+            if (depth < 0)
+                return -1;
+        }
+
+        return -1;
+    }
+
+    private static ChatRoomBlockShareInfo ToBlockShareInfo(BlockSharePayload payload, string fallbackRoomId)
+    {
+        if (payload == null)
+            return null;
+
+        string blockShareId = FirstNonEmpty(payload.blockShareId, payload.block_share_id, payload.id);
+        string roomId = FirstNonEmpty(payload.roomId, payload.room_id, fallbackRoomId);
+        string userId = FirstNonEmpty(
+            payload.userId,
+            payload.user_id,
+            payload.requesterUserId,
+            payload.requester_user_id,
+            string.Empty);
+        int userLevelSeq = FirstPositive(payload.userLevelSeq, payload.user_level_seq, 0);
+        string message = FirstNonEmpty(payload.message, string.Empty);
+        string createdAt = FirstNonEmpty(payload.createdAt, payload.created_at, string.Empty);
+
+        if (string.IsNullOrWhiteSpace(blockShareId) &&
+            string.IsNullOrWhiteSpace(roomId) &&
+            string.IsNullOrWhiteSpace(userId) &&
+            userLevelSeq <= 0 &&
+            string.IsNullOrWhiteSpace(message) &&
+            string.IsNullOrWhiteSpace(createdAt))
+        {
+            return null;
+        }
+
+        return new ChatRoomBlockShareInfo
+        {
+            BlockShareId = blockShareId,
+            RoomId = roomId,
+            UserId = userId,
+            UserLevelSeq = userLevelSeq,
+            Message = message,
+            CreatedAtUtc = createdAt
+        };
+    }
+
+    private static int ParseJsonInt(string json, string key)
+    {
+        string raw = ExtractJsonScalarAsString(json, key);
+        if (string.IsNullOrWhiteSpace(raw))
+            return 0;
+
+        if (int.TryParse(raw.Trim(), out int value))
+            return value;
+
+        return 0;
+    }
+
+    private static string TruncateForLog(string value, int maxLength = 1200)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+
+        int safeMax = Mathf.Max(32, maxLength);
+        if (value.Length <= safeMax)
+            return value;
+
+        return $"{value.Substring(0, safeMax)}...(truncated, len={value.Length})";
+    }
+
+    private static int FirstPositive(params int[] values)
+    {
+        if (values == null)
+            return 0;
+
+        for (int i = 0; i < values.Length; i++)
+        {
+            if (values[i] > 0)
+                return values[i];
+        }
+
+        return 0;
+    }
+
     private static ChatRoomPayload[] ExtractRoomPayloads(string body)
     {
         if (string.IsNullOrWhiteSpace(body))
@@ -1389,6 +2489,67 @@ public class ChatRoomManager : MonoBehaviour
         return $"{template.TrimEnd('/')}/{encodedRoomId}{suffix}";
     }
 
+    private static string BuildRoomShareScopedEndpoint(string endpointTemplate, string roomId, string shareId)
+    {
+        if (string.IsNullOrWhiteSpace(roomId) || string.IsNullOrWhiteSpace(shareId))
+            return string.Empty;
+
+        if (string.IsNullOrWhiteSpace(endpointTemplate))
+            return string.Empty;
+
+        string encodedRoomId = UnityWebRequest.EscapeURL(roomId.Trim());
+        string encodedShareId = UnityWebRequest.EscapeURL(shareId.Trim());
+        string resolved = endpointTemplate.Trim();
+
+        if (resolved.IndexOf("{roomId}", StringComparison.Ordinal) >= 0)
+            resolved = resolved.Replace("{roomId}", encodedRoomId);
+        else
+            resolved = $"{resolved.TrimEnd('/')}/{encodedRoomId}";
+
+        if (resolved.IndexOf("{shareId}", StringComparison.Ordinal) >= 0)
+            resolved = resolved.Replace("{shareId}", encodedShareId);
+        else
+            resolved = $"{resolved.TrimEnd('/')}/{encodedShareId}";
+
+        return resolved;
+    }
+
+    private static string BuildShareScopedEndpoint(
+        string endpointTemplate,
+        string shareId,
+        string fallbackSuffix = null)
+    {
+        if (string.IsNullOrWhiteSpace(shareId))
+            return string.Empty;
+
+        if (string.IsNullOrWhiteSpace(endpointTemplate))
+            return string.Empty;
+
+        string encodedShareId = UnityWebRequest.EscapeURL(shareId.Trim());
+        string resolved = endpointTemplate.Trim();
+
+        if (resolved.IndexOf("{shareId}", StringComparison.Ordinal) >= 0)
+        {
+            resolved = resolved.Replace("{shareId}", encodedShareId);
+        }
+        else
+        {
+            resolved = $"{resolved.TrimEnd('/')}/{encodedShareId}";
+        }
+
+        if (string.IsNullOrWhiteSpace(fallbackSuffix))
+            return resolved;
+
+        string suffix = fallbackSuffix.StartsWith("/", StringComparison.Ordinal)
+            ? fallbackSuffix
+            : $"/{fallbackSuffix}";
+
+        if (resolved.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            return resolved;
+
+        return $"{resolved.TrimEnd('/')}{suffix}";
+    }
+
     private static string BuildRequestScopedEndpoint(string endpointTemplate, string requestId)
     {
         if (string.IsNullOrWhiteSpace(requestId))
@@ -1494,7 +2655,7 @@ public class ChatRoomManager : MonoBehaviour
     private void EmitFailure(string userMessage)
     {
         string message = string.IsNullOrWhiteSpace(userMessage)
-            ? "채팅방 생성에 실패했습니다."
+            ? "梨꾪똿諛??앹꽦???ㅽ뙣?덉뒿?덈떎."
             : userMessage;
 
         OnCreateFailed?.Invoke(message);
@@ -1504,7 +2665,7 @@ public class ChatRoomManager : MonoBehaviour
     private void EmitListFailure(string userMessage)
     {
         string message = string.IsNullOrWhiteSpace(userMessage)
-            ? "채팅방 목록 조회에 실패했습니다."
+            ? "梨꾪똿諛?紐⑸줉 議고쉶???ㅽ뙣?덉뒿?덈떎."
             : userMessage;
 
         OnListFailed?.Invoke(message);
@@ -1514,7 +2675,7 @@ public class ChatRoomManager : MonoBehaviour
     private void EmitJoinRequestFailure(string userMessage)
     {
         string message = string.IsNullOrWhiteSpace(userMessage)
-            ? "방 입장 요청에 실패했습니다."
+            ? "諛??낆옣 ?붿껌???ㅽ뙣?덉뒿?덈떎."
             : userMessage;
 
         OnJoinRequestFailed?.Invoke(message);
@@ -1524,7 +2685,7 @@ public class ChatRoomManager : MonoBehaviour
     private void EmitJoinRequestsFetchFailure(string userMessage)
     {
         string message = string.IsNullOrWhiteSpace(userMessage)
-            ? "방 입장 요청 목록 조회에 실패했습니다."
+            ? "諛??낆옣 ?붿껌 紐⑸줉 議고쉶???ㅽ뙣?덉뒿?덈떎."
             : userMessage;
 
         OnJoinRequestsFetchFailed?.Invoke(message);
@@ -1534,7 +2695,7 @@ public class ChatRoomManager : MonoBehaviour
     private void EmitJoinRequestDecisionFailure(string roomId, string requestId, bool approve, string userMessage)
     {
         string message = string.IsNullOrWhiteSpace(userMessage)
-            ? "방 입장 요청 처리에 실패했습니다."
+            ? "諛??낆옣 ?붿껌 泥섎━???ㅽ뙣?덉뒿?덈떎."
             : userMessage;
 
         OnJoinRequestDecisionFailed?.Invoke(
@@ -1549,11 +2710,51 @@ public class ChatRoomManager : MonoBehaviour
     private void EmitMyJoinRequestStatusFetchFailure(string requestId, string userMessage)
     {
         string message = string.IsNullOrWhiteSpace(userMessage)
-            ? "입장 요청 상태 조회에 실패했습니다."
+            ? "?낆옣 ?붿껌 ?곹깭 議고쉶???ㅽ뙣?덉뒿?덈떎."
             : userMessage;
 
         OnMyJoinRequestStatusFetchFailed?.Invoke(requestId ?? string.Empty, message);
         Log($"My join request status fetch failed: requestId={requestId}, message={message}");
+    }
+
+    private void EmitBlockShareListFetchFailure(string roomId, int page, int size, string userMessage)
+    {
+        string message = string.IsNullOrWhiteSpace(userMessage)
+            ? "釉붾줉 怨듭쑀 紐⑸줉 議고쉶???ㅽ뙣?덉뒿?덈떎."
+            : userMessage;
+
+        OnBlockShareListFetchFailed?.Invoke(roomId ?? string.Empty, page, size, message);
+        Log($"Block share list fetch failed: roomId={roomId}, page={page}, size={size}, message={message}");
+    }
+
+    private void EmitBlockShareUploadFailure(string roomId, int userLevelSeq, string userMessage)
+    {
+        string message = string.IsNullOrWhiteSpace(userMessage)
+            ? "釉붾줉 怨듭쑀 ?낅줈?쒖뿉 ?ㅽ뙣?덉뒿?덈떎."
+            : userMessage;
+
+        OnBlockShareUploadFailed?.Invoke(roomId ?? string.Empty, userLevelSeq, message);
+        Log($"Block share upload failed: roomId={roomId}, userLevelSeq={userLevelSeq}, message={message}");
+    }
+
+    private void EmitBlockShareDetailFetchFailure(string roomId, string shareId, string userMessage)
+    {
+        string message = string.IsNullOrWhiteSpace(userMessage)
+            ? "釉붾줉 怨듭쑀 ?곸꽭 議고쉶???ㅽ뙣?덉뒿?덈떎."
+            : userMessage;
+
+        OnBlockShareDetailFetchFailed?.Invoke(roomId ?? string.Empty, shareId ?? string.Empty, message);
+        Log($"Block share detail fetch failed: roomId={roomId}, shareId={shareId}, message={message}");
+    }
+
+    private void EmitBlockShareSaveFailure(string shareId, string userMessage)
+    {
+        string message = string.IsNullOrWhiteSpace(userMessage)
+            ? "釉붾줉 怨듭쑀 ?곗씠?곕? ??ν빀?섎뒗 ?곹깭濡??ㅽ뙣?덉뒿?덈떎."
+            : userMessage;
+
+        OnBlockShareSaveFailed?.Invoke(shareId ?? string.Empty, message);
+        Log($"Block share save failed: shareId={shareId}, message={message}");
     }
 
     private static string BuildRoomTitlesLog(ChatRoomSummaryInfo[] rooms)
@@ -1749,6 +2950,88 @@ public class ChatRoomManager : MonoBehaviour
         public string reviewComment;
     }
 
+    [Serializable]
+    private class BlockShareUploadRequestPayload
+    {
+        public int userLevelSeq;
+        public string message;
+    }
+
+    [Serializable]
+    private class BasicServiceResponse
+    {
+        public bool success;
+        public bool isSuccess;
+        public string message;
+        public string error;
+        public string id;
+        public string roomId;
+        public string room_id;
+        public string blockShareId;
+        public string block_share_id;
+        public string createdAt;
+        public string created_at;
+    }
+
+    [Serializable]
+    private class BlockSharePayload
+    {
+        public string blockShareId;
+        public string block_share_id;
+        public string id;
+        public string roomId;
+        public string room_id;
+        public string userId;
+        public string user_id;
+        public string requesterUserId;
+        public string requester_user_id;
+        public int userLevelSeq;
+        public int user_level_seq;
+        public string message;
+        public string createdAt;
+        public string created_at;
+    }
+
+    [Serializable]
+    private class BlockShareArrayWrapper
+    {
+        public BlockSharePayload[] items;
+    }
+
+    [Serializable]
+    private class BlockShareListResponse
+    {
+        public BlockSharePayload[] blockShares;
+        public BlockSharePayload[] list;
+        public BlockSharePayload[] items;
+        public BlockSharePayload[] content;
+        public BlockSharePayload[] data;
+    }
+
+    [Serializable]
+    private class BlockShareDataObjectResponse
+    {
+        public BlockShareDataPayload data;
+    }
+
+    [Serializable]
+    private class BlockShareDataPayload
+    {
+        public BlockSharePayload[] blockShares;
+        public BlockSharePayload[] list;
+        public BlockSharePayload[] items;
+        public BlockSharePayload[] content;
+    }
+
+    [Serializable]
+    private class BlockShareSingleResponse
+    {
+        public BlockSharePayload data;
+        public BlockSharePayload item;
+        public BlockSharePayload blockShare;
+        public BlockSharePayload share;
+    }
+
     private struct JoinRequestDecisionAttemptResult
     {
         public bool IsSuccess;
@@ -1834,3 +3117,50 @@ public sealed class ChatRoomJoinRequestDecisionInfo
     public long ResponseCode;
     public string ResponseBody;
 }
+
+[Serializable]
+public sealed class ChatRoomBlockShareUploadInfo
+{
+    public string RoomId;
+    public int UserLevelSeq;
+    public string Message;
+    public string BlockShareId;
+    public string CreatedAtUtc;
+    public long ResponseCode;
+    public string ResponseBody;
+}
+
+[Serializable]
+public sealed class ChatRoomBlockShareInfo
+{
+    public string BlockShareId;
+    public string RoomId;
+    public string UserId;
+    public int UserLevelSeq;
+    public string Message;
+    public string CreatedAtUtc;
+}
+
+[Serializable]
+public sealed class ChatRoomBlockShareListInfo
+{
+    public string RoomId;
+    public int Page;
+    public int Size;
+    public int TotalCount;
+    public int TotalPages;
+    public ChatRoomBlockShareInfo[] Items;
+    public long ResponseCode;
+    public string ResponseBody;
+}
+
+[Serializable]
+public sealed class ChatRoomBlockShareSaveInfo
+{
+    public string ShareId;
+    public int SavedUserLevelSeq;
+    public string Message;
+    public long ResponseCode;
+    public string ResponseBody;
+}
+

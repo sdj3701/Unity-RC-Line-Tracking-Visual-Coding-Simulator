@@ -210,6 +210,47 @@ namespace MG_BlocksEngine2.Storage
             return fileNames;
         }
 
+        public async Task<List<UserLevelFileEntry>> GetFileEntriesAsync()
+        {
+            var result = new List<UserLevelFileEntry>();
+
+            if (!IsConfigured(_apiBaseUrl))
+            {
+                return result;
+            }
+
+            if (!TryGetAuthInfo(out string _, out string accessToken))
+            {
+                return result;
+            }
+
+            List<UserLevelEntry> entries = await GetMyEntriesAsync(accessToken);
+            if (entries.Count == 0)
+            {
+                return result;
+            }
+
+            for (int i = 0; i < entries.Count; i++)
+            {
+                UserLevelEntry entry = entries[i];
+                if (entry == null || !entry.HasLevel || !TryNormalizeLevel(entry.Level, out string level))
+                    continue;
+
+                int seq = 0;
+                if (entry.HasSeq && entry.Seq > 0 && entry.Seq <= int.MaxValue)
+                    seq = (int)entry.Seq;
+
+                result.Add(new UserLevelFileEntry
+                {
+                    FileName = level,
+                    UserLevelSeq = seq
+                });
+            }
+
+            result.Sort((a, b) => string.Compare(a.FileName, b.FileName, StringComparison.OrdinalIgnoreCase));
+            return result;
+        }
+
         /// <summary>
         /// level 단위 데이터 존재 여부를 확인합니다.
         /// </summary>
@@ -933,6 +974,12 @@ namespace MG_BlocksEngine2.Storage
             public bool HasLevel;
             public string Xml;
             public string Json;
+        }
+
+        public sealed class UserLevelFileEntry
+        {
+            public string FileName;
+            public int UserLevelSeq;
         }
     }
 }

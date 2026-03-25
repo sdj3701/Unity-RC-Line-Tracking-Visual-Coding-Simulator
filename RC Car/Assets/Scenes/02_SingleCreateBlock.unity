@@ -57364,8 +57364,14 @@ MonoBehaviour:
   _roomTogglePrefab: {fileID: 7674419012610477559, guid: c633f8c9faadb9e49b3e4ceaf99a871b,
     type: 3}
   _toggleGroup: {fileID: 2122033461}
+  _requestTokenInput: {fileID: 0}
+  _useJoinRequestOnConfirm: 1
+  _closePanelOnJoinRequestSubmit: 1
   _moveToSceneOnConfirm: 1
   _targetSceneName: 03_NetworkCarTest
+  _waitForJoinApproval: 1
+  _joinApprovalPollIntervalSeconds: 2
+  _stopPollingWhenRejected: 1
   _bindOnEnable: 1
   _clearPreviousItemsOnRefresh: 1
   _debugLog: 1

@@ -198,6 +198,56 @@ namespace MG_BlocksEngine2.Storage
         }
 
         /// <summary>
+        /// 저장 파일 이름 + userLevelSeq를 함께 반환합니다.
+        /// 원격 DB 제공자에서는 seq를 포함하고, 그 외 제공자에서는 seq=0으로 반환합니다.
+        /// </summary>
+        public async Task<List<BE2_CodeStorageFileEntry>> GetFileEntriesAsync()
+        {
+            var result = new List<BE2_CodeStorageFileEntry>();
+            if (_storageProvider == null)
+            {
+                return result;
+            }
+
+            if (_storageProvider is DatabaseStorageProvider databaseProvider)
+            {
+                List<DatabaseStorageProvider.UserLevelFileEntry> remoteEntries =
+                    await databaseProvider.GetFileEntriesAsync();
+
+                for (int i = 0; i < remoteEntries.Count; i++)
+                {
+                    DatabaseStorageProvider.UserLevelFileEntry entry = remoteEntries[i];
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.FileName))
+                        continue;
+
+                    result.Add(new BE2_CodeStorageFileEntry
+                    {
+                        FileName = entry.FileName.Trim(),
+                        UserLevelSeq = entry.UserLevelSeq
+                    });
+                }
+
+                return result;
+            }
+
+            List<string> fileList = await _storageProvider.GetFileListAsync();
+            for (int i = 0; i < fileList.Count; i++)
+            {
+                string fileName = fileList[i];
+                if (string.IsNullOrWhiteSpace(fileName))
+                    continue;
+
+                result.Add(new BE2_CodeStorageFileEntry
+                {
+                    FileName = fileName.Trim(),
+                    UserLevelSeq = 0
+                });
+            }
+
+            return result;
+        }
+
+        /// <summary>
         /// 현재 활성화된 제공자를 통해 파일 존재 여부를 확인합니다.
         /// </summary>
         public async Task<bool> FileExistsAsync(string fileName)
@@ -222,6 +272,13 @@ namespace MG_BlocksEngine2.Storage
 
             return await _storageProvider.DeleteCodeAsync(fileName);
         }
+    }
+
+    [System.Serializable]
+    public sealed class BE2_CodeStorageFileEntry
+    {
+        public string FileName;
+        public int UserLevelSeq;
     }
 }
 
