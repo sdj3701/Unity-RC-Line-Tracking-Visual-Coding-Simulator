@@ -106,9 +106,9 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
 
     private void TryFetchJoinRequests()
     {
-        if (_hostOnly && !IsCurrentUserHost())
+        if (_hostOnly && !CanCurrentUserManageHostRequests(out string reason))
         {
-            SetStatus("Current user is not host. Poll skipped.");
+            SetStatus($"Host check failed. Poll skipped. reason={reason}");
             return;
         }
 
@@ -283,6 +283,12 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
         if (request == null)
             return;
 
+        if (_hostOnly && !CanCurrentUserManageHostRequests(out string reason))
+        {
+            SetStatus($"Host check failed. Decision blocked. reason={reason}");
+            return;
+        }
+
         if (!TryEnsureAndBindManager())
         {
             SetStatus("ChatRoomManager is missing.");
@@ -375,18 +381,63 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
         return newCount;
     }
 
-    private bool IsCurrentUserHost()
+    private bool CanCurrentUserManageHostRequests(out string reason)
     {
+        reason = string.Empty;
+
         RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
-        string hostUserId = currentRoom != null ? currentRoom.HostUserId : string.Empty;
-        string currentUserId = AuthManager.Instance != null && AuthManager.Instance.CurrentUser != null
-            ? AuthManager.Instance.CurrentUser.userId
-            : string.Empty;
+        if (currentRoom == null)
+        {
+            reason = "RoomSessionContext.CurrentRoom is null";
+            return false;
+        }
 
-        if (string.IsNullOrWhiteSpace(hostUserId) || string.IsNullOrWhiteSpace(currentUserId))
-            return true;
+        string hostUserId = string.IsNullOrWhiteSpace(currentRoom.HostUserId)
+            ? string.Empty
+            : currentRoom.HostUserId.Trim();
+        if (string.IsNullOrWhiteSpace(hostUserId))
+        {
+            reason = "HostUserId is empty";
+            return false;
+        }
 
-        return string.Equals(hostUserId.Trim(), currentUserId.Trim(), StringComparison.Ordinal);
+        if (AuthManager.Instance == null || AuthManager.Instance.CurrentUser == null)
+        {
+            reason = "Current user is not resolved";
+            return false;
+        }
+
+        string currentUserId = string.IsNullOrWhiteSpace(AuthManager.Instance.CurrentUser.userId)
+            ? string.Empty
+            : AuthManager.Instance.CurrentUser.userId.Trim();
+        if (string.IsNullOrWhiteSpace(currentUserId))
+        {
+            reason = "Current user id is empty";
+            return false;
+        }
+
+        bool isHost = string.Equals(hostUserId, currentUserId, StringComparison.Ordinal);
+        reason = isHost
+            ? "Current user matches HostUserId"
+            : $"Current user does not match HostUserId (host={hostUserId}, me={currentUserId})";
+        return isHost;
+    }
+
+    private string BuildHostRoleLabel()
+    {
+        if (CanCurrentUserManageHostRequests(out _))
+            return "HOST";
+
+        RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
+        bool hasHostUserId = currentRoom != null && !string.IsNullOrWhiteSpace(currentRoom.HostUserId);
+        bool hasCurrentUser = AuthManager.Instance != null &&
+                              AuthManager.Instance.CurrentUser != null &&
+                              !string.IsNullOrWhiteSpace(AuthManager.Instance.CurrentUser.userId);
+
+        if (!hasHostUserId || !hasCurrentUser)
+            return "UNKNOWN";
+
+        return "CLIENT";
     }
 
     private string ResolveTargetRoomId()
@@ -484,7 +535,10 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
         GUILayout.Label($"Scene: {SceneManager.GetActiveScene().name}");
         GUILayout.Label($"Manager Ready: {_chatRoomManager != null}");
         GUILayout.Label($"Polling: {(_pollingCoroutine != null ? "ON" : "OFF")} (interval={Mathf.Max(MinPollIntervalSeconds, _pollIntervalSeconds):0.0}s)");
-        GUILayout.Label($"Host Only: {_hostOnly} (current user host={IsCurrentUserHost()})");
+        string hostRole = BuildHostRoleLabel();
+        GUILayout.Label($"Host Only: {_hostOnly} (role={hostRole})");
+        if (_hostOnly && !CanCurrentUserManageHostRequests(out string hostReason))
+            GUILayout.Label($"Host Check: {hostReason}");
         GUILayout.Label($"Target RoomId: {ResolveTargetRoomId()}");
         GUILayout.Label($"Last Status: {_lastStatus}");
         GUILayout.Label($"Last Fetch UTC: {(_lastFetchUtc == DateTime.MinValue ? "-" : _lastFetchUtc.ToString("yyyy-MM-dd HH:mm:ss"))}");
