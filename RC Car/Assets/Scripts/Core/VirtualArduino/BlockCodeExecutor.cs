@@ -119,29 +119,59 @@ public class BlockCodeExecutor : MonoBehaviour
 
             json = File.ReadAllText(path);
         }
-        
+
+        string sourceTag = fromMemory ? "memory" : "file";
+        LoadProgramFromJson(json, sourceTag);
+    }
+
+    /// <summary>
+    /// 런타임 JSON 문자열로 프로그램을 로드합니다.
+    /// Host NetworkCar는 이 API로 차량별 독립 코드를 주입합니다.
+    /// </summary>
+    public bool LoadProgramFromJson(string runtimeJson, string sourceTag = null)
+    {
+        if (string.IsNullOrWhiteSpace(runtimeJson))
+        {
+            Debug.LogWarning("[BlockCodeExecutor] LoadProgramFromJson failed: runtimeJson is empty.");
+            return false;
+        }
+
+        isLoaded = false;
+        hasRunInit = false;
+        waitUntilTime = -1f;
+        waitTriggeredThisTick = false;
+        initExecutionIndex = 0;
+        loopExecutionIndex = 0;
+        program = null;
+        ClearVariables();
+
         try
         {
-            program = ParseJsonProgram(json);
-            
+            program = ParseJsonProgram(runtimeJson);
+
+            if (program == null)
+            {
+                Debug.LogWarning("[BlockCodeExecutor] LoadProgramFromJson failed: parsed program is null.");
+                return false;
+            }
+
             // 초기화 블록에서 변수 수집
             CollectVariablesFromInit();
-            
+
             // Arduino 자동 탐색
             if (arduino == null)
                 arduino = FindObjectOfType<VirtualArduinoMicro>();
-            
+
             isLoaded = true;
-            hasRunInit = false;
-            waitUntilTime = -1f;
-            waitTriggeredThisTick = false;
-            initExecutionIndex = 0;
-            loopExecutionIndex = 0;
-            LogDebug($"Program loaded from {(fromMemory ? "memory" : "file")}. Variables: {variables.Count}, Loop blocks: {program?.loop?.Count ?? 0}");
+            string source = string.IsNullOrWhiteSpace(sourceTag) ? "runtime-json" : sourceTag.Trim();
+            LogDebug($"Program loaded from {source}. Variables: {variables.Count}, Loop blocks: {program?.loop?.Count ?? 0}");
+            return true;
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[BlockCodeExecutor] Failed to load program: {ex.Message}");
+            isLoaded = false;
+            Debug.LogError($"[BlockCodeExecutor] Failed to load runtime json: {ex.Message}");
+            return false;
         }
     }
     
