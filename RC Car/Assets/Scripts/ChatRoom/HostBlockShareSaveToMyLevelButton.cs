@@ -1,8 +1,11 @@
 using System;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Auth;
 using MG_BlocksEngine2.Storage;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Networking;
 using UnityEngine.UI;
 
 public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
@@ -216,6 +219,30 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         if (!_debugLog)
             return;
 
+        int savedSeq = info != null ? info.SavedUserLevelSeq : 0;
+        string accessToken = ResolveTokenOverride();
+        if (string.IsNullOrWhiteSpace(accessToken) && AuthManager.Instance != null)
+            accessToken = AuthManager.Instance.GetAccessToken();
+
+        if (savedSeq > 0 && !string.IsNullOrWhiteSpace(accessToken))
+        {
+            ChatUserLevelDebugResult verifyResult = await ChatUserLevelDebugApi.FetchBySeqAsync(savedSeq, accessToken);
+            if (verifyResult != null && verifyResult.IsSuccess)
+            {
+                LogGreen(
+                    $"DB verify by seq success. shareId={info?.ShareId}, savedSeq={savedSeq}, level={verifyResult.Level}, xmlLen={(verifyResult.Xml ?? string.Empty).Length}, jsonLen={(verifyResult.Json ?? string.Empty).Length}, code={verifyResult.ResponseCode}");
+                LogGreen($"DB XML:\n{TruncateForDebug(verifyResult.Xml)}");
+                LogGreen($"DB JSON:\n{TruncateForDebug(verifyResult.Json)}");
+                return;
+            }
+
+            if (verifyResult != null)
+            {
+                LogGreen(
+                    $"DB verify by seq failed. shareId={info?.ShareId}, savedSeq={savedSeq}, code={verifyResult.ResponseCode}, error={verifyResult.ErrorMessage}, body={TruncateForDebug(verifyResult.ResponseBody)}");
+            }
+        }
+
         BE2_CodeStorageManager storage = BE2_CodeStorageManager.Instance;
         if (storage == null)
         {
@@ -338,4 +365,331 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
 
         _resultBoolText.text = $"Save Result: {value}";
     }
+}
+
+public static class ChatUserLevelDebugApi
+{
+    private const string UserLevelDetailEndpointTemplate = "http://ioteacher.com/api/user-level/{seq}";
+    private static readonly string[] WrapperObjectKeys = { "data", "item", "result", "userLevel" };
+    private static readonly string[] XmlKeys = { "xml", "xmlLongText", "xmlData", "xml_data" };
+    private static readonly string[] JsonKeys = { "json", "jsonLongText", "jsonData", "json_data" };
+
+    public static async Task<ChatUserLevelDebugResult> FetchBySeqAsync(
+        int seq,
+        string accessToken,
+        int timeoutSeconds = 15)
+    {
+        var result = new ChatUserLevelDebugResult
+        {
+            Seq = seq
+        };
+
+        if (seq <= 0)
+        {
+            result.ErrorMessage = "seq must be >= 1.";
+            return result;
+        }
+
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            result.ErrorMessage = "accessToken is empty.";
+            return result;
+        }
+
+        string endpoint = UserLevelDetailEndpointTemplate.Replace(
+            "{seq}",
+            UnityWebRequest.EscapeURL(seq.ToString()));
+        result.RequestUrl = endpoint;
+
+        using (UnityWebRequest request = UnityWebRequest.Get(endpoint))
+        {
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.timeout = Mathf.Max(1, timeoutSeconds);
+            request.SetRequestHeader("Authorization", $"Bearer {accessToken.Trim()}");
+            request.SetRequestHeader("Accept", "application/json");
+
+            UnityWebRequestAsyncOperation op = request.SendWebRequest();
+            while (!op.isDone)
+                await Task.Yield();
+
+            string body = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+            result.ResponseCode = request.responseCode;
+            result.ResponseBody = body;
+
+            if (request.result == UnityWebRequest.Result.ConnectionError ||
+                request.result == UnityWebRequest.Result.DataProcessingError)
+            {
+                result.ErrorMessage = string.IsNullOrWhiteSpace(request.error)
+                    ? "Network/DataProcessing error."
+                    : request.error;
+                return result;
+            }
+
+            bool httpSuccess = request.responseCode >= 200 && request.responseCode < 300;
+            if (!httpSuccess)
+            {
+                result.ErrorMessage = $"HTTP {request.responseCode}";
+                return result;
+            }
+
+            string trimmed = string.IsNullOrWhiteSpace(body) ? string.Empty : body.Trim();
+            string payload = ExtractPrimaryObjectPayload(trimmed);
+            if (string.IsNullOrWhiteSpace(payload))
+                payload = trimmed;
+
+            result.Seq = FirstPositive(
+                ParseJsonInt(payload, "seq"),
+                ParseJsonInt(payload, "id"),
+                ParseJsonInt(payload, "userLevelSeq"),
+                seq);
+
+            result.Level = FirstNonEmpty(
+                ExtractJsonScalarAsString(payload, "level"),
+                ExtractJsonScalarAsString(trimmed, "level"),
+                string.Empty);
+
+            result.Xml = FirstNonEmpty(
+                ExtractFirstStringValueByKeys(payload, XmlKeys),
+                ExtractFirstStringValueByKeys(trimmed, XmlKeys),
+                string.Empty);
+
+            result.Json = FirstNonEmpty(
+                ExtractJsonPayloadByKeys(payload, JsonKeys),
+                ExtractJsonPayloadByKeys(trimmed, JsonKeys),
+                string.Empty);
+
+            result.IsSuccess = true;
+            return result;
+        }
+    }
+
+    private static string ExtractPrimaryObjectPayload(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        string trimmed = json.Trim();
+        if (!trimmed.StartsWith("{", StringComparison.Ordinal))
+            return trimmed;
+
+        for (int i = 0; i < WrapperObjectKeys.Length; i++)
+        {
+            if (TryExtractRawJsonField(trimmed, WrapperObjectKeys[i], out string rawObject))
+                return rawObject;
+        }
+
+        return trimmed;
+    }
+
+    private static string ExtractFirstStringValueByKeys(string json, string[] keys)
+    {
+        if (string.IsNullOrWhiteSpace(json) || keys == null || keys.Length == 0)
+            return null;
+
+        for (int i = 0; i < keys.Length; i++)
+        {
+            string value = ExtractJsonScalarAsString(json, keys[i]);
+            if (!string.IsNullOrWhiteSpace(value))
+                return value.Trim();
+        }
+
+        return null;
+    }
+
+    private static string ExtractJsonPayloadByKeys(string json, string[] keys)
+    {
+        if (string.IsNullOrWhiteSpace(json) || keys == null || keys.Length == 0)
+            return null;
+
+        for (int i = 0; i < keys.Length; i++)
+        {
+            string key = keys[i];
+            if (string.IsNullOrWhiteSpace(key))
+                continue;
+
+            if (TryExtractRawJsonField(json, key, out string rawJson))
+                return rawJson.Trim();
+
+            string scalar = ExtractJsonScalarAsString(json, key);
+            if (string.IsNullOrWhiteSpace(scalar))
+                continue;
+
+            string scalarTrimmed = scalar.Trim();
+            if (LooksLikeJson(scalarTrimmed))
+                return scalarTrimmed;
+
+            return scalarTrimmed;
+        }
+
+        return null;
+    }
+
+    private static bool TryExtractRawJsonField(string json, string fieldName, out string rawJson)
+    {
+        rawJson = null;
+        if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(fieldName))
+            return false;
+
+        Match match = Regex.Match(json, $"\"{Regex.Escape(fieldName)}\"\\s*:\\s*");
+        if (!match.Success)
+            return false;
+
+        int start = match.Index + match.Length;
+        while (start < json.Length && char.IsWhiteSpace(json[start]))
+            start++;
+
+        if (start >= json.Length)
+            return false;
+
+        char opener = json[start];
+        if (opener != '{' && opener != '[')
+            return false;
+
+        char closer = opener == '{' ? '}' : ']';
+        int end = FindMatchingBracket(json, start, opener, closer);
+        if (end < start)
+            return false;
+
+        rawJson = json.Substring(start, end - start + 1);
+        return true;
+    }
+
+    private static int FindMatchingBracket(string text, int startIndex, char openChar, char closeChar)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return -1;
+
+        int depth = 0;
+        bool inString = false;
+        bool escaped = false;
+
+        for (int i = startIndex; i < text.Length; i++)
+        {
+            char c = text[i];
+
+            if (inString)
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+
+                if (c == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+
+                if (c == '"')
+                    inString = false;
+
+                continue;
+            }
+
+            if (c == '"')
+            {
+                inString = true;
+                continue;
+            }
+
+            if (c == openChar)
+            {
+                depth++;
+                continue;
+            }
+
+            if (c != closeChar)
+                continue;
+
+            depth--;
+            if (depth == 0)
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static bool LooksLikeJson(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        string trimmed = value.Trim();
+        return (trimmed.StartsWith("{", StringComparison.Ordinal) && trimmed.EndsWith("}", StringComparison.Ordinal)) ||
+               (trimmed.StartsWith("[", StringComparison.Ordinal) && trimmed.EndsWith("]", StringComparison.Ordinal));
+    }
+
+    private static int ParseJsonInt(string json, string key)
+    {
+        string raw = ExtractJsonScalarAsString(json, key);
+        if (string.IsNullOrWhiteSpace(raw))
+            return 0;
+
+        if (int.TryParse(raw.Trim(), out int value))
+            return value;
+
+        return 0;
+    }
+
+    private static string ExtractJsonScalarAsString(string json, string key)
+    {
+        if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(key))
+            return null;
+
+        string pattern = $"\"{Regex.Escape(key)}\"\\s*:\\s*(\"(?<text>(?:\\\\.|[^\"\\\\])*)\"|(?<number>-?\\d+(?:\\.\\d+)?)|(?<bool>true|false)|null)";
+        Match match = Regex.Match(json, pattern, RegexOptions.IgnoreCase);
+        if (!match.Success)
+            return null;
+
+        if (match.Groups["text"].Success)
+            return Regex.Unescape(match.Groups["text"].Value);
+        if (match.Groups["number"].Success)
+            return match.Groups["number"].Value;
+        if (match.Groups["bool"].Success)
+            return match.Groups["bool"].Value;
+
+        return null;
+    }
+
+    private static int FirstPositive(params int[] values)
+    {
+        if (values == null)
+            return 0;
+
+        for (int i = 0; i < values.Length; i++)
+        {
+            if (values[i] > 0)
+                return values[i];
+        }
+
+        return 0;
+    }
+
+    private static string FirstNonEmpty(params string[] values)
+    {
+        if (values == null)
+            return null;
+
+        for (int i = 0; i < values.Length; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(values[i]))
+                return values[i];
+        }
+
+        return null;
+    }
+}
+
+public sealed class ChatUserLevelDebugResult
+{
+    public bool IsSuccess;
+    public int Seq;
+    public string Level;
+    public string Xml;
+    public string Json;
+    public long ResponseCode;
+    public string ResponseBody;
+    public string RequestUrl;
+    public string ErrorMessage;
 }
