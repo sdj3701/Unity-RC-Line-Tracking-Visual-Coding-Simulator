@@ -2323,8 +2323,10 @@ MonoBehaviour:
   _sourcePanel: {fileID: 852359481}
   _saveButton: {fileID: 1351331702}
   _statusText: {fileID: 0}
+  _resultBoolText: {fileID: 0}
   _tokenOverride: 
   _disableButtonWhileSaving: 1
+  _disableButtonAfterSuccess: 1
   _refreshListAfterSave: 1
   _debugLog: 1
 --- !u!1 &838771584

@@ -1,4 +1,6 @@
 using System;
+using System.Threading.Tasks;
+using MG_BlocksEngine2.Storage;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -21,6 +23,8 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
     private ChatRoomManager _boundManager;
     private bool _isSaving;
     private string _activeShareId = string.Empty;
+    private string _activeFileNameHint = string.Empty;
+    private int _activeUserLevelSeqHint;
 
     public bool HasSaveResult { get; private set; }
     public bool LastSaveResult { get; private set; }
@@ -49,6 +53,8 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         UnbindManagerEvents();
         _isSaving = false;
         _activeShareId = string.Empty;
+        _activeFileNameHint = string.Empty;
+        _activeUserLevelSeqHint = 0;
         HasSaveResult = false;
         LastSaveResult = false;
         UpdateResultBoolText();
@@ -84,6 +90,7 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         }
 
         _activeShareId = shareId.Trim();
+        CaptureActiveSelectionHints(_activeShareId);
         _isSaving = true;
         UpdateButtonInteractable();
 
@@ -132,6 +139,7 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         UpdateButtonInteractable();
 
         SetStatus($"Save success. shareId={shareId}, savedSeq={info?.SavedUserLevelSeq}");
+        _ = DebugLogSavedBlockCodeDataAsync(info);
         if (_refreshListAfterSave && _sourcePanel != null)
             _sourcePanel.RequestListNow();
     }
@@ -167,6 +175,117 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
     private bool IsActiveShare(string shareId)
     {
         return string.Equals(_activeShareId, shareId ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    private void CaptureActiveSelectionHints(string shareId)
+    {
+        _activeFileNameHint = string.Empty;
+        _activeUserLevelSeqHint = 0;
+
+        if (_sourcePanel == null)
+            return;
+
+        ChatRoomBlockShareInfo detail = _sourcePanel.SelectedDetailInfo;
+        if (detail != null && string.Equals(shareId, detail.BlockShareId ?? string.Empty, StringComparison.Ordinal))
+        {
+            _activeUserLevelSeqHint = detail.UserLevelSeq;
+            if (!string.IsNullOrWhiteSpace(detail.Message))
+                _activeFileNameHint = detail.Message.Trim();
+
+            if (_debugLog)
+                Debug.Log($"[HostBlockShareSaveToMyLevelButton] Selection linked(detail). shareId={shareId}, userLevelSeqHint={_activeUserLevelSeqHint}, fileNameHint={_activeFileNameHint}");
+            return;
+        }
+
+        if (detail != null && _debugLog)
+            Debug.LogWarning($"[HostBlockShareSaveToMyLevelButton] Selected detail is stale. selectedShareId={shareId}, detailShareId={detail.BlockShareId}");
+
+        if (_sourcePanel.TryGetSelectedListItemInfo(out string listMessage, out int listUserLevelSeq))
+        {
+            _activeUserLevelSeqHint = listUserLevelSeq;
+            if (!string.IsNullOrWhiteSpace(listMessage))
+                _activeFileNameHint = listMessage.Trim();
+
+            if (_debugLog)
+                Debug.Log($"[HostBlockShareSaveToMyLevelButton] Selection linked(list). shareId={shareId}, userLevelSeqHint={_activeUserLevelSeqHint}, fileNameHint={_activeFileNameHint}");
+        }
+    }
+
+    private async Task DebugLogSavedBlockCodeDataAsync(ChatRoomBlockShareSaveInfo info)
+    {
+        if (!_debugLog)
+            return;
+
+        BE2_CodeStorageManager storage = BE2_CodeStorageManager.Instance;
+        if (storage == null)
+        {
+            Debug.LogWarning("[HostBlockShareSaveToMyLevelButton] BE2_CodeStorageManager is null. skip XML/JSON debug load.");
+            return;
+        }
+
+        string fileName = ResolveSavedFileName(info);
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            Debug.LogWarning("[HostBlockShareSaveToMyLevelButton] Saved file name hint is empty. skip XML/JSON debug load.");
+            return;
+        }
+
+        try
+        {
+            string xml = await storage.LoadXmlAsync(fileName);
+            string json = await storage.LoadJsonAsync(fileName);
+
+            LogGreen(
+                $"Save payload debug loaded. shareId={info?.ShareId}, savedSeq={info?.SavedUserLevelSeq}, fileName={fileName}, xmlLen={(xml ?? string.Empty).Length}, jsonLen={(json ?? string.Empty).Length}");
+            LogGreen($"Saved XML:\n{TruncateForDebug(xml)}");
+            LogGreen($"Saved JSON:\n{TruncateForDebug(json)}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[HostBlockShareSaveToMyLevelButton] Save payload debug load failed. fileName={fileName}, error={ex.Message}");
+        }
+    }
+
+    private string ResolveSavedFileName(ChatRoomBlockShareSaveInfo info)
+    {
+        if (!string.IsNullOrWhiteSpace(_activeFileNameHint))
+            return _activeFileNameHint.Trim();
+
+        if (info != null && info.SavedUserLevelSeq > 0)
+            return info.SavedUserLevelSeq.ToString();
+
+        if (_activeUserLevelSeqHint > 0)
+            return _activeUserLevelSeqHint.ToString();
+
+        ChatRoomBlockShareInfo selectedDetail = _sourcePanel != null ? _sourcePanel.SelectedDetailInfo : null;
+        if (selectedDetail != null)
+        {
+            if (!string.IsNullOrWhiteSpace(selectedDetail.Message))
+                return selectedDetail.Message.Trim();
+
+            if (selectedDetail.UserLevelSeq > 0)
+                return selectedDetail.UserLevelSeq.ToString();
+        }
+
+        return null;
+    }
+
+    private static string TruncateForDebug(string value, int maxLength = 4000)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "(empty)";
+
+        string text = value.Trim();
+        if (text.Length <= maxLength)
+            return text;
+
+        return $"{text.Substring(0, maxLength)}...(truncated, len={text.Length})";
+    }
+
+    private static void LogGreen(string message)
+    {
+        string text = string.IsNullOrWhiteSpace(message) ? string.Empty : message;
+        Debug.Log($"<color=#00FF66>[HostBlockShareSaveToMyLevelButton] {text}</color>");
     }
 
     private void UpdateButtonInteractable()

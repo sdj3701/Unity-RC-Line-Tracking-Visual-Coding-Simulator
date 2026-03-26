@@ -73,6 +73,27 @@ public class ChatRoomManager : MonoBehaviour
     public bool IsBusy { get; private set; }
 
     private CancellationTokenSource _requestCancellation;
+    private static readonly string[] _detailJsonCandidateKeys =
+    {
+        "json",
+        "jsonData",
+        "codeJson",
+        "blockJson",
+        "blockCodeJson",
+        "workspaceJson",
+        "payloadJson"
+    };
+
+    private static readonly string[] _detailXmlCandidateKeys =
+    {
+        "xml",
+        "xmlData",
+        "codeXml",
+        "blockXml",
+        "blockCodeXml",
+        "workspaceXml",
+        "payloadXml"
+    };
 
     private void Awake()
     {
@@ -901,6 +922,7 @@ public class ChatRoomManager : MonoBehaviour
                 }
 
                 string body = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+                LogBlockShareSavePayloadData(body);
                 BasicServiceResponse response = TryParseJson<BasicServiceResponse>(body);
                 bool httpSuccess = request.responseCode >= 200 && request.responseCode < 300;
 
@@ -1022,14 +1044,14 @@ public class ChatRoomManager : MonoBehaviour
         try
         {
             OnBlockShareDetailFetchStarted?.Invoke(roomId, shareId);
+            Log(
+                $"Block share detail request. method=GET, endpoint={endpoint}, roomId={roomId}, shareId={shareId}, authAttached={!string.IsNullOrWhiteSpace(accessToken)}");
 
-            using (var request = new UnityWebRequest(endpoint, UnityWebRequest.kHttpVerbPOST))
+            using (UnityWebRequest request = UnityWebRequest.Get(endpoint))
             {
-                byte[] bodyBytes = Encoding.UTF8.GetBytes("{}");
-                request.uploadHandler = new UploadHandlerRaw(bodyBytes);
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.timeout = Mathf.Max(1, _requestTimeoutSeconds);
-                request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Accept", "application/json, application/xml, text/xml");
                 request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
 
                 bool isCanceled = await SendRequestAsync(request, _requestCancellation.Token);
@@ -1043,6 +1065,7 @@ public class ChatRoomManager : MonoBehaviour
                 string responseBody = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
                 Log(
                     $"Block share detail raw response. result={request.result}, code={request.responseCode}, error={request.error}, body={responseBody}");
+                LogBlockShareDetailPayloadData(responseBody);
 
                 ChatRoomBlockShareInfo detailInfo = ParseBlockShareDetailResponse(request, roomId, shareId);
                 if (detailInfo != null)
@@ -1824,12 +1847,19 @@ public class ChatRoomManager : MonoBehaviour
                 UserId = FirstNonEmpty(
                     ExtractJsonScalarAsString(body, "userId"),
                     ExtractJsonScalarAsString(body, "user_id"),
+                    ExtractJsonScalarAsString(body, "senderUserId"),
+                    ExtractJsonScalarAsString(body, "sender_user_id"),
+                    ExtractJsonScalarAsString(body, "senderUserName"),
+                    ExtractJsonScalarAsString(body, "sender_user_name"),
                     ExtractJsonScalarAsString(body, "requesterUserId"),
                     ExtractJsonScalarAsString(body, "requester_user_id"),
                     string.Empty),
                 UserLevelSeq = FirstPositive(
                     ParseJsonInt(body, "userLevelSeq"),
                     ParseJsonInt(body, "user_level_seq"),
+                    ParseJsonInt(body, "sourceUserLevelSeq"),
+                    ParseJsonInt(body, "source_user_level_seq"),
+                    ParseJsonInt(body, "level"),
                     0),
                 Message = FirstNonEmpty(ExtractJsonScalarAsString(body, "message"), string.Empty),
                 CreatedAtUtc = FirstNonEmpty(
@@ -2039,6 +2069,8 @@ public class ChatRoomManager : MonoBehaviour
         BlockShareListResponse listResponse = TryParseJson<BlockShareListResponse>(trimmedBody);
         if (listResponse != null)
         {
+            if (listResponse.shares != null)
+                return listResponse.shares;
             if (listResponse.blockShares != null)
                 return listResponse.blockShares;
             if (listResponse.list != null)
@@ -2054,6 +2086,8 @@ public class ChatRoomManager : MonoBehaviour
         BlockShareDataObjectResponse dataObjectResponse = TryParseJson<BlockShareDataObjectResponse>(trimmedBody);
         if (dataObjectResponse != null && dataObjectResponse.data != null)
         {
+            if (dataObjectResponse.data.shares != null)
+                return dataObjectResponse.data.shares;
             if (dataObjectResponse.data.blockShares != null)
                 return dataObjectResponse.data.blockShares;
             if (dataObjectResponse.data.list != null)
@@ -2066,6 +2100,7 @@ public class ChatRoomManager : MonoBehaviour
 
         string[] candidateArrayKeys =
         {
+            "shares",
             "blockShares",
             "list",
             "items",
@@ -2160,10 +2195,29 @@ public class ChatRoomManager : MonoBehaviour
         if (payload == null)
             return false;
 
-        return !string.IsNullOrWhiteSpace(FirstNonEmpty(payload.blockShareId, payload.block_share_id, payload.id)) ||
+        return !string.IsNullOrWhiteSpace(FirstNonEmpty(
+                   payload.blockShareId,
+                   payload.block_share_id,
+                   payload.id,
+                   payload.shareId > 0 ? payload.shareId.ToString() : null,
+                   payload.share_id > 0 ? payload.share_id.ToString() : null)) ||
                !string.IsNullOrWhiteSpace(FirstNonEmpty(payload.roomId, payload.room_id)) ||
-               !string.IsNullOrWhiteSpace(FirstNonEmpty(payload.userId, payload.user_id, payload.requesterUserId, payload.requester_user_id)) ||
-               FirstPositive(payload.userLevelSeq, payload.user_level_seq, 0) > 0 ||
+               !string.IsNullOrWhiteSpace(FirstNonEmpty(
+                   payload.userId,
+                   payload.user_id,
+                   payload.senderUserId,
+                   payload.sender_user_id,
+                   payload.requesterUserId,
+                   payload.requester_user_id,
+                   payload.senderUserName,
+                   payload.sender_user_name)) ||
+               FirstPositive(
+                   payload.userLevelSeq,
+                   payload.user_level_seq,
+                   payload.sourceUserLevelSeq,
+                   payload.source_user_level_seq,
+                   payload.level,
+                   0) > 0 ||
                !string.IsNullOrWhiteSpace(payload.message) ||
                !string.IsNullOrWhiteSpace(FirstNonEmpty(payload.createdAt, payload.created_at));
     }
@@ -2302,15 +2356,30 @@ public class ChatRoomManager : MonoBehaviour
         if (payload == null)
             return null;
 
-        string blockShareId = FirstNonEmpty(payload.blockShareId, payload.block_share_id, payload.id);
+        string blockShareId = FirstNonEmpty(
+            payload.blockShareId,
+            payload.block_share_id,
+            payload.id,
+            payload.shareId > 0 ? payload.shareId.ToString() : null,
+            payload.share_id > 0 ? payload.share_id.ToString() : null);
         string roomId = FirstNonEmpty(payload.roomId, payload.room_id, fallbackRoomId);
         string userId = FirstNonEmpty(
             payload.userId,
             payload.user_id,
+            payload.senderUserId,
+            payload.sender_user_id,
             payload.requesterUserId,
             payload.requester_user_id,
+            payload.senderUserName,
+            payload.sender_user_name,
             string.Empty);
-        int userLevelSeq = FirstPositive(payload.userLevelSeq, payload.user_level_seq, 0);
+        int userLevelSeq = FirstPositive(
+            payload.userLevelSeq,
+            payload.user_level_seq,
+            payload.sourceUserLevelSeq,
+            payload.source_user_level_seq,
+            payload.level,
+            0);
         string message = FirstNonEmpty(payload.message, string.Empty);
         string createdAt = FirstNonEmpty(payload.createdAt, payload.created_at, string.Empty);
 
@@ -2345,6 +2414,143 @@ public class ChatRoomManager : MonoBehaviour
             return value;
 
         return 0;
+    }
+
+    private void LogBlockShareDetailPayloadData(string responseBody)
+    {
+        if (!_debugLog)
+            return;
+
+        string jsonData = TryExtractBlockShareDetailJson(responseBody);
+        string xmlData = TryExtractBlockShareDetailXml(responseBody);
+
+        LogGreen($"Block share detail JSON data:\n{FormatPayloadLog(jsonData)}");
+        LogGreen($"Block share detail XML data:\n{FormatPayloadLog(xmlData)}");
+    }
+
+    private void LogBlockShareSavePayloadData(string responseBody)
+    {
+        if (!_debugLog)
+            return;
+
+        string jsonData = TryExtractBlockShareDetailJson(responseBody);
+        string xmlData = TryExtractBlockShareDetailXml(responseBody);
+
+        LogGreen($"Block share save JSON data:\n{FormatPayloadLog(jsonData)}");
+        LogGreen($"Block share save XML data:\n{FormatPayloadLog(xmlData)}");
+    }
+
+    private static string TryExtractBlockShareDetailJson(string responseBody)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+            return null;
+
+        string trimmed = responseBody.Trim();
+        if (LooksLikeJson(trimmed))
+            return trimmed;
+
+        string jsonFromField = ExtractFirstJsonScalarByKeys(trimmed, _detailJsonCandidateKeys);
+        if (LooksLikeJson(jsonFromField))
+            return jsonFromField.Trim();
+
+        return null;
+    }
+
+    private static string TryExtractBlockShareDetailXml(string responseBody)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+            return null;
+
+        string trimmed = responseBody.Trim();
+        if (LooksLikeXml(trimmed))
+            return trimmed;
+
+        string xmlFromField = ExtractFirstJsonScalarByKeys(trimmed, _detailXmlCandidateKeys);
+        if (LooksLikeXml(xmlFromField))
+            return xmlFromField.Trim();
+
+        string xmlFromRawText = TryFindXmlFragment(trimmed);
+        if (LooksLikeXml(xmlFromRawText))
+            return xmlFromRawText.Trim();
+
+        return null;
+    }
+
+    private static string ExtractFirstJsonScalarByKeys(string json, string[] candidateKeys)
+    {
+        if (string.IsNullOrWhiteSpace(json) || candidateKeys == null || candidateKeys.Length == 0)
+            return null;
+
+        for (int i = 0; i < candidateKeys.Length; i++)
+        {
+            string key = candidateKeys[i];
+            if (string.IsNullOrWhiteSpace(key))
+                continue;
+
+            string value = ExtractJsonScalarAsString(json, key);
+            if (!string.IsNullOrWhiteSpace(value))
+                return value.Trim();
+        }
+
+        return null;
+    }
+
+    private static bool LooksLikeJson(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        string trimmed = value.Trim();
+        return (trimmed.StartsWith("{", StringComparison.Ordinal) && trimmed.EndsWith("}", StringComparison.Ordinal)) ||
+               (trimmed.StartsWith("[", StringComparison.Ordinal) && trimmed.EndsWith("]", StringComparison.Ordinal));
+    }
+
+    private static bool LooksLikeXml(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        string trimmed = value.Trim();
+        if (trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return Regex.IsMatch(
+            trimmed,
+            @"^<(?<tag>[A-Za-z_][\w\-\.:]*)\b[^>]*>[\s\S]*</\k<tag>>$",
+            RegexOptions.Singleline);
+    }
+
+    private static string TryFindXmlFragment(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        Match fragment = Regex.Match(
+            value,
+            @"<(?<tag>[A-Za-z_][\w\-\.:]*)\b[^>]*>[\s\S]*?</\k<tag>>",
+            RegexOptions.Singleline);
+
+        if (fragment.Success)
+            return fragment.Value;
+
+        return null;
+    }
+
+    private static string FormatPayloadLog(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            return "(not found)";
+
+        return TruncateForLog(payload.Trim(), 4000);
+    }
+
+    private void LogGreen(string message)
+    {
+        if (!_debugLog)
+            return;
+
+        string text = string.IsNullOrWhiteSpace(message) ? string.Empty : message;
+        Debug.Log($"<color=#00FF66>[ChatRoomManager] {text}</color>");
     }
 
     private static string TruncateForLog(string value, int maxLength = 1200)
@@ -2976,6 +3182,8 @@ public class ChatRoomManager : MonoBehaviour
     [Serializable]
     private class BlockSharePayload
     {
+        public int shareId;
+        public int share_id;
         public string blockShareId;
         public string block_share_id;
         public string id;
@@ -2983,10 +3191,17 @@ public class ChatRoomManager : MonoBehaviour
         public string room_id;
         public string userId;
         public string user_id;
+        public string senderUserId;
+        public string sender_user_id;
+        public string senderUserName;
+        public string sender_user_name;
         public string requesterUserId;
         public string requester_user_id;
         public int userLevelSeq;
         public int user_level_seq;
+        public int sourceUserLevelSeq;
+        public int source_user_level_seq;
+        public int level;
         public string message;
         public string createdAt;
         public string created_at;
@@ -3001,6 +3216,7 @@ public class ChatRoomManager : MonoBehaviour
     [Serializable]
     private class BlockShareListResponse
     {
+        public BlockSharePayload[] shares;
         public BlockSharePayload[] blockShares;
         public BlockSharePayload[] list;
         public BlockSharePayload[] items;
@@ -3017,6 +3233,7 @@ public class ChatRoomManager : MonoBehaviour
     [Serializable]
     private class BlockShareDataPayload
     {
+        public BlockSharePayload[] shares;
         public BlockSharePayload[] blockShares;
         public BlockSharePayload[] list;
         public BlockSharePayload[] items;

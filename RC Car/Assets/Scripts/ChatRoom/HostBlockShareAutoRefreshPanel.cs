@@ -57,6 +57,23 @@ public class HostBlockShareAutoRefreshPanel : MonoBehaviour
     public string SelectedShareId { get; private set; }
     public ChatRoomBlockShareInfo SelectedDetailInfo { get; private set; }
 
+    public bool TryGetSelectedListItemInfo(out string message, out int userLevelSeq)
+    {
+        message = string.Empty;
+        userLevelSeq = 0;
+
+        if (_selectedIndex < 0 || _selectedIndex >= _items.Count)
+            return false;
+
+        ChatRoomBlockShareInfo selected = _items[_selectedIndex];
+        if (selected == null)
+            return false;
+
+        message = string.IsNullOrWhiteSpace(selected.Message) ? string.Empty : selected.Message.Trim();
+        userLevelSeq = selected.UserLevelSeq;
+        return true;
+    }
+
     private void Start()
     {
         if (_itemTemplate != null)
