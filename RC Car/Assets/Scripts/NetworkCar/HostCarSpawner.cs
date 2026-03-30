@@ -129,7 +129,7 @@ public sealed class HostCarSpawner
         }
 
         Vector3 basePosition = _carRoot != null ? _carRoot.position : Vector3.zero;
-        position = basePosition + new Vector3(pointIndex * 1.8f, 0f, 0f);
+        position = basePosition + new Vector3(pointIndex * 0f, 0f, 0f);
         rotation = _carRoot != null ? _carRoot.rotation : Quaternion.identity;
     }
 

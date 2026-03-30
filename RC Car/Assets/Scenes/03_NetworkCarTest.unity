@@ -3360,7 +3360,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4fe75796699e6184c9a276b1e87f43a3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _slotRunSeconds: 0.2
+  _slotRunSeconds: 0.02
   _debugLog: 1
 --- !u!114 &1173993790
 MonoBehaviour:
