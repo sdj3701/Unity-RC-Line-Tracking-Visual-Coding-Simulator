@@ -121,7 +121,7 @@ MonoBehaviour:
   m_MinSize: {x: 400, y: 200}
   m_MaxSize: {x: 32384, y: 16192}
   vertical: 0
-  controlID: 111
+  controlID: 84
 --- !u!114 &6
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -141,8 +141,8 @@ MonoBehaviour:
     y: 0
     width: 454
     height: 1299
-  m_MinSize: {x: 100, y: 100}
-  m_MaxSize: {x: 4000, y: 4000}
+  m_MinSize: {x: 101, y: 121}
+  m_MaxSize: {x: 4001, y: 4021}
   m_ActualView: {fileID: 13}
   m_Panes:
   - {fileID: 13}
@@ -172,7 +172,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 200}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 131
+  controlID: 55
 --- !u!114 &8
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -1775,9 +1775,9 @@ MonoBehaviour:
   m_PlayAudio: 0
   m_AudioPlay: 0
   m_Position:
-    m_Target: {x: 1159.664, y: 939.4748, z: -312.7379}
+    m_Target: {x: 894.0381, y: 649.332, z: -203.05667}
     speed: 2
-    m_Value: {x: 1159.664, y: 939.4748, z: -312.7379}
+    m_Value: {x: 894.0381, y: 649.332, z: -203.05667}
   m_RenderMode: 0
   m_CameraMode:
     drawMode: 0
@@ -1824,9 +1824,9 @@ MonoBehaviour:
     m_GridAxis: 1
     m_gridOpacity: 0.5
   m_Rotation:
-    m_Target: {x: 0.0004954125, y: 0.9985032, z: 0.05216426, w: 0.0042032674}
+    m_Target: {x: 0.0884143, y: -0.069471985, z: 0.0069162063, w: 0.9935113}
     speed: 2
-    m_Value: {x: 0.000495475, y: 0.9986292, z: 0.052170843, w: 0.004203798}
+    m_Value: {x: 0, y: 0, z: 0, w: 1}
   m_Size:
     m_Target: 1101.4536
     speed: 2
@@ -1834,7 +1834,7 @@ MonoBehaviour:
   m_Ortho:
     m_Target: 0
     speed: 2
-    m_Value: 0
+    m_Value: 1
   m_CameraSettings:
     m_Speed: 0.9652
     m_SpeedNormalized: 0.48
@@ -1896,24 +1896,24 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 1
     m_Folders:
-    - Assets/Scenes
+    - Assets
     m_Globs: []
     m_OriginalText: 
     m_FilterByTypeIntersection: 0
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Scenes
+  - Assets
   m_LastFoldersGridSize: -1
   m_LastProjectPath: D:\Unity\Unity RC Line\Unity-RC-Line-Tracking-Visual-Coding-Simulator\RC
     Car
   m_LockTracker:
     m_IsLocked: 0
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 27}
-    m_SelectedIDs: 9e6b0000
-    m_LastClickedID: 27550
-    m_ExpandedIDs: 00000000686b00006a6b00006c6b00006e6b0000706b0000726b0000746b0000766b0000786b00007a6b00007c6b00007e6b0000806b0000826b0000846b0000866b0000886b00008a6b0000
+    scrollPos: {x: 0, y: 0}
+    m_SelectedIDs: 966b0000
+    m_LastClickedID: 27542
+    m_ExpandedIDs: 00000000966b0000986b00009a6b00009c6b00009e6b0000a06b0000a26b0000a46b0000a66b0000a86b0000aa6b0000ac6b0000ae6b0000b06b0000b26b0000b46b0000b66b0000b86b0000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1941,7 +1941,7 @@ MonoBehaviour:
     scrollPos: {x: 0, y: 0}
     m_SelectedIDs: 
     m_LastClickedID: 0
-    m_ExpandedIDs: 00000000686b00006a6b00006c6b00006e6b0000706b0000726b0000746b0000766b0000786b00007a6b00007c6b00007e6b0000806b0000826b0000846b0000866b0000886b00008a6b0000
+    m_ExpandedIDs: 00000000966b0000986b00009a6b00009c6b00009e6b0000a06b0000a26b0000a46b0000a66b0000a86b0000aa6b0000ac6b0000ae6b0000b06b0000b26b0000b46b0000b66b0000b86b0000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1968,7 +1968,7 @@ MonoBehaviour:
   m_ListAreaState:
     m_SelectedInstanceIDs: 
     m_LastClickedInstanceID: 0
-    m_HadKeyboardFocusLastEvent: 1
+    m_HadKeyboardFocusLastEvent: 0
     m_ExpandedInstanceIDs: 62c20000ac70000072670000ec6b0000be6d0000f2570100f0630000c06d0000ac8c000044e10800e28d00009e720900de990b0000000000086c040052b50000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
@@ -2032,7 +2032,7 @@ MonoBehaviour:
       scrollPos: {x: 0, y: 0}
       m_SelectedIDs: 
       m_LastClickedID: 0
-      m_ExpandedIDs: 846bffff226fffff5c6fffff6a6ffffffc6fffff1070ffff1670ffff5270ffffe270ffff6271ffff9c71ffff5074ffff8a75ffffaa75ffffb075ffff6a7affffa47affff4c7dffff7a7effff9a7effffa07effffe67effff8284ffff5e88ffff3689ffff7089ffff7e89ffff108affff248affff2a8affff2c8bffffec8bffff8a8fffffc48fffff7492ffffae93ffffce93ffffd493ffffec97ffff7298ffffac98ffff549bffff889cffffa89cffffb89cffff5aa2ffffd6a3ffffb8a4ffff0ea8ffff94a8ffffcea8ffffdca8ffff6ea9ffff82a9ffff88a9ffff92aaffff10aeffff4aaefffffab0ffff34b2ffff54b2ffff5ab2ffffaeb2ffff86b4ffffe6b7ffff20b8ffffd0baffff0abcffff2abcffff30bcffffbebfffff44c0ffff7ec0ffff26c3ffff5ac4ffff7ac4ffff8ac4fffffac5ffff22c9ffffa8c9ffffe2c9ffff8accffffbecdffffdecdffffeecdffffccd0ffff04d4ffffdcd4ffff16d5ffffbed7fffff2d8ffff12d9ffff22d9ffffaee1ffffe0e1ffff82e2ffffdee5ffff18e6ffffc2e8fffffce9ffff1ceaffff22eaffff76edffffb0edffff5af0ffff94f1ffffb4f1ffffbaf1ffff66f5ffffa2f5ffff4cf8ffff86f9ffffa6f9ffffacf9ffff36fbffff2cb701007ab70100f2150200fe15020078160200947402001e7502001a430300625003004e5303007edb03008adb030008dc03004e3904005a390400d8390400aaf40400c0f40400d0f40400def404001af504007ef50400a8f50400f2f5040008f6040026f6040062f60400c6f60400f0f604002e570500d2570500e0570500085805005c580500665805001ceb050032eb050012ec0500
+      m_ExpandedIDs: d6adffff48aeffff06afffff40afffffb4afffff9eb0ffffb2b0ffffb8b0ffff42b1ffff7eb1ffff9eb4ffff30b6ffff50b6ffff56b6ffff36fbffff
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 

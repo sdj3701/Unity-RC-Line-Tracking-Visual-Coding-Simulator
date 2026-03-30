@@ -160,7 +160,17 @@ public class BlockCodeExecutor : MonoBehaviour
 
             // Arduino 자동 탐색
             if (arduino == null)
+                arduino = GetComponent<VirtualArduinoMicro>();
+            if (arduino == null)
+                arduino = GetComponentInChildren<VirtualArduinoMicro>(true);
+            if (arduino == null)
+                arduino = GetComponentInParent<VirtualArduinoMicro>();
+            if (arduino == null)
+            {
                 arduino = FindObjectOfType<VirtualArduinoMicro>();
+                if (arduino != null)
+                    Debug.LogWarning("[BlockCodeExecutor] Arduino resolved via global lookup. Check per-car wiring.");
+            }
 
             isLoaded = true;
             string source = string.IsNullOrWhiteSpace(sourceTag) ? "runtime-json" : sourceTag.Trim();

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Auth;
@@ -19,7 +20,6 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
     [Header("Option")]
     [SerializeField] private string _tokenOverride = string.Empty;
     [SerializeField] private bool _disableButtonWhileSaving = true;
-    [SerializeField] private bool _disableButtonAfterSuccess = true;
     [SerializeField] private bool _refreshListAfterSave = true;
     [SerializeField] private bool _debugLog = true;
 
@@ -28,9 +28,22 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
     private string _activeShareId = string.Empty;
     private string _activeFileNameHint = string.Empty;
     private int _activeUserLevelSeqHint;
+    private TaskCompletionSource<SaveAwaitResult> _saveAwaitTcs;
+    private int _batchTotal;
+    private int _batchCurrent;
 
     public bool HasSaveResult { get; private set; }
     public bool LastSaveResult { get; private set; }
+
+    private const float SaveAwaitTimeoutSeconds = 20f;
+    private const float BusyWaitTimeoutSeconds = 10f;
+
+    private sealed class SaveAwaitResult
+    {
+        public bool Success;
+        public string Message;
+        public ChatRoomBlockShareSaveInfo Info;
+    }
 
     private void OnEnable()
     {
@@ -58,6 +71,9 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         _activeShareId = string.Empty;
         _activeFileNameHint = string.Empty;
         _activeUserLevelSeqHint = 0;
+        _saveAwaitTcs = null;
+        _batchTotal = 0;
+        _batchCurrent = 0;
         HasSaveResult = false;
         LastSaveResult = false;
         UpdateResultBoolText();
@@ -66,6 +82,12 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
 
     public void OnClickSaveToMyLevel()
     {
+        if (_isSaving)
+        {
+            SetStatus("Save is already running.");
+            return;
+        }
+
         TryBindManagerEvents();
         if (_boundManager == null)
         {
@@ -79,26 +101,14 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
             return;
         }
 
-        string shareId = _sourcePanel.SelectedShareId;
-        if (string.IsNullOrWhiteSpace(shareId))
+        List<string> shareIds = CollectTargetShareIds();
+        if (shareIds.Count <= 0)
         {
-            SetStatus("Select one block share first.");
+            SetStatus("Select one or more block shares first.");
             return;
         }
 
-        if (_boundManager.IsBusy)
-        {
-            SetStatus("ChatRoomManager is busy.");
-            return;
-        }
-
-        _activeShareId = shareId.Trim();
-        CaptureActiveSelectionHints(_activeShareId);
-        _isSaving = true;
-        UpdateButtonInteractable();
-
-        _boundManager.SaveBlockShareToMyLevel(_activeShareId, ResolveTokenOverride());
-        SetStatus($"Save requested. shareId={_activeShareId}");
+        _ = SaveSelectedSharesAsync(shareIds);
     }
 
     private void TryBindManagerEvents()
@@ -137,14 +147,12 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         if (!IsActiveShare(shareId))
             return;
 
-        _isSaving = false;
-        SetSaveResult(true);
-        UpdateButtonInteractable();
-
-        SetStatus($"Save success. shareId={shareId}, savedSeq={info?.SavedUserLevelSeq}");
-        _ = DebugLogSavedBlockCodeDataAsync(info);
-        if (_refreshListAfterSave && _sourcePanel != null)
-            _sourcePanel.RequestListNow();
+        CompleteCurrentSave(new SaveAwaitResult
+        {
+            Success = true,
+            Message = string.Empty,
+            Info = info
+        });
     }
 
     private void HandleSaveFailed(string shareId, string message)
@@ -155,10 +163,12 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         if (!IsActiveShare(shareId))
             return;
 
-        _isSaving = false;
-        SetSaveResult(false);
-        UpdateButtonInteractable();
-        SetStatus($"Save failed. shareId={shareId}, message={message}");
+        CompleteCurrentSave(new SaveAwaitResult
+        {
+            Success = false,
+            Message = string.IsNullOrWhiteSpace(message) ? "save failed" : message,
+            Info = null
+        });
     }
 
     private void HandleSaveCanceled(string shareId)
@@ -169,15 +179,205 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         if (!IsActiveShare(shareId))
             return;
 
-        _isSaving = false;
-        SetSaveResult(false);
-        UpdateButtonInteractable();
-        SetStatus($"Save canceled. shareId={shareId}");
+        CompleteCurrentSave(new SaveAwaitResult
+        {
+            Success = false,
+            Message = "save canceled",
+            Info = null
+        });
     }
 
     private bool IsActiveShare(string shareId)
     {
-        return string.Equals(_activeShareId, shareId ?? string.Empty, StringComparison.Ordinal);
+        string current = string.IsNullOrWhiteSpace(_activeShareId) ? string.Empty : _activeShareId.Trim();
+        string incoming = string.IsNullOrWhiteSpace(shareId) ? string.Empty : shareId.Trim();
+        return string.Equals(current, incoming, StringComparison.Ordinal);
+    }
+
+    private List<string> CollectTargetShareIds()
+    {
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        if (_sourcePanel != null && _sourcePanel.TryGetCheckedShareIds(out List<string> checkedIds))
+        {
+            for (int i = 0; i < checkedIds.Count; i++)
+            {
+                string shareId = string.IsNullOrWhiteSpace(checkedIds[i]) ? string.Empty : checkedIds[i].Trim();
+                if (string.IsNullOrWhiteSpace(shareId))
+                    continue;
+
+                if (seen.Add(shareId))
+                    result.Add(shareId);
+            }
+        }
+
+        if (result.Count <= 0)
+        {
+            string fallbackShareId = _sourcePanel != null ? _sourcePanel.SelectedShareId : string.Empty;
+            fallbackShareId = string.IsNullOrWhiteSpace(fallbackShareId) ? string.Empty : fallbackShareId.Trim();
+            if (!string.IsNullOrWhiteSpace(fallbackShareId) && seen.Add(fallbackShareId))
+                result.Add(fallbackShareId);
+        }
+
+        return result;
+    }
+
+    private async Task SaveSelectedSharesAsync(List<string> shareIds)
+    {
+        if (shareIds == null || shareIds.Count <= 0)
+            return;
+
+        _isSaving = true;
+        _batchTotal = shareIds.Count;
+        _batchCurrent = 0;
+        UpdateButtonInteractable();
+
+        int successCount = 0;
+        int failCount = 0;
+
+        try
+        {
+            for (int i = 0; i < shareIds.Count; i++)
+            {
+                string shareId = string.IsNullOrWhiteSpace(shareIds[i]) ? string.Empty : shareIds[i].Trim();
+                if (string.IsNullOrWhiteSpace(shareId))
+                {
+                    failCount++;
+                    continue;
+                }
+
+                _batchCurrent = i + 1;
+
+                if (_boundManager == null)
+                {
+                    failCount++;
+                    SetSaveResult(false);
+                    SetStatus($"Save stopped(manager-null). ({_batchCurrent}/{_batchTotal}) shareId={shareId}");
+                    break;
+                }
+
+                bool isIdle = await WaitUntilManagerIdleAsync(BusyWaitTimeoutSeconds);
+                if (!isIdle)
+                {
+                    failCount++;
+                    SetSaveResult(false);
+                    SetStatus($"Save skipped(busy-timeout). ({_batchCurrent}/{_batchTotal}) shareId={shareId}");
+                    continue;
+                }
+
+                _activeShareId = shareId;
+                CaptureActiveSelectionHints(_activeShareId);
+                _saveAwaitTcs = new TaskCompletionSource<SaveAwaitResult>();
+
+                _boundManager.SaveBlockShareToMyLevel(_activeShareId, ResolveTokenOverride());
+                SetStatus($"Save requested ({_batchCurrent}/{_batchTotal}). shareId={_activeShareId}");
+
+                SaveAwaitResult result = await AwaitCurrentSaveAsync(SaveAwaitTimeoutSeconds);
+                if (result != null && result.Success)
+                {
+                    successCount++;
+                    SetSaveResult(true);
+
+                    ChatRoomBlockShareSaveInfo info = result.Info;
+                    SetStatus($"Save success ({_batchCurrent}/{_batchTotal}). shareId={_activeShareId}, savedSeq={info?.SavedUserLevelSeq}");
+                    _ = DebugLogSavedBlockCodeDataAsync(info);
+                }
+                else
+                {
+                    failCount++;
+                    SetSaveResult(false);
+                    string message = result != null && !string.IsNullOrWhiteSpace(result.Message)
+                        ? result.Message
+                        : "save failed";
+                    SetStatus($"Save failed ({_batchCurrent}/{_batchTotal}). shareId={_activeShareId}, message={message}");
+                }
+
+                if (_refreshListAfterSave && _sourcePanel != null)
+                    _sourcePanel.RequestListNow();
+            }
+        }
+        finally
+        {
+            _isSaving = false;
+            _activeShareId = string.Empty;
+            _saveAwaitTcs = null;
+            UpdateButtonInteractable();
+
+            int total = _batchTotal;
+            _batchTotal = 0;
+            _batchCurrent = 0;
+            SetStatus($"Batch save finished. total={total}, success={successCount}, failed={failCount}");
+        }
+    }
+
+    private async Task<bool> WaitUntilManagerIdleAsync(float timeoutSeconds)
+    {
+        if (_boundManager == null)
+            return false;
+
+        float timeout = Mathf.Max(0.5f, timeoutSeconds);
+        float deadline = Time.realtimeSinceStartup + timeout;
+
+        while (_boundManager.IsBusy)
+        {
+            if (Time.realtimeSinceStartup >= deadline)
+                return false;
+
+            await Task.Yield();
+        }
+
+        return true;
+    }
+
+    private async Task<SaveAwaitResult> AwaitCurrentSaveAsync(float timeoutSeconds)
+    {
+        if (_saveAwaitTcs == null)
+        {
+            return new SaveAwaitResult
+            {
+                Success = false,
+                Message = "internal save waiter is null",
+                Info = null
+            };
+        }
+
+        float timeout = Mathf.Max(1f, timeoutSeconds);
+        float deadline = Time.realtimeSinceStartup + timeout;
+        Task<SaveAwaitResult> waitTask = _saveAwaitTcs.Task;
+
+        while (!waitTask.IsCompleted)
+        {
+            if (Time.realtimeSinceStartup >= deadline)
+            {
+                return new SaveAwaitResult
+                {
+                    Success = false,
+                    Message = "timeout",
+                    Info = null
+                };
+            }
+
+            await Task.Yield();
+        }
+
+        return waitTask.Result ?? new SaveAwaitResult
+        {
+            Success = false,
+            Message = "empty save result",
+            Info = null
+        };
+    }
+
+    private void CompleteCurrentSave(SaveAwaitResult result)
+    {
+        if (_saveAwaitTcs == null)
+            return;
+
+        if (_saveAwaitTcs.Task.IsCompleted)
+            return;
+
+        _saveAwaitTcs.TrySetResult(result);
     }
 
     private void CaptureActiveSelectionHints(string shareId)
@@ -201,7 +401,21 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         }
 
         if (detail != null && _debugLog)
-            Debug.LogWarning($"[HostBlockShareSaveToMyLevelButton] Selected detail is stale. selectedShareId={shareId}, detailShareId={detail.BlockShareId}");
+            LogMappingNeeded($"Selected detail is stale. selectedShareId={shareId}, detailShareId={detail.BlockShareId}");
+
+        if (_sourcePanel.TryGetListItemInfoByShareId(shareId, out string messageByShareId, out int seqByShareId))
+        {
+            _activeUserLevelSeqHint = seqByShareId;
+            if (!string.IsNullOrWhiteSpace(messageByShareId))
+                _activeFileNameHint = messageByShareId.Trim();
+
+            if (_debugLog)
+            {
+                Debug.Log(
+                    $"[HostBlockShareSaveToMyLevelButton] Selection linked(shareId). shareId={shareId}, userLevelSeqHint={_activeUserLevelSeqHint}, fileNameHint={_activeFileNameHint}");
+            }
+            return;
+        }
 
         if (_sourcePanel.TryGetSelectedListItemInfo(out string listMessage, out int listUserLevelSeq))
         {
@@ -315,6 +529,14 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         Debug.Log($"<color=#00FF66>[HostBlockShareSaveToMyLevelButton] {text}</color>");
     }
 
+    private void LogMappingNeeded(string message)
+    {
+        if (!_debugLog || string.IsNullOrWhiteSpace(message))
+            return;
+
+        Debug.Log($"<color=orange>[HostBlockShareSaveToMyLevelButton][MAPPING] {message}</color>");
+    }
+
     private void UpdateButtonInteractable()
     {
         if (_saveButton == null)
@@ -323,9 +545,6 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         bool interactable = true;
 
         if (_disableButtonWhileSaving && _isSaving)
-            interactable = false;
-
-        if (_disableButtonAfterSuccess && HasSaveResult && LastSaveResult)
             interactable = false;
 
         _saveButton.interactable = interactable;

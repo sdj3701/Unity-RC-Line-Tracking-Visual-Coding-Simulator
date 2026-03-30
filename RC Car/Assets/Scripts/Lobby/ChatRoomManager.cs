@@ -1184,6 +1184,24 @@ public class ChatRoomManager : MonoBehaviour
                         ExtractJsonScalarAsString(body, "block_share_id"),
                         ExtractJsonScalarAsString(body, "id"),
                         shareId),
+                    OwnerUserId = FirstNonEmpty(
+                        response != null ? response.requestUserId : null,
+                        response != null ? response.request_user_id : null,
+                        response != null ? response.requesterUserId : null,
+                        response != null ? response.requester_user_id : null,
+                        response != null ? response.senderUserId : null,
+                        response != null ? response.sender_user_id : null,
+                        response != null ? response.userId : null,
+                        response != null ? response.user_id : null,
+                        ExtractJsonScalarAsString(body, "requestUserId"),
+                        ExtractJsonScalarAsString(body, "request_user_id"),
+                        ExtractJsonScalarAsString(body, "requesterUserId"),
+                        ExtractJsonScalarAsString(body, "requester_user_id"),
+                        ExtractJsonScalarAsString(body, "senderUserId"),
+                        ExtractJsonScalarAsString(body, "sender_user_id"),
+                        ExtractJsonScalarAsString(body, "userId"),
+                        ExtractJsonScalarAsString(body, "user_id"),
+                        string.Empty),
                     SavedUserLevelSeq = FirstPositive(
                         ParseJsonInt(body, "userLevelSeq"),
                         ParseJsonInt(body, "seq"),
@@ -1849,8 +1867,6 @@ public class ChatRoomManager : MonoBehaviour
                     ExtractJsonScalarAsString(body, "user_id"),
                     ExtractJsonScalarAsString(body, "senderUserId"),
                     ExtractJsonScalarAsString(body, "sender_user_id"),
-                    ExtractJsonScalarAsString(body, "senderUserName"),
-                    ExtractJsonScalarAsString(body, "sender_user_name"),
                     ExtractJsonScalarAsString(body, "requesterUserId"),
                     ExtractJsonScalarAsString(body, "requester_user_id"),
                     string.Empty),
@@ -1874,6 +1890,40 @@ public class ChatRoomManager : MonoBehaviour
 
         if (string.IsNullOrWhiteSpace(info.RoomId))
             info.RoomId = roomId;
+
+        if (string.IsNullOrWhiteSpace(info.UserId))
+        {
+            info.UserId = FirstNonEmpty(
+                ExtractJsonScalarAsString(body, "userId"),
+                ExtractJsonScalarAsString(body, "user_id"),
+                ExtractJsonScalarAsString(body, "senderUserId"),
+                ExtractJsonScalarAsString(body, "sender_user_id"),
+                ExtractJsonScalarAsString(body, "requesterUserId"),
+                ExtractJsonScalarAsString(body, "requester_user_id"),
+                string.Empty);
+        }
+
+        if (info.UserLevelSeq <= 0)
+        {
+            info.UserLevelSeq = FirstPositive(
+                ParseJsonInt(body, "userLevelSeq"),
+                ParseJsonInt(body, "user_level_seq"),
+                ParseJsonInt(body, "sourceUserLevelSeq"),
+                ParseJsonInt(body, "source_user_level_seq"),
+                ParseJsonInt(body, "level"),
+                0);
+        }
+
+        if (string.IsNullOrWhiteSpace(info.Message))
+            info.Message = FirstNonEmpty(ExtractJsonScalarAsString(body, "message"), string.Empty);
+
+        if (string.IsNullOrWhiteSpace(info.CreatedAtUtc))
+        {
+            info.CreatedAtUtc = FirstNonEmpty(
+                ExtractJsonScalarAsString(body, "createdAt"),
+                ExtractJsonScalarAsString(body, "created_at"),
+                string.Empty);
+        }
 
         if (string.IsNullOrWhiteSpace(info.BlockShareId))
         {
@@ -2370,8 +2420,6 @@ public class ChatRoomManager : MonoBehaviour
             payload.sender_user_id,
             payload.requesterUserId,
             payload.requester_user_id,
-            payload.senderUserName,
-            payload.sender_user_name,
             string.Empty);
         int userLevelSeq = FirstPositive(
             payload.userLevelSeq,
@@ -3175,6 +3223,14 @@ public class ChatRoomManager : MonoBehaviour
         public string room_id;
         public string blockShareId;
         public string block_share_id;
+        public string requesterUserId;
+        public string requester_user_id;
+        public string requestUserId;
+        public string request_user_id;
+        public string senderUserId;
+        public string sender_user_id;
+        public string userId;
+        public string user_id;
         public string createdAt;
         public string created_at;
     }
@@ -3375,6 +3431,7 @@ public sealed class ChatRoomBlockShareListInfo
 public sealed class ChatRoomBlockShareSaveInfo
 {
     public string ShareId;
+    public string OwnerUserId;
     public int SavedUserLevelSeq;
     public string Message;
     public long ResponseCode;

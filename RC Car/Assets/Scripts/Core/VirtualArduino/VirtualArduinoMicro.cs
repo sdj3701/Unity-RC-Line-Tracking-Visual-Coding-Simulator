@@ -70,7 +70,17 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
         
         // BlockCodeExecutor 찾기
         if (blockCodeExecutor == null)
+            blockCodeExecutor = GetComponent<BlockCodeExecutor>();
+        if (blockCodeExecutor == null)
+            blockCodeExecutor = GetComponentInChildren<BlockCodeExecutor>(true);
+        if (blockCodeExecutor == null)
+            blockCodeExecutor = GetComponentInParent<BlockCodeExecutor>();
+        if (blockCodeExecutor == null)
+        {
             blockCodeExecutor = FindObjectOfType<BlockCodeExecutor>();
+            if (blockCodeExecutor != null)
+                Debug.LogWarning("[VirtualArduinoMicro] BlockCodeExecutor resolved via global lookup. Check per-car wiring.");
+        }
     }
     
     void Start()

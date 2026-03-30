@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public sealed class HostCarSpawner
 {
@@ -27,7 +28,10 @@ public sealed class HostCarSpawner
         Color color)
     {
         if (existingRefs != null && existingRefs.CarObject != null)
+        {
+            RebindRuntimeRefs(existingRefs);
             return existingRefs;
+        }
 
         if (_carPrefab == null)
         {
@@ -36,7 +40,17 @@ public sealed class HostCarSpawner
         }
 
         ResolveSpawnPose(slotIndex, out Vector3 position, out Quaternion rotation);
-        GameObject carObject = Object.Instantiate(_carPrefab, position, rotation, _carRoot);
+        bool useParent = _carRoot != null && !IsPersistentTransform(_carRoot);
+        GameObject carObject = useParent
+            ? UnityEngine.Object.Instantiate(_carPrefab, position, rotation, _carRoot)
+            : UnityEngine.Object.Instantiate(_carPrefab, position, rotation);
+
+        if (!useParent && _carRoot != null && _debugLog)
+        {
+            Debug.LogWarning(
+                $"[HostCarSpawner] carRoot is persistent. spawn without parent. slot={slotIndex}, user={userId}, root={_carRoot.name}");
+        }
+
         carObject.name = $"{_carPrefab.name}_slot{slotIndex}_{SafeName(userId)}";
 
         var refs = new HostCarRuntimeRefs
@@ -47,11 +61,7 @@ public sealed class HostCarSpawner
             Arduino = carObject.GetComponentInChildren<VirtualArduinoMicro>(true)
         };
 
-        if (refs.Executor != null && refs.Arduino != null && refs.Executor.arduino == null)
-            refs.Executor.arduino = refs.Arduino;
-
-        if (refs.Physics != null && refs.Executor != null && refs.Physics.blockCodeExecutor == null)
-            refs.Physics.blockCodeExecutor = refs.Executor;
+        RebindRuntimeRefs(refs);
 
         ApplyColor(carObject, color);
 
@@ -65,6 +75,43 @@ public sealed class HostCarSpawner
         }
 
         return refs;
+    }
+
+    private static bool IsPersistentTransform(Transform root)
+    {
+        if (root == null)
+            return false;
+
+        Scene scene = root.gameObject.scene;
+        if (!scene.IsValid() || !scene.isLoaded)
+            return true;
+
+        return string.Equals(scene.name, "DontDestroyOnLoad", System.StringComparison.Ordinal);
+    }
+
+    private static void RebindRuntimeRefs(HostCarRuntimeRefs refs)
+    {
+        if (refs == null || refs.CarObject == null)
+            return;
+
+        if (refs.Physics == null)
+            refs.Physics = refs.CarObject.GetComponentInChildren<VirtualCarPhysics>(true);
+        if (refs.Executor == null)
+            refs.Executor = refs.CarObject.GetComponentInChildren<BlockCodeExecutor>(true);
+        if (refs.Arduino == null)
+            refs.Arduino = refs.CarObject.GetComponentInChildren<VirtualArduinoMicro>(true);
+
+        if (refs.Executor != null)
+            refs.Executor.arduino = refs.Arduino;
+
+        if (refs.Arduino != null)
+            refs.Arduino.blockCodeExecutor = refs.Executor;
+
+        if (refs.Physics != null)
+        {
+            refs.Physics.blockCodeExecutor = refs.Executor;
+            refs.Physics.motorDriver = refs.CarObject.GetComponentInChildren<VirtualMotorDriver>(true);
+        }
     }
 
     private void ResolveSpawnPose(int slotIndex, out Vector3 position, out Quaternion rotation)

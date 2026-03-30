@@ -48,13 +48,29 @@ public class VirtualCarPhysics : MonoBehaviour
         if (motorDriver == null)
             motorDriver = GetComponent<VirtualMotorDriver>();
         if (motorDriver == null)
-            motorDriver = GetComponentInChildren<VirtualMotorDriver>();
+            motorDriver = GetComponentInChildren<VirtualMotorDriver>(true);
         if (motorDriver == null)
+            motorDriver = GetComponentInParent<VirtualMotorDriver>();
+        if (motorDriver == null)
+        {
             motorDriver = FindObjectOfType<VirtualMotorDriver>();
+            if (motorDriver != null)
+                Debug.LogWarning("[VirtualCarPhysics] VirtualMotorDriver resolved via global lookup. Check per-car wiring.");
+        }
         
         // BlockCodeExecutor 자동 탐색
         if (blockCodeExecutor == null)
+            blockCodeExecutor = GetComponent<BlockCodeExecutor>();
+        if (blockCodeExecutor == null)
+            blockCodeExecutor = GetComponentInChildren<BlockCodeExecutor>(true);
+        if (blockCodeExecutor == null)
+            blockCodeExecutor = GetComponentInParent<BlockCodeExecutor>();
+        if (blockCodeExecutor == null)
+        {
             blockCodeExecutor = FindObjectOfType<BlockCodeExecutor>();
+            if (blockCodeExecutor != null)
+                Debug.LogWarning("[VirtualCarPhysics] BlockCodeExecutor resolved via global lookup. Check per-car wiring.");
+        }
         
         if (motorDriver == null)
             Debug.LogWarning("[VirtualCarPhysics] VirtualMotorDriver not found!");

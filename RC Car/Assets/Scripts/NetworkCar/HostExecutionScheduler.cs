@@ -94,7 +94,9 @@ public class HostExecutionScheduler : MonoBehaviour
                     continue;
                 }
 
-                if (!binding.HasCode || string.IsNullOrWhiteSpace(binding.Json))
+                if (!binding.TryGetActiveCodeVersion(out HostCodeVersion activeCode) ||
+                    activeCode == null ||
+                    string.IsNullOrWhiteSpace(activeCode.Json))
                 {
                     _statusReporter?.SetRuntimeStatus(slot, userId, "no-code");
                     yield return new WaitForSeconds(waitSeconds);
@@ -122,8 +124,8 @@ public class HostExecutionScheduler : MonoBehaviour
                     {
                         loaded = _runtimeBinder.TryApplyJson(
                             binding.RuntimeRefs.Executor,
-                            binding.Json,
-                            $"slot={slot}:{userId}",
+                            activeCode.Json,
+                            $"slot={slot}:{userId}:version={activeCode.VersionKey}",
                             out loadError);
                     }
 

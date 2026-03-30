@@ -38,10 +38,17 @@ public class HostNetworkCarCoordinator : MonoBehaviour
         new Dictionary<string, ChatRoomJoinRequestInfo>(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _shareToUserId =
         new Dictionary<string, string>(StringComparer.Ordinal);
+    private readonly Dictionary<string, ChatRoomBlockShareSaveInfo> _pendingSaveByShareId =
+        new Dictionary<string, ChatRoomBlockShareSaveInfo>(StringComparer.Ordinal);
+    private readonly HashSet<string> _completedSaveKeys =
+        new HashSet<string>(StringComparer.Ordinal);
+    private readonly HashSet<string> _inProgressSaveKeys =
+        new HashSet<string>(StringComparer.Ordinal);
 
     private HostCarSpawner _carSpawner;
     private HostBlockCodeResolver _codeResolver;
     private bool _isBound;
+    private float _nextPendingResolveTryAt;
 
     private static readonly string[] UserIdCandidateKeys =
     {
@@ -82,6 +89,8 @@ public class HostNetworkCarCoordinator : MonoBehaviour
     {
         if (_executionScheduler != null && _executionScheduler.IsRunning)
             UpdateSummary();
+
+        TryResolvePendingShareOwners();
     }
 
     private void EnsureServices()
@@ -259,7 +268,14 @@ public class HostNetworkCarCoordinator : MonoBehaviour
             if (item == null)
                 continue;
 
+            if (string.IsNullOrWhiteSpace(item.UserId))
+            {
+                LogMappingNeeded($"Share list item userId is empty. shareId={item.BlockShareId}");
+                continue;
+            }
+
             RememberShareOwner(item.BlockShareId, item.UserId);
+            RetryPendingSaveIfNeeded(item.BlockShareId);
         }
     }
 
@@ -268,15 +284,19 @@ public class HostNetworkCarCoordinator : MonoBehaviour
         if (info == null)
             return;
 
+        if (string.IsNullOrWhiteSpace(info.UserId))
+            LogMappingNeeded($"Share detail userId is empty. shareId={info.BlockShareId}");
+
         RememberShareOwner(info.BlockShareId, info.UserId);
+        RetryPendingSaveIfNeeded(info.BlockShareId);
     }
 
     private void HandleBlockShareSaveSucceeded(ChatRoomBlockShareSaveInfo info)
     {
-        _ = HandleBlockShareSaveSucceededAsync(info);
+        _ = HandleBlockShareSaveSucceededAsync(info, fromPending: false);
     }
 
-    private async Task HandleBlockShareSaveSucceededAsync(ChatRoomBlockShareSaveInfo info)
+    private async Task HandleBlockShareSaveSucceededAsync(ChatRoomBlockShareSaveInfo info, bool fromPending)
     {
         if (info == null)
             return;
@@ -288,40 +308,172 @@ public class HostNetworkCarCoordinator : MonoBehaviour
             return;
         }
 
-        string userId = ResolveUserIdFromShare(shareId, info.ResponseBody);
-        if (string.IsNullOrWhiteSpace(userId))
+        int savedSeq = info.SavedUserLevelSeq;
+        string saveKey = BuildSaveDedupeKey(shareId, savedSeq);
+        if (_completedSaveKeys.Contains(saveKey))
         {
-            _statusReporter?.SetWarning($"Save success but userId unresolved. shareId={shareId}");
+            if (_debugLog)
+                Log($"Skip duplicated save event. shareId={shareId}, savedSeq={savedSeq}");
             return;
         }
 
-        EnsureParticipantSlotAndCar(userId, userName: userId, source: "save");
-
-        string token = ResolveAccessToken();
-        ResolvedCodePayload payload = await _codeResolver.ResolveBySavedSeqAsync(
-            userId,
-            shareId,
-            info.SavedUserLevelSeq,
-            token);
-
-        if (payload == null || !payload.IsSuccess)
+        if (_inProgressSaveKeys.Contains(saveKey))
         {
-            string error = payload != null ? payload.Error : "payload is null";
-            if (_bindingStore.TryGetBinding(userId, out HostCarBinding failedBinding) && failedBinding != null)
-                failedBinding.LastError = error;
-
-            _statusReporter?.SetError($"Code resolve failed. user={userId}, shareId={shareId}, error={error}");
-            UpdateSummary();
+            if (_debugLog)
+                Log($"Skip in-progress duplicate save event. shareId={shareId}, savedSeq={savedSeq}");
             return;
         }
 
-        HostCarBinding binding = _bindingStore.UpsertCode(payload);
-        if (binding != null && binding.RuntimeRefs != null && binding.RuntimeRefs.Executor != null)
+        if (!fromPending && IsPendingDuplicateSave(shareId, savedSeq))
         {
+            if (_debugLog)
+                Log($"Skip pending duplicate save event. shareId={shareId}, savedSeq={savedSeq}");
+            return;
+        }
+
+        _inProgressSaveKeys.Add(saveKey);
+        try
+        {
+            LogMappingNeeded(
+                $"Mapping trigger. source={(fromPending ? "pending-retry" : "save-success")}, shareId={shareId}, savedSeq={savedSeq}");
+
+            int preSlots = _slotRegistry.MaxCount;
+            int preCars = _bindingStore.CountRuntimeCars();
+
+            string userId = ResolveUserIdFromShare(shareId, info.OwnerUserId, info.ResponseBody);
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                _pendingSaveByShareId[shareId] = info;
+                RequestShareOwnerResolve(shareId);
+                LogMappingNeeded($"Owner unresolved. shareId={shareId}, ownerUserId={info.OwnerUserId}, savedSeq={savedSeq}");
+                _statusReporter?.SetWarning($"Save success but userId unresolved. shareId={shareId}, savedSeq={savedSeq}");
+                return;
+            }
+
+            _pendingSaveByShareId.Remove(shareId);
+
+            if (!_slotRegistry.TryGetSlotByUserId(userId, out HostParticipantSlot approvedSlot) || approvedSlot == null)
+            {
+                _completedSaveKeys.Add(saveKey);
+                LogMappingNeeded($"Resolved user is not approved. shareId={shareId}, resolvedUser={userId}, savedSeq={savedSeq}");
+                _statusReporter?.SetWarning($"save ignored: user not approved. shareId={shareId}, user={userId}, savedSeq={savedSeq}");
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                return;
+            }
+
+            _bindingStore.UpsertParticipant(approvedSlot);
+
+            if (_bindingStore.TryActivateExistingCodeVersion(
+                    userId,
+                    shareId,
+                    savedSeq,
+                    out HostCarBinding existingBinding,
+                    out HostCodeVersion existingVersion))
+            {
+                if (existingBinding != null)
+                {
+                    existingBinding.SlotIndex = approvedSlot.SlotIndex;
+                    existingBinding.UserName = approvedSlot.UserName;
+                }
+
+                _completedSaveKeys.Add(saveKey);
+                LogMappingNeeded(
+                    $"Reapply skipped. reason=duplicate-key, shareId={shareId}, savedSeq={savedSeq}, user={userId}");
+
+                if (existingBinding != null &&
+                    existingBinding.RuntimeRefs != null &&
+                    existingBinding.RuntimeRefs.Executor != null &&
+                    existingBinding.RuntimeRefs.Physics != null &&
+                    !existingBinding.RuntimeReady &&
+                    existingVersion != null &&
+                    !string.IsNullOrWhiteSpace(existingVersion.Json))
+                {
+                    bool reloaded = _runtimeBinder.TryApplyJson(
+                        existingBinding.RuntimeRefs.Executor,
+                        existingVersion.Json,
+                        $"save-duplicate:{shareId}:{userId}:version={existingVersion.VersionKey}",
+                        out string duplicateLoadError);
+                    existingBinding.RuntimeReady = reloaded;
+                    if (!reloaded)
+                    {
+                        existingBinding.LastError = duplicateLoadError;
+                        _statusReporter?.SetError(
+                            $"Runtime load failed(duplicate). user={userId}, shareId={shareId}, error={duplicateLoadError}");
+                    }
+                }
+
+                _statusReporter?.SetInfo(
+                    $"Code already mapped. user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}");
+                LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, existingBinding != null ? existingBinding.RuntimeRefs : null);
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                UpdateSummary();
+                return;
+            }
+
+            string token = ResolveAccessToken();
+            ResolvedCodePayload payload = await _codeResolver.ResolveBySavedSeqAsync(
+                userId,
+                shareId,
+                savedSeq,
+                token);
+
+            if (payload == null || !payload.IsSuccess)
+            {
+                _completedSaveKeys.Add(saveKey);
+                string error = payload != null ? payload.Error : "payload is null";
+                if (_bindingStore.TryGetBinding(userId, out HostCarBinding failedBinding) && failedBinding != null)
+                    failedBinding.LastError = error;
+
+                _statusReporter?.SetError($"Code resolve failed. user={userId}, shareId={shareId}, error={error}");
+                LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, null);
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                UpdateSummary();
+                return;
+            }
+
+            HostCarBinding binding = _bindingStore.UpsertCode(payload);
+            if (binding == null)
+            {
+                _completedSaveKeys.Add(saveKey);
+                _statusReporter?.SetError($"Code mapping failed. user={userId}, shareId={shareId}, savedSeq={savedSeq}");
+                LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, null);
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                UpdateSummary();
+                return;
+            }
+
+            binding.SlotIndex = approvedSlot.SlotIndex;
+            binding.UserName = approvedSlot.UserName;
+
+            if (!binding.TryGetActiveCodeVersion(out HostCodeVersion activeVersion) ||
+                activeVersion == null ||
+                string.IsNullOrWhiteSpace(activeVersion.Json))
+            {
+                _completedSaveKeys.Add(saveKey);
+                binding.LastError = "active json missing";
+                _statusReporter?.SetError(
+                    $"Code mapping failed(active json missing). user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}");
+                LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                UpdateSummary();
+                return;
+            }
+
+            if (binding.RuntimeRefs == null || binding.RuntimeRefs.Executor == null || binding.RuntimeRefs.Physics == null)
+            {
+                _completedSaveKeys.Add(saveKey);
+                binding.LastError = "runtime refs missing";
+                _statusReporter?.SetError($"Runtime refs missing. user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}");
+                LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                UpdateSummary();
+                return;
+            }
+
             bool loaded = _runtimeBinder.TryApplyJson(
                 binding.RuntimeRefs.Executor,
-                binding.Json,
-                $"save:{shareId}:{userId}",
+                activeVersion.Json,
+                $"save:{shareId}:{userId}:version={activeVersion.VersionKey}",
                 out string loadError);
             binding.RuntimeReady = loaded;
             if (!loaded)
@@ -329,11 +481,126 @@ public class HostNetworkCarCoordinator : MonoBehaviour
                 binding.LastError = loadError;
                 _statusReporter?.SetError($"Runtime load failed. user={userId}, shareId={shareId}, error={loadError}");
             }
+            else
+            {
+                binding.LastError = string.Empty;
+            }
+
+            _completedSaveKeys.Add(saveKey);
+            _statusReporter?.SetInfo(
+                $"Code mapped. user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}");
+            LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
+            LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+            UpdateSummary();
+        }
+        finally
+        {
+            _inProgressSaveKeys.Remove(saveKey);
+        }
+    }
+
+    private void RequestShareOwnerResolve(string shareIdRaw)
+    {
+        if (_chatRoomManager == null)
+            return;
+
+        string shareId = string.IsNullOrWhiteSpace(shareIdRaw) ? string.Empty : shareIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(shareId))
+            return;
+
+        string roomId = ResolveTargetRoomId();
+        if (string.IsNullOrWhiteSpace(roomId))
+            return;
+
+        if (_chatRoomManager.IsBusy)
+        {
+            if (_debugLog)
+                Log($"Skip detail fetch for owner resolve (busy). shareId={shareId}");
+            return;
         }
 
-        _statusReporter?.SetInfo(
-            $"Code mapped. user={userId}, slot={binding?.SlotIndex}, shareId={shareId}, savedSeq={info.SavedUserLevelSeq}");
-        UpdateSummary();
+        _chatRoomManager.FetchBlockShareDetail(roomId, shareId, ResolveTokenOverride());
+        if (_debugLog)
+            Log($"Requested detail fetch to resolve owner. roomId={roomId}, shareId={shareId}");
+    }
+
+    private void RetryPendingSaveIfNeeded(string shareIdRaw)
+    {
+        string shareId = string.IsNullOrWhiteSpace(shareIdRaw) ? string.Empty : shareIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(shareId))
+            return;
+
+        if (!_pendingSaveByShareId.TryGetValue(shareId, out ChatRoomBlockShareSaveInfo pending) || pending == null)
+            return;
+
+        _pendingSaveByShareId.Remove(shareId);
+        _ = HandleBlockShareSaveSucceededAsync(pending, fromPending: true);
+    }
+
+    private void TryResolvePendingShareOwners()
+    {
+        if (_pendingSaveByShareId.Count <= 0)
+            return;
+
+        if (Time.unscaledTime < _nextPendingResolveTryAt)
+            return;
+
+        _nextPendingResolveTryAt = Time.unscaledTime + 0.5f;
+
+        foreach (KeyValuePair<string, ChatRoomBlockShareSaveInfo> pair in _pendingSaveByShareId)
+        {
+            RequestShareOwnerResolve(pair.Key);
+            break;
+        }
+    }
+
+    private static string BuildSaveDedupeKey(string shareIdRaw, int savedSeq)
+    {
+        string shareId = string.IsNullOrWhiteSpace(shareIdRaw) ? string.Empty : shareIdRaw.Trim();
+        string versionKey = HostCarBindingStore.BuildVersionKey(shareId, savedSeq);
+        if (!string.IsNullOrWhiteSpace(versionKey))
+            return versionKey;
+
+        return $"{shareId}:{savedSeq}";
+    }
+
+    private bool IsPendingDuplicateSave(string shareIdRaw, int savedSeq)
+    {
+        string shareId = string.IsNullOrWhiteSpace(shareIdRaw) ? string.Empty : shareIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(shareId))
+            return false;
+
+        if (!_pendingSaveByShareId.TryGetValue(shareId, out ChatRoomBlockShareSaveInfo pending) || pending == null)
+            return false;
+
+        return pending.SavedUserLevelSeq == savedSeq;
+    }
+
+    private void LogSaveTarget(string shareId, int savedSeq, string userId, int slotIndex, HostCarRuntimeRefs refs)
+    {
+        if (!_debugLog)
+            return;
+
+        string carName = refs != null && refs.CarObject != null ? refs.CarObject.name : "-";
+        Log($"Save target. shareId={shareId}, savedSeq={savedSeq}, resolvedUserId={userId}, resolvedSlot={slotIndex}, carObjectName={carName}");
+    }
+
+    private void LogSaveIntegrity(string shareId, int savedSeq, int preSlots, int preCars)
+    {
+        int postSlots = _slotRegistry.MaxCount;
+        int postCars = _bindingStore.CountRuntimeCars();
+
+        if (_debugLog)
+        {
+            Log(
+                $"Save integrity. shareId={shareId}, savedSeq={savedSeq}, preSlots={preSlots}, preCars={preCars}, postSlots={postSlots}, postCars={postCars}");
+        }
+
+        if (postSlots != preSlots || postCars != preCars)
+        {
+            _statusReporter?.SetWarning(
+                $"save integrity changed. shareId={shareId}, savedSeq={savedSeq}, slots {preSlots}->{postSlots}, cars {preCars}->{postCars}");
+        }
     }
 
     private void HandleBlockShareSaveFailed(string shareId, string message)
@@ -376,6 +643,7 @@ public class HostNetworkCarCoordinator : MonoBehaviour
             return;
 
         _shareToUserId[shareId] = userId;
+        LogMappingNeeded($"Share owner cached. shareId={shareId}, userId={userId}");
     }
 
     private string ResolveApprovedUserId(ChatRoomJoinRequestDecisionInfo info)
@@ -395,17 +663,40 @@ public class HostNetworkCarCoordinator : MonoBehaviour
         return ExtractFirstUserId(info.ResponseBody);
     }
 
-    private string ResolveUserIdFromShare(string shareIdRaw, string responseBody)
+    private string ResolveUserIdFromShare(string shareIdRaw, string ownerUserIdRaw, string responseBody)
     {
         string shareId = string.IsNullOrWhiteSpace(shareIdRaw) ? string.Empty : shareIdRaw.Trim();
         if (!string.IsNullOrWhiteSpace(shareId) &&
             _shareToUserId.TryGetValue(shareId, out string mappedUserId) &&
             !string.IsNullOrWhiteSpace(mappedUserId))
         {
-            return mappedUserId.Trim();
+            string mapped = mappedUserId.Trim();
+            if (_slotRegistry.TryGetSlotByUserId(mapped, out HostParticipantSlot mappedSlot) && mappedSlot != null)
+                return mapped;
+
+            LogMappingNeeded($"Share owner is not approved. shareId={shareId}, mappedUserId={mapped}");
         }
 
-        return ExtractFirstUserId(responseBody);
+        string ownerUserId = string.IsNullOrWhiteSpace(ownerUserIdRaw) ? string.Empty : ownerUserIdRaw.Trim();
+        if (!string.IsNullOrWhiteSpace(ownerUserId))
+        {
+            if (_slotRegistry.TryGetSlotByUserId(ownerUserId, out HostParticipantSlot ownerSlot) && ownerSlot != null)
+                return ownerUserId;
+
+            LogMappingNeeded($"OwnerUserId is not approved. shareId={shareId}, ownerUserId={ownerUserId}");
+        }
+
+        string parsedUserId = ExtractFirstUserId(responseBody);
+        if (!string.IsNullOrWhiteSpace(parsedUserId))
+        {
+            string parsed = parsedUserId.Trim();
+            if (_slotRegistry.TryGetSlotByUserId(parsed, out HostParticipantSlot parsedSlot) && parsedSlot != null)
+                return parsed;
+
+            LogMappingNeeded($"Parsed userId is not approved. shareId={shareId}, parsedUserId={parsed}");
+        }
+
+        return string.Empty;
     }
 
     private static string ExtractFirstUserId(string json)
@@ -510,6 +801,14 @@ public class HostNetworkCarCoordinator : MonoBehaviour
             return;
 
         Debug.Log($"[HostNetworkCarCoordinator] {message}");
+    }
+
+    private void LogMappingNeeded(string message)
+    {
+        if (!_debugLog || string.IsNullOrWhiteSpace(message))
+            return;
+
+        Debug.Log($"<color=orange>[HostNetworkCarCoordinator][MAPPING] {message}</color>");
     }
 }
 

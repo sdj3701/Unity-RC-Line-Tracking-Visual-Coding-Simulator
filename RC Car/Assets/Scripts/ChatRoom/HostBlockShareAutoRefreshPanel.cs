@@ -74,6 +74,57 @@ public class HostBlockShareAutoRefreshPanel : MonoBehaviour
         return true;
     }
 
+    public bool TryGetListItemInfoByShareId(string shareIdRaw, out string message, out int userLevelSeq)
+    {
+        message = string.Empty;
+        userLevelSeq = 0;
+
+        string shareId = string.IsNullOrWhiteSpace(shareIdRaw) ? string.Empty : shareIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(shareId))
+            return false;
+
+        for (int i = 0; i < _items.Count; i++)
+        {
+            ChatRoomBlockShareInfo item = _items[i];
+            if (item == null)
+                continue;
+
+            string itemShareId = string.IsNullOrWhiteSpace(item.BlockShareId) ? string.Empty : item.BlockShareId.Trim();
+            if (!string.Equals(shareId, itemShareId, StringComparison.Ordinal))
+                continue;
+
+            message = string.IsNullOrWhiteSpace(item.Message) ? string.Empty : item.Message.Trim();
+            userLevelSeq = item.UserLevelSeq;
+            return true;
+        }
+
+        return false;
+    }
+
+    public bool TryGetCheckedShareIds(out List<string> shareIds)
+    {
+        shareIds = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        int count = Mathf.Min(_items.Count, _itemToggles.Count);
+
+        for (int i = 0; i < count; i++)
+        {
+            Toggle toggle = _itemToggles[i];
+            if (toggle == null || !toggle.isOn)
+                continue;
+
+            ChatRoomBlockShareInfo item = _items[i];
+            if (item == null || string.IsNullOrWhiteSpace(item.BlockShareId))
+                continue;
+
+            string shareId = item.BlockShareId.Trim();
+            if (seen.Add(shareId))
+                shareIds.Add(shareId);
+        }
+
+        return shareIds.Count > 0;
+    }
+
     private void Start()
     {
         if (_itemTemplate != null)
@@ -671,15 +722,14 @@ public class HostBlockShareAutoRefreshPanel : MonoBehaviour
     private static string BuildListLabel(ChatRoomBlockShareInfo item)
     {
         if (item == null)
-            return "(null)";
+            return "- / -";
 
-        string shareId = string.IsNullOrWhiteSpace(item.BlockShareId) ? "-" : item.BlockShareId.Trim();
         string userId = string.IsNullOrWhiteSpace(item.UserId) ? "-" : item.UserId.Trim();
-        string message = string.IsNullOrWhiteSpace(item.Message) ? "(empty)" : item.Message.Trim();
-        if (message.Length > 42)
-            message = $"{message.Substring(0, 42)}...";
+        string xmlFileName = string.IsNullOrWhiteSpace(item.Message)
+            ? (item.UserLevelSeq > 0 ? item.UserLevelSeq.ToString() : "-")
+            : item.Message.Trim();
 
-        return $"shareId={shareId} | seq={item.UserLevelSeq} | user={userId} | {message}";
+        return $"{userId} / {xmlFileName}";
     }
 
     private void SetStatus(string message)
