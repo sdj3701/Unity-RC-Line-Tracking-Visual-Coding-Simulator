@@ -19,7 +19,7 @@ MonoBehaviour:
     width: 2560
     height: 1349
   m_ShowMode: 4
-  m_Title: Console
+  m_Title: Hierarchy
   m_RootView: {fileID: 2}
   m_MinSize: {x: 875, y: 450}
   m_MaxSize: {x: 10000, y: 10000}
@@ -121,7 +121,7 @@ MonoBehaviour:
   m_MinSize: {x: 400, y: 200}
   m_MaxSize: {x: 32384, y: 16192}
   vertical: 0
-  controlID: 84
+  controlID: 17
 --- !u!114 &6
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -172,7 +172,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 200}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 55
+  controlID: 92
 --- !u!114 &8
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -354,18 +354,18 @@ MonoBehaviour:
       y: 21
       width: 1114
       height: 823
-    m_Scale: {x: 0.59761465, y: 0.59761465}
-    m_Translation: {x: 573.5299, y: 411.5}
+    m_Scale: {x: 0.58020836, y: 0.58020836}
+    m_Translation: {x: 556.99994, y: 411.5}
     m_MarginLeft: 0
     m_MarginRight: 0
     m_MarginTop: 0
     m_MarginBottom: 0
     m_LastShownAreaInsideMargins:
       serializedVersion: 2
-      x: -959.69855
-      y: -688.5708
-      width: 1864.0775
-      height: 1377.1416
+      x: -959.9999
+      y: -709.22797
+      width: 1919.9999
+      height: 1418.4559
     m_MinimalGUI: 1
   m_defaultScale: 0.58020836
   m_LastWindowPixelSize: {x: 1114, y: 844}
@@ -1896,14 +1896,14 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 1
     m_Folders:
-    - Assets
+    - Assets/Scenes
     m_Globs: []
     m_OriginalText: 
     m_FilterByTypeIntersection: 0
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets
+  - Assets/Scenes
   m_LastFoldersGridSize: -1
   m_LastProjectPath: D:\Unity\Unity RC Line\Unity-RC-Line-Tracking-Visual-Coding-Simulator\RC
     Car
@@ -1911,8 +1911,8 @@ MonoBehaviour:
     m_IsLocked: 0
   m_FolderTreeState:
     scrollPos: {x: 0, y: 0}
-    m_SelectedIDs: 966b0000
-    m_LastClickedID: 27542
+    m_SelectedIDs: cc6b0000
+    m_LastClickedID: 27596
     m_ExpandedIDs: 00000000966b0000986b00009a6b00009c6b00009e6b0000a06b0000a26b0000a46b0000a66b0000a86b0000aa6b0000ac6b0000ae6b0000b06b0000b26b0000b46b0000b66b0000b86b0000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
@@ -1968,7 +1968,7 @@ MonoBehaviour:
   m_ListAreaState:
     m_SelectedInstanceIDs: 
     m_LastClickedInstanceID: 0
-    m_HadKeyboardFocusLastEvent: 0
+    m_HadKeyboardFocusLastEvent: 1
     m_ExpandedInstanceIDs: 62c20000ac70000072670000ec6b0000be6d0000f2570100f0630000c06d0000ac8c000044e10800e28d00009e720900de990b0000000000086c040052b50000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
@@ -2032,7 +2032,7 @@ MonoBehaviour:
       scrollPos: {x: 0, y: 0}
       m_SelectedIDs: 
       m_LastClickedID: 0
-      m_ExpandedIDs: d6adffff48aeffff06afffff40afffffb4afffff9eb0ffffb2b0ffffb8b0ffff42b1ffff7eb1ffff9eb4ffff30b6ffff50b6ffff56b6ffff36fbffff
+      m_ExpandedIDs: 50f0ffff6ef1ffff72f2ffffb2f2ffffd0f3ffff72f4fffffaf4ffff38f5ffff60f8fffffef9ffff22faffff2cfaffff36fbffff96060100c00701006e32010098320100
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 

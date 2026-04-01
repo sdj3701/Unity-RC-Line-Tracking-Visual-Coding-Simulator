@@ -13,9 +13,7 @@ public class ButtonUIHideAndShow : MonoBehaviour
     public RectTransform arrowImage;
     
     [Tooltip("활성화/비활성화할 Canvas")]
-    public GameObject targetCanvas;
-    public GameObject RenderTextureCanvas;
-    //public GameObject RenderTextureCanvas2;
+    public GameObject[] targetCanvas;
     
     [Header("Settings")]
     [Tooltip("UI가 현재 확장되어 있는지 여부")]
@@ -72,7 +70,7 @@ public class ButtonUIHideAndShow : MonoBehaviour
         if (arrowImage != null)
         {
             // isExpanded가 true면 0도, false면 180도
-            float rotationY = isExpanded ? 180f : 0f;
+            float rotationY = isExpanded ? 0f : 180f;
             arrowImage.localRotation = Quaternion.Euler(0f, rotationY, 0f);
         }
         
@@ -87,9 +85,13 @@ public class ButtonUIHideAndShow : MonoBehaviour
         // Canvas 활성화/비활성화
         if (targetCanvas != null)
         {
-            targetCanvas.SetActive(isExpanded);
-            RenderTextureCanvas.SetActive(isExpanded);
-            //RenderTextureCanvas2.SetActive(isExpanded);
+            for (int i = 0; i < targetCanvas.Length; i++)
+            {
+                if (targetCanvas[i] != null)
+                {
+                    targetCanvas[i].SetActive(isExpanded);
+                }
+            }
         }
     }
 

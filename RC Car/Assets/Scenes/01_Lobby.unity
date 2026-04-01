@@ -1075,6 +1075,9 @@ MonoBehaviour:
   _statusText: {fileID: 1629349001}
   _roomFlow: {fileID: 1953085445}
   _chatRoomManager: {fileID: 1137297052}
+  _moveToNetworkSceneOnChatRoomReady: 1
+  _targetSceneName: 03_NetworkCarTest
+  _storeRoomContext: 1
 --- !u!1 &857799197
 GameObject:
   m_ObjectHideFlags: 0
@@ -1666,6 +1669,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _createRoomEndpoint: http://ioteacher.com/api/chat/rooms
+  _listRoomEndpoint: http://ioteacher.com/api/chat/rooms
+  _joinRequestEndpointTemplate: http://ioteacher.com/api/chat/rooms/{roomId}/join-request
+  _joinRequestsEndpointTemplate: http://ioteacher.com/api/chat/rooms/{roomId}/join-requests
+  _joinRequestDecisionEndpointTemplate: http://ioteacher.com/api/chat/join-requests/{requestId}/decision
+  _myJoinRequestStatusEndpointTemplate: http://ioteacher.com/api/chat/my/join-request/{requestId}
+  _blockShareEndpointTemplate: http://ioteacher.com/api/chat/rooms/{roomId}/block-shares
+  _blockShareDetailEndpointTemplate: http://ioteacher.com/api/chat/rooms/{roomId}/block-shares/{shareId}
+  _saveBlockShareToMyLevelEndpointTemplate: http://ioteacher.com/api/chat/block-shares/{shareId}/save-to-my-level
   _requestTimeoutSeconds: 15
   _debugLog: 1
 --- !u!4 &1137297053
@@ -2011,7 +2022,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1550436148
 RectTransform:
   m_ObjectHideFlags: 0
