@@ -417,7 +417,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &213845749
 RectTransform:
   m_ObjectHideFlags: 0
@@ -3132,7 +3132,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 979852356}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1159.664, y: 939.4748, z: -312.7379}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3158,10 +3158,13 @@ MonoBehaviour:
   _roomIdOverride: 
   _accessTokenOverride: 
   _showGui: 1
-  _startCollapsed: 0
   _maxVisibleRows: 8
-  _windowPosition: {x: 24, y: 24}
-  _windowSize: {x: 580, y: 420}
+  _windowPosition: {x: 0, y: 600}
+  _windowSize: {x: 600, y: 500}
+  _windowTitleFontSize: 22
+  _labelFontSize: 22
+  _buttonFontSize: 22
+  _textFieldFontSize: 22
   _debugLog: 1
 --- !u!1 &997600253
 GameObject:

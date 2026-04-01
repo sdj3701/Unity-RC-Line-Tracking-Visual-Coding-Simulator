@@ -23,10 +23,17 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
 
     [Header("GUI")]
     [SerializeField] private bool _showGui = true;
-    [SerializeField] private bool _startCollapsed = false;
     [SerializeField] private int _maxVisibleRows = 8;
     [SerializeField] private Vector2 _windowPosition = new Vector2(24f, 24f);
-    [SerializeField] private Vector2 _windowSize = new Vector2(580f, 420f);
+    [SerializeField] private Vector2 _windowSize = new Vector2(1280f, 860f);
+    [Tooltip("Recommended for 600x500 window: 24")]
+    [SerializeField] private int _windowTitleFontSize = 24;
+    [Tooltip("Recommended for 600x500 window: 20")]
+    [SerializeField] private int _labelFontSize = 20;
+    [Tooltip("Recommended for 600x500 window: 20")]
+    [SerializeField] private int _buttonFontSize = 20;
+    [Tooltip("Recommended for 600x500 window: 20")]
+    [SerializeField] private int _textFieldFontSize = 20;
 
     [Header("Debug")]
     [SerializeField] private bool _debugLog = true;
@@ -37,7 +44,6 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
     private ChatRoomManager _chatRoomManager;
     private Coroutine _pollingCoroutine;
     private bool _isBound;
-    private bool _isCollapsed;
     private bool _snapshotInitialized;
     private string _trackedRoomId;
     private string _lastError = string.Empty;
@@ -48,12 +54,20 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
     private readonly List<ChatRoomJoinRequestInfo> _latestRequests = new List<ChatRoomJoinRequestInfo>();
     private readonly HashSet<string> _seenRequestKeys = new HashSet<string>();
     private readonly HashSet<string> _newRequestKeys = new HashSet<string>();
+    private GUIStyle _windowStyle;
+    private GUIStyle _labelStyle;
+    private GUIStyle _rowLabelStyle;
+    private GUIStyle _buttonStyle;
+    private GUIStyle _textFieldStyle;
+    private int _cachedWindowFontSize = -1;
+    private int _cachedLabelFontSize = -1;
+    private int _cachedButtonFontSize = -1;
+    private int _cachedTextFieldFontSize = -1;
     private string _activeDecisionRequestKey = string.Empty;
     private bool _activeDecisionApprove;
 
     private void Awake()
     {
-        _isCollapsed = _startCollapsed;
         _windowRect = new Rect(_windowPosition.x, _windowPosition.y, _windowSize.x, _windowSize.y);
     }
 
@@ -473,6 +487,64 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
         return $"{roomId}|{userId}|{createdAt}";
     }
 
+    private static bool IsPendingStatus(string status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+            return true;
+
+        string normalized = status.Trim().ToUpperInvariant();
+        return normalized == "REQUESTED" || normalized == "PENDING";
+    }
+
+    private static bool IsApprovedStatus(string status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+            return false;
+
+        string normalized = status.Trim().ToUpperInvariant();
+        return normalized == "APPROVED" || normalized == "ACCEPTED";
+    }
+
+    private int GetRoomMemberCount()
+    {
+        RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
+        if (currentRoom == null || string.IsNullOrWhiteSpace(currentRoom.RoomId))
+            return 0;
+        // Member count estimate: host(1) + approved join-request users.
+        int hostCount = 1;
+        var approvedUsers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (int i = 0; i < _latestRequests.Count; i++)
+        {
+            ChatRoomJoinRequestInfo request = _latestRequests[i];
+            if (request == null || !IsApprovedStatus(request.Status))
+                continue;
+
+            string userKey = !string.IsNullOrWhiteSpace(request.RequestUserId)
+                ? request.RequestUserId.Trim()
+                : BuildJoinRequestKey(request);
+
+            if (!string.IsNullOrWhiteSpace(userKey))
+                approvedUsers.Add(userKey);
+        }
+
+        return hostCount + approvedUsers.Count;
+    }
+
+    private int GetPendingRequestCount()
+    {
+        int pendingCount = 0;
+
+        for (int i = 0; i < _latestRequests.Count; i++)
+        {
+            ChatRoomJoinRequestInfo request = _latestRequests[i];
+            if (request != null && IsPendingStatus(request.Status))
+                pendingCount++;
+        }
+
+        return pendingCount;
+    }
+
     private void SetStatus(string message)
     {
         _lastStatus = string.IsNullOrWhiteSpace(message) ? "Idle" : message;
@@ -486,139 +558,168 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
         Debug.Log($"[HostJoinRequestMonitorGUI] {message}");
     }
 
+    private void EnsureGuiStyles()
+    {
+        int windowFontSize = Mathf.Max(1, _windowTitleFontSize);
+        int labelFontSize = Mathf.Max(1, _labelFontSize);
+        int buttonFontSize = Mathf.Max(1, _buttonFontSize);
+        int textFieldFontSize = Mathf.Max(1, _textFieldFontSize);
+
+        bool requiresRebuild = _windowStyle == null ||
+                               _labelStyle == null ||
+                               _rowLabelStyle == null ||
+                               _buttonStyle == null ||
+                               _textFieldStyle == null ||
+                               _cachedWindowFontSize != windowFontSize ||
+                               _cachedLabelFontSize != labelFontSize ||
+                               _cachedButtonFontSize != buttonFontSize ||
+                               _cachedTextFieldFontSize != textFieldFontSize;
+
+        if (!requiresRebuild)
+            return;
+
+        _cachedWindowFontSize = windowFontSize;
+        _cachedLabelFontSize = labelFontSize;
+        _cachedButtonFontSize = buttonFontSize;
+        _cachedTextFieldFontSize = textFieldFontSize;
+
+        _windowStyle = new GUIStyle(GUI.skin.window)
+        {
+            fontSize = windowFontSize
+        };
+
+        _labelStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = labelFontSize,
+            wordWrap = true
+        };
+
+        _rowLabelStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = labelFontSize,
+            wordWrap = false,
+            clipping = TextClipping.Clip
+        };
+
+        _buttonStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize = buttonFontSize,
+            alignment = TextAnchor.MiddleCenter
+        };
+
+        _textFieldStyle = new GUIStyle(GUI.skin.textField)
+        {
+            fontSize = textFieldFontSize
+        };
+    }
+
     private void OnGUI()
     {
         if (!_showGui)
             return;
 
+        EnsureGuiStyles();
+
         _windowRect = GUI.Window(
             GetInstanceID(),
             _windowRect,
             DrawWindowContents,
-            "Host Join Request Monitor");
+            "Host Join Request Monitor",
+            _windowStyle);
     }
 
     private void DrawWindowContents(int windowId)
     {
+        float dragAreaHeight = Mathf.Max(64f, _windowTitleFontSize + 22f);
+        float buttonHeight = Mathf.Max(46f, _buttonFontSize + 14f);
+        float rowHeight = Mathf.Max(40f, _labelFontSize + 16f);
+        float actionButtonWidth = Mathf.Max(110f, (_windowRect.width - 86f) * 0.5f);
+
         GUILayout.BeginVertical();
-
-        GUILayout.BeginHorizontal();
-        if (GUILayout.Button(_isCollapsed ? "Expand" : "Collapse", GUILayout.Width(90f)))
-            _isCollapsed = !_isCollapsed;
-
-        if (GUILayout.Button(_pollingCoroutine == null ? "Start Polling" : "Stop Polling", GUILayout.Width(120f)))
-        {
-            if (_pollingCoroutine == null)
-                StartPolling();
-            else
-                StopPolling();
-        }
-
-        if (GUILayout.Button("Fetch Now", GUILayout.Width(90f)))
+        
+        if (GUILayout.Button("Fetch Now", _buttonStyle, GUILayout.Height(buttonHeight)))
             FetchNow();
 
-        if (GUILayout.Button("Clear New", GUILayout.Width(90f)))
-            _newRequestKeys.Clear();
+        /*
+         * Detailed debug UI is intentionally commented out per request:
+         * - Collapse/Expand, Start/Stop Polling, Clear New buttons
+         * - Scene/Host/Status/Fetch Time/Decision labels
+         * - Room Override/Token Override input fields
+         * - New-request baseline debug details
+         */
 
-        GUILayout.EndHorizontal();
+        int roomMemberCount = GetRoomMemberCount();
+        int pendingRequestCount = GetPendingRequestCount();
 
-        if (_isCollapsed)
-        {
-            GUILayout.Label($"roomId={ResolveTargetRoomId()}");
-            GUILayout.Label($"pending={_latestRequests.Count}, new={_newRequestKeys.Count}");
-            GUILayout.EndVertical();
-            GUI.DragWindow(new Rect(0f, 0f, _windowRect.width, 24f));
-            return;
-        }
-
-        GUILayout.Space(6f);
-        GUILayout.Label($"Scene: {SceneManager.GetActiveScene().name}");
-        GUILayout.Label($"Manager Ready: {_chatRoomManager != null}");
-        GUILayout.Label($"Polling: {(_pollingCoroutine != null ? "ON" : "OFF")} (interval={Mathf.Max(MinPollIntervalSeconds, _pollIntervalSeconds):0.0}s)");
-        string hostRole = BuildHostRoleLabel();
-        GUILayout.Label($"Host Only: {_hostOnly} (role={hostRole})");
-        if (_hostOnly && !CanCurrentUserManageHostRequests(out string hostReason))
-            GUILayout.Label($"Host Check: {hostReason}");
-        GUILayout.Label($"Target RoomId: {ResolveTargetRoomId()}");
-        GUILayout.Label($"Last Status: {_lastStatus}");
-        GUILayout.Label($"Last Fetch UTC: {(_lastFetchUtc == DateTime.MinValue ? "-" : _lastFetchUtc.ToString("yyyy-MM-dd HH:mm:ss"))}");
-        GUILayout.Label($"Pending Requests: {_latestRequests.Count} / New Since Baseline: {_newRequestKeys.Count}");
-        GUILayout.Label(
-            $"Decision In Progress: {!string.IsNullOrWhiteSpace(_activeDecisionRequestKey)}" +
-            $"{(string.IsNullOrWhiteSpace(_activeDecisionRequestKey) ? string.Empty : $" ({(_activeDecisionApprove ? "ACCEPT" : "REJECT")}, key={_activeDecisionRequestKey})")}");
-
-        GUILayout.Space(6f);
-        GUILayout.BeginHorizontal();
-        GUILayout.Label("Room Override", GUILayout.Width(110f));
-        _roomIdOverride = GUILayout.TextField(_roomIdOverride ?? string.Empty);
-        GUILayout.EndHorizontal();
-
-        GUILayout.BeginHorizontal();
-        GUILayout.Label("Token Override", GUILayout.Width(110f));
-        _accessTokenOverride = GUILayout.TextField(_accessTokenOverride ?? string.Empty);
-        GUILayout.EndHorizontal();
+        GUILayout.Space(10f);
+        GUILayout.Label($"Room Member Count: {roomMemberCount}", _labelStyle, GUILayout.Height(rowHeight));
+        GUILayout.Label($"Pending Join Requests: {pendingRequestCount}", _labelStyle, GUILayout.Height(rowHeight));
 
         if (!string.IsNullOrWhiteSpace(_lastError))
         {
             Color previousColor = GUI.color;
             GUI.color = Color.red;
-            GUILayout.Label($"Error: {_lastError}");
+            GUILayout.Label($"Error: {_lastError}", _labelStyle, GUILayout.Height(rowHeight));
             GUI.color = previousColor;
         }
 
-        GUILayout.Space(8f);
-        GUILayout.Label("Latest Join Requests");
+        GUILayout.Space(12f);
+        GUILayout.Label("Client Join Requests", _labelStyle, GUILayout.Height(rowHeight));
 
-        float rowHeight = 22f;
-        float viewportHeight = Mathf.Max(rowHeight * Mathf.Max(1, _maxVisibleRows), rowHeight);
+        float reservedHeight = buttonHeight + (rowHeight * 3f) + 72f;
+        float minViewportHeight = rowHeight + buttonHeight + 28f;
+        float viewportHeight = Mathf.Clamp(
+            _windowRect.height - reservedHeight,
+            minViewportHeight,
+            Mathf.Max(minViewportHeight, _windowRect.height - dragAreaHeight - 16f));
         _scrollPosition = GUILayout.BeginScrollView(_scrollPosition, GUILayout.Height(viewportHeight));
 
-        if (_latestRequests.Count == 0)
+        bool hasPendingRequest = false;
+        bool decisionBusy = !string.IsNullOrWhiteSpace(_activeDecisionRequestKey);
+
+        for (int i = 0; i < _latestRequests.Count; i++)
         {
-            GUILayout.Label("(empty)");
+            ChatRoomJoinRequestInfo request = _latestRequests[i];
+            if (request == null || !IsPendingStatus(request.Status))
+                continue;
+
+            hasPendingRequest = true;
+
+            string requestId = request.RequestId ?? string.Empty;
+            string userId = request.RequestUserId ?? string.Empty;
+            bool canDecide = !string.IsNullOrWhiteSpace(requestId) && !decisionBusy;
+
+            GUILayout.BeginVertical();
+            GUILayout.Label(
+                $"user={userId}, req={requestId}",
+                _labelStyle,
+                GUILayout.ExpandWidth(true),
+                GUILayout.Height(rowHeight));
+            
+            GUILayout.BeginHorizontal();
+
+            bool previousEnabled = GUI.enabled;
+            GUI.enabled = canDecide;
+
+            if (GUILayout.Button("Accept", _buttonStyle, GUILayout.Width(actionButtonWidth), GUILayout.Height(buttonHeight)))
+                TryDecideJoinRequest(request, true);
+
+            if (GUILayout.Button("Reject", _buttonStyle, GUILayout.Width(actionButtonWidth), GUILayout.Height(buttonHeight)))
+                TryDecideJoinRequest(request, false);
+
+            GUI.enabled = previousEnabled;
+            GUILayout.EndHorizontal();
+            GUILayout.Space(8f);
+            GUILayout.EndVertical();
         }
-        else
-        {
-            for (int i = 0; i < _latestRequests.Count; i++)
-            {
-                ChatRoomJoinRequestInfo request = _latestRequests[i];
-                string key = BuildJoinRequestKey(request);
-                bool isNew = _newRequestKeys.Contains(key);
-                string prefix = isNew ? "[NEW] " : string.Empty;
-                string requestId = request != null ? request.RequestId : string.Empty;
-                string userId = request != null ? request.RequestUserId : string.Empty;
-                string status = request != null ? request.Status : string.Empty;
-                string createdAt = request != null ? request.CreatedAtUtc : string.Empty;
-                bool isPending = string.IsNullOrWhiteSpace(status) ||
-                                 string.Equals(status, "REQUESTED", StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(status, "PENDING", StringComparison.OrdinalIgnoreCase);
-                bool decisionBusy = !string.IsNullOrWhiteSpace(_activeDecisionRequestKey);
-                bool canDecide = request != null &&
-                                 isPending &&
-                                 !string.IsNullOrWhiteSpace(requestId) &&
-                                 !decisionBusy;
 
-                GUILayout.BeginHorizontal();
-                GUILayout.Label($"{prefix}req={requestId}, user={userId}, status={status}, created={createdAt}", GUILayout.ExpandWidth(true));
-
-                bool previousEnabled = GUI.enabled;
-                GUI.enabled = canDecide;
-
-                if (GUILayout.Button("Accept", GUILayout.Width(72f)))
-                    TryDecideJoinRequest(request, true);
-
-                if (GUILayout.Button("Reject", GUILayout.Width(72f)))
-                    TryDecideJoinRequest(request, false);
-
-                GUI.enabled = previousEnabled;
-                GUILayout.EndHorizontal();
-            }
-        }
+        if (!hasPendingRequest)
+            GUILayout.Label("(No pending join requests)", _labelStyle, GUILayout.Height(rowHeight));
 
         GUILayout.EndScrollView();
         GUILayout.EndVertical();
 
-        GUI.DragWindow(new Rect(0f, 0f, _windowRect.width, 24f));
+        GUI.DragWindow(new Rect(0f, 0f, _windowRect.width, dragAreaHeight));
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
