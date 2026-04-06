@@ -618,6 +618,9 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
         if (!_showGui)
             return;
 
+        if (_hostOnly && !CanCurrentUserManageHostRequests(out _))
+            return;
+
         EnsureGuiStyles();
 
         _windowRect = GUI.Window(
