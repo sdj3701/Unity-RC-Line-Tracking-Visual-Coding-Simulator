@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Auth.Models;
+using RC.App.Config;
+using RC.App.Defines;
+using RC.App.Networking;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.SceneManagement;
@@ -15,23 +18,29 @@ namespace Auth
     {
         public static AuthManager Instance { get; private set; }
 
-        [Header("Server")]
-        [Tooltip("ID/PW 로그인 API URL")]
-        [SerializeField] private string _loginEndpoint = "http://ioteacher.com/api/auth/login";
+        [Header("API Config")]
+        [Tooltip("환경별 API 설정 ScriptableObject. 비어 있으면 fallback URL을 사용한다.")]
+        [SerializeField] private AppApiConfig _apiConfig;
 
-        [Tooltip("토큰 검증 API URL")]
+        [Tooltip("필요 시 강제로 사용할 베이스 URL. 비어 있으면 AppApiConfig/Fallback 순으로 결정한다.")]
+        [SerializeField] private string _baseUrlOverride = string.Empty;
+
+        [Tooltip("로그인 API 경로. 기본값은 Define(ApiRoutes.AuthLogin)")]
+        [SerializeField] private string _loginRoute = ApiRoutes.AuthLogin;
+
+        [Tooltip("토큰 검증 API 경로. 기본값은 Define(ApiRoutes.AuthMeByToken)")]
         [FormerlySerializedAs("_serverBaseUrl")]
-        [SerializeField] private string _tokenValidationUrl = "http://ioteacher.com/api/users/me-by-token";
+        [SerializeField] private string _tokenValidationRoute = ApiRoutes.AuthMeByToken;
 
-        [Tooltip("요청 타임아웃(초)")]
+        [Tooltip("요청 타임아웃(초). AppApiConfig가 있으면 Config 값이 우선한다.")]
         [SerializeField] private int _requestTimeoutSeconds = 15;
 
         [Header("Scenes")]
         [FormerlySerializedAs("_loginSceneName")]
-        [SerializeField] private string _loginSceneName = "00_Login";
+        [SerializeField] private string _loginSceneName = AppScenes.Login;
 
         [FormerlySerializedAs("_gameSceneName")]
-        [SerializeField] private string _gameSceneName = "01_Lobby";
+        [SerializeField] private string _gameSceneName = AppScenes.Lobby;
 
         [Header("Runtime")]
         [SerializeField] private bool _useAutoLogin = false;
@@ -59,6 +68,13 @@ namespace Auth
         private bool _isCredentialLoginInProgress;
 
         private AuthApiClient _authApiClient;
+        private string _cachedApiClientEndpoint;
+        private int _cachedApiClientTimeout;
+
+        // 한국어 주석:
+        // 기존 하드코딩 URL과의 동작 호환을 위해 Config/Override가 모두 비어 있으면
+        // 운영 기본 주소(ioteacher.com)를 최종 fallback으로 사용한다.
+        private const string FallbackBaseUrl = "http://ioteacher.com";
 
         public bool IsAuthenticating => _isAuthenticating || _isCredentialLoginInProgress;
 
@@ -282,8 +298,11 @@ namespace Auth
 
                     OnLoginSuccess?.Invoke();
 
-                    if (!string.IsNullOrWhiteSpace(_gameSceneName))
-                        SceneManager.LoadScene(_gameSceneName);
+                    // 한국어 주석:
+                    // 로비 씬 이름은 Define 기본값과 인스펙터 오버라이드를 함께 지원한다.
+                    string lobbySceneName = ResolveLobbySceneName();
+                    if (!string.IsNullOrWhiteSpace(lobbySceneName))
+                        SceneManager.LoadScene(lobbySceneName);
 
                     return true;
                 }
@@ -410,12 +429,27 @@ namespace Auth
         /// <returns>검증 결과(성공 시 사용자 정보 포함)</returns>
         private async Task<AuthResult> ValidateTokenWithServer(string token)
         {
-            using (var request = new UnityWebRequest(_tokenValidationUrl, UnityWebRequest.kHttpVerbGET))
+            // 한국어 주석:
+            // 토큰 검증 URL은 하드코딩 문자열 대신
+            // Define 경로 + Config/Override 베이스 URL 조합으로 계산한다.
+            string tokenValidationEndpoint = ResolveTokenValidationEndpoint();
+            if (string.IsNullOrWhiteSpace(tokenValidationEndpoint))
             {
-                request.SetRequestHeader("Authorization", $"Bearer {token}");
-                request.SetRequestHeader("Content-Type", "application/json");
+                return new AuthResult
+                {
+                    IsSuccess = false,
+                    ErrorMessage = AuthErrorMapper.ToUserMessage(
+                        AuthErrorMapper.UnknownError,
+                        "토큰 검증 URL이 비어 있습니다.")
+                };
+            }
+
+            using (var request = new UnityWebRequest(tokenValidationEndpoint, UnityWebRequest.kHttpVerbGET))
+            {
+                request.SetRequestHeader(HttpHeaders.Authorization, $"Bearer {token}");
+                request.SetRequestHeader(HttpHeaders.ContentType, "application/json");
                 request.downloadHandler = new DownloadHandlerBuffer();
-                request.timeout = Mathf.Max(1, _requestTimeoutSeconds);
+                request.timeout = ResolveRequestTimeoutSeconds();
 
                 var operation = request.SendWebRequest();
                 while (!operation.isDone)
@@ -575,21 +609,107 @@ namespace Auth
         /// </summary>
         private void LoadLoginSceneIfNeeded()
         {
-            if (string.IsNullOrWhiteSpace(_loginSceneName))
+            // 한국어 주석:
+            // 로그인 씬 이름은 Define 기본값 + 인스펙터 오버라이드 조합으로 결정한다.
+            string loginSceneName = ResolveLoginSceneName();
+            if (string.IsNullOrWhiteSpace(loginSceneName))
                 return;
 
             Scene activeScene = SceneManager.GetActiveScene();
-            if (!activeScene.name.Equals(_loginSceneName, StringComparison.Ordinal))
-                SceneManager.LoadScene(_loginSceneName);
+            if (!activeScene.name.Equals(loginSceneName, StringComparison.Ordinal))
+                SceneManager.LoadScene(loginSceneName);
         }
 
         /// <summary>
-        /// 로그인 API 클라이언트가 비어 있을 때 지연 생성한다.
+        /// 로그인 API 클라이언트를 현재 설정 기준으로 생성/갱신한다.
         /// </summary>
         private void EnsureApiClient()
         {
-            if (_authApiClient == null)
-                _authApiClient = new AuthApiClient(_loginEndpoint, _requestTimeoutSeconds);
+            // 한국어 주석:
+            // 로그인 API 클라이언트는 Resolve된 URL/타임아웃 기준으로 생성한다.
+            // 런타임 중 설정이 바뀌면 캐시 비교 후 재생성해 최신 값을 반영한다.
+            string loginEndpoint = ResolveLoginEndpoint();
+            int timeoutSeconds = ResolveRequestTimeoutSeconds();
+
+            bool shouldRecreate = _authApiClient == null ||
+                                  !string.Equals(_cachedApiClientEndpoint, loginEndpoint, StringComparison.Ordinal) ||
+                                  _cachedApiClientTimeout != timeoutSeconds;
+
+            if (!shouldRecreate)
+                return;
+
+            _authApiClient = new AuthApiClient(loginEndpoint, timeoutSeconds);
+            _cachedApiClientEndpoint = loginEndpoint;
+            _cachedApiClientTimeout = timeoutSeconds;
+        }
+
+        /// <summary>
+        /// API 통신에 사용할 베이스 URL을 우선순위(Override -> Config -> Fallback)로 결정한다.
+        /// </summary>
+        private string ResolveBaseUrl()
+        {
+            if (!string.IsNullOrWhiteSpace(_baseUrlOverride))
+                return _baseUrlOverride.Trim();
+
+            if (_apiConfig != null && !string.IsNullOrWhiteSpace(_apiConfig.CurrentBaseUrl))
+                return _apiConfig.CurrentBaseUrl.Trim();
+
+            return FallbackBaseUrl;
+        }
+
+        /// <summary>
+        /// 로그인 요청에 사용할 최종 Endpoint를 계산한다.
+        /// </summary>
+        private string ResolveLoginEndpoint()
+        {
+            string route = string.IsNullOrWhiteSpace(_loginRoute)
+                ? ApiRoutes.AuthLogin
+                : _loginRoute.Trim();
+
+            return ApiUrlResolver.Build(ResolveBaseUrl(), route);
+        }
+
+        /// <summary>
+        /// 토큰 검증 요청에 사용할 최종 Endpoint를 계산한다.
+        /// </summary>
+        private string ResolveTokenValidationEndpoint()
+        {
+            string route = string.IsNullOrWhiteSpace(_tokenValidationRoute)
+                ? ApiRoutes.AuthMeByToken
+                : _tokenValidationRoute.Trim();
+
+            return ApiUrlResolver.Build(ResolveBaseUrl(), route);
+        }
+
+        /// <summary>
+        /// 요청 타임아웃(초)을 Config 우선으로 결정한다.
+        /// </summary>
+        private int ResolveRequestTimeoutSeconds()
+        {
+            if (_apiConfig != null && _apiConfig.requestTimeoutSeconds > 0)
+                return Mathf.Max(1, _apiConfig.requestTimeoutSeconds);
+
+            return Mathf.Max(1, _requestTimeoutSeconds);
+        }
+
+        /// <summary>
+        /// 로그인 씬 이름을 인스펙터 값 우선, 비어 있으면 Define 기본값으로 결정한다.
+        /// </summary>
+        private string ResolveLoginSceneName()
+        {
+            return string.IsNullOrWhiteSpace(_loginSceneName)
+                ? AppScenes.Login
+                : _loginSceneName.Trim();
+        }
+
+        /// <summary>
+        /// 로비 씬 이름을 인스펙터 값 우선, 비어 있으면 Define 기본값으로 결정한다.
+        /// </summary>
+        private string ResolveLobbySceneName()
+        {
+            return string.IsNullOrWhiteSpace(_gameSceneName)
+                ? AppScenes.Lobby
+                : _gameSceneName.Trim();
         }
 
         /// <summary>
@@ -613,3 +733,4 @@ namespace Auth
         }
     }
 }
+
