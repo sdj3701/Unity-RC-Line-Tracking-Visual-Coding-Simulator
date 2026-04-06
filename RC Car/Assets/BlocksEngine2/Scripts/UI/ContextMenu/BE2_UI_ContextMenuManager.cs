@@ -36,6 +36,102 @@ namespace MG_BlocksEngine2.UI
             Debug.Log(message);
         }
 
+        private static int SafeLength(string value)
+        {
+            return string.IsNullOrEmpty(value) ? 0 : value.Length;
+        }
+
+        private static string NormalizeForCompare(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+
+            return value.Replace("\r\n", "\n").Trim();
+        }
+
+        private static bool PayloadEquals(string left, string right)
+        {
+            return string.Equals(NormalizeForCompare(left), NormalizeForCompare(right), StringComparison.Ordinal);
+        }
+
+        private string FormatPayloadForLog(string payload)
+        {
+            if (string.IsNullOrEmpty(payload))
+            {
+                return "(empty)";
+            }
+
+            if (_debugPayloadMaxChars <= 0 || payload.Length <= _debugPayloadMaxChars)
+            {
+                return payload;
+            }
+
+            int omittedCount = payload.Length - _debugPayloadMaxChars;
+            return payload.Substring(0, _debugPayloadMaxChars) + $"\n... (truncated {omittedCount} chars)";
+        }
+
+        private void LogXmlDebug(string stage, string fileName, string xmlPayload)
+        {
+            if (!_enableXmlJsonDebugLog)
+            {
+                return;
+            }
+
+            string safeFileName = string.IsNullOrWhiteSpace(fileName) ? "(unnamed)" : fileName.Trim();
+            Debug.Log($"<color=#4FC3F7>[BE2 SaveLoad Debug][{stage}][XML] file='{safeFileName}' len={SafeLength(xmlPayload)}</color>");
+            Debug.Log($"<color=#B3E5FC>{FormatPayloadForLog(xmlPayload)}</color>");
+        }
+
+        private void LogJsonDebug(string stage, string fileName, string jsonPayload)
+        {
+            if (!_enableXmlJsonDebugLog)
+            {
+                return;
+            }
+
+            string safeFileName = string.IsNullOrWhiteSpace(fileName) ? "(unnamed)" : fileName.Trim();
+            Debug.Log($"<color=#81C784>[BE2 SaveLoad Debug][{stage}][JSON] file='{safeFileName}' len={SafeLength(jsonPayload)}</color>");
+            Debug.Log($"<color=#C8E6C9>{FormatPayloadForLog(jsonPayload)}</color>");
+        }
+
+        private void LogCompareResult(string stage, string fileName, bool xmlMatch, bool jsonMatch)
+        {
+            if (!_enableXmlJsonDebugLog)
+            {
+                return;
+            }
+
+            string safeFileName = string.IsNullOrWhiteSpace(fileName) ? "(unnamed)" : fileName.Trim();
+            bool allMatched = xmlMatch && jsonMatch;
+            string color = allMatched ? "#9CCC65" : "#EF5350";
+            Debug.Log($"<color={color}>[BE2 SaveLoad Debug][{stage}] file='{safeFileName}' xmlMatch={xmlMatch}, jsonMatch={jsonMatch}</color>");
+        }
+
+        private async Task DebugVerifySavedPayloadAsync(string fileName, string expectedXml, string expectedJson)
+        {
+            if (!_enableXmlJsonDebugLog || !_verifyStoredPayloadOnSave)
+            {
+                return;
+            }
+
+            if (BE2_CodeStorageManager.Instance == null)
+            {
+                return;
+            }
+
+            string storedXml = await BE2_CodeStorageManager.Instance.LoadXmlAsync(fileName);
+            string storedJson = await BE2_CodeStorageManager.Instance.LoadJsonAsync(fileName);
+
+            bool xmlMatch = PayloadEquals(storedXml, expectedXml);
+            bool jsonMatch = PayloadEquals(storedJson, expectedJson);
+
+            LogCompareResult("SAVE_VERIFY", fileName, xmlMatch, jsonMatch);
+            LogXmlDebug("SAVE_READBACK", fileName, storedXml);
+            LogJsonDebug("SAVE_READBACK", fileName, storedJson);
+        }
+
         private I_BE2_UI_ContextMenu[] _contextMenuArray;
         private I_BE2_UI_ContextMenu currentContextMenu;
 
@@ -73,6 +169,12 @@ namespace MG_BlocksEngine2.UI
         [Header("Save/Load UI Panels")]
         public BE2_UI_CodeSavePanel codeSavePanel;
         public BE2_UI_CodeLoadPanel codeLoadPanel;
+
+        [Header("Save/Load Debug")]
+        [SerializeField] private bool _enableXmlJsonDebugLog = true;
+        [SerializeField] private bool _verifyStoredPayloadOnSave = true;
+        [SerializeField, Min(0), Tooltip("0 means no limit (print full XML/JSON payload).")]
+        private int _debugPayloadMaxChars = 0;
 
         private void Start()
         {
@@ -180,6 +282,9 @@ namespace MG_BlocksEngine2.UI
                 return false;
             }
 
+            LogXmlDebug("SAVE_GENERATED", fileName, xmlContent);
+            LogJsonDebug("SAVE_GENERATED", fileName, jsonContent);
+
             // Save 완료 이벤트 이후 실행기에서 메모리 JSON을 우선 사용하도록 갱신
             LatestRuntimeJson = jsonContent;
 
@@ -194,6 +299,7 @@ namespace MG_BlocksEngine2.UI
             if (success)
             {
                 LogInfoByStorageMode($"[SaveCodeWithNameAsync] Saved: {fileName}, isModified={isModified}");
+                await DebugVerifySavedPayloadAsync(fileName, xmlContent, jsonContent);
                 OnCodeGenerated?.Invoke();
 
                 if (image != null)
@@ -248,6 +354,25 @@ namespace MG_BlocksEngine2.UI
             {
                 Debug.LogWarning($"[LoadCodeFromFileAsync] JSON generation failed: {fileName}");
                 return false;
+            }
+
+            LogXmlDebug("LOAD_FROM_STORAGE", fileName, xmlContent);
+            LogJsonDebug("LOAD_REGENERATED", fileName, jsonContent);
+
+            if (_enableXmlJsonDebugLog && BE2_CodeStorageManager.Instance != null)
+            {
+                string storedJson = await BE2_CodeStorageManager.Instance.LoadJsonAsync(fileName);
+                if (string.IsNullOrEmpty(storedJson))
+                {
+                    Debug.Log($"<color=#FFD54F>[BE2 SaveLoad Debug][LOAD_COMPARE] file='{fileName}' stored JSON not found. Using regenerated runtime JSON.</color>");
+                }
+                else
+                {
+                    bool jsonMatch = PayloadEquals(storedJson, jsonContent);
+                    string color = jsonMatch ? "#9CCC65" : "#EF5350";
+                    Debug.Log($"<color={color}>[BE2 SaveLoad Debug][LOAD_COMPARE] file='{fileName}' storedJsonMatchGenerated={jsonMatch}</color>");
+                    LogJsonDebug("LOAD_STORED_JSON", fileName, storedJson);
+                }
             }
 
             // DB에서 가져온 XML로 생성한 JSON을 메모리에 보관 (로컬 파일 의존 제거)
