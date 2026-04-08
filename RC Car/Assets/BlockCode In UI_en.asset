@@ -17,7 +17,75 @@ MonoBehaviour:
   m_SharedData: {fileID: 11400000, guid: 739af2779e85b684f888c4d389cac4d3, type: 2}
   m_Metadata:
     m_Items: []
-  m_TableData: []
+  m_TableData:
+  - m_Id: 120374042624
+    m_Localized: When
+    m_Metadata:
+      m_Items: []
+  - m_Id: 184081326080
+    m_Localized: clicked
+    m_Metadata:
+      m_Items: []
+  - m_Id: 259197116416
+    m_Localized: Loop
+    m_Metadata:
+      m_Items: []
+  - m_Id: 284576849920
+    m_Localized: If
+    m_Metadata:
+      m_Items: []
+  - m_Id: 307007987712
+    m_Localized: Else
+    m_Metadata:
+      m_Items: []
+  - m_Id: 359273209856
+    m_Localized: Wait
+    m_Metadata:
+      m_Items: []
+  - m_Id: 471651196928
+    m_Localized: New variable
+    m_Metadata:
+      m_Items: []
+  - m_Id: 561149255680
+    m_Localized: Set
+    m_Metadata:
+      m_Items: []
+  - m_Id: 572540985344
+    m_Localized: to
+    m_Metadata:
+      m_Items: []
+  - m_Id: 623141068800
+    m_Localized: New function block
+    m_Metadata:
+      m_Items: []
+  - m_Id: 672877125632
+    m_Localized: Digital Pin Read
+    m_Metadata:
+      m_Items: []
+  - m_Id: 746629767168
+    m_Localized: Setting
+    m_Metadata:
+      m_Items: []
+  - m_Id: 724735500288
+    m_Localized: Output
+    m_Metadata:
+      m_Items: []
+  - m_Id: 711460528128
+    m_Localized: pWM Pin
+    m_Metadata:
+      m_Items: []
+  - m_Id: 3636584914944
+    m_Localized: seconds
+    m_Metadata:
+      m_Items: []
+  - m_Id: 3664552534016
+    m_Localized: AND
+    m_Metadata:
+      m_Items: []
+  - m_Id: 3693069606912
+    m_Localized: OR
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

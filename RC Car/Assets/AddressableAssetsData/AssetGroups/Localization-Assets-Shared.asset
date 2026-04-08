@@ -25,6 +25,10 @@ MonoBehaviour:
     m_Address: Assets/BlockCodeUI Shared Data.asset
     m_ReadOnly: 1
     m_SerializedLabels: []
+  - m_GUID: 739af2779e85b684f888c4d389cac4d3
+    m_Address: Assets/BlockCode In UI Shared Data.asset
+    m_ReadOnly: 1
+    m_SerializedLabels: []
   m_ReadOnly: 1
   m_Settings: {fileID: 11400000, guid: e84c760266b24854e83b94d5d0bd7641, type: 2}
   m_SchemaSet:
