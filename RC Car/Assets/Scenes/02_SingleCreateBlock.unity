@@ -7527,7 +7527,7 @@ MonoBehaviour:
     rotation: {x: 0, y: 60, z: 0}
   - position: {x: -3, y: 2, z: -14.32}
     rotation: {x: 0, y: 0, z: 0}
-  - position: {x: -7.8, y: 2, z: -19}
+  - position: {x: -7.8, y: 2, z: -19.5}
     rotation: {x: 0, y: 0, z: 0}
   applyCurrentMapOnStart: 1
   includeRuntimeMapsInCycle: 1
@@ -111090,7 +111090,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   pixelsPerCell: 16
-  pathWidthRatio: 0.25
+  pathWidthRatio: 0.05
   minPathWidthPixels: 1
   bakeMainPath: 1
   bakeBranchPath: 1
@@ -147490,6 +147490,11 @@ PrefabInstance:
   m_Modification:
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 7992547460008730009, guid: e981d8875be24c94287a83ae3388e9e6,
+        type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0.4983
+      objectReference: {fileID: 0}
     - target: {fileID: 7992547460853634560, guid: e981d8875be24c94287a83ae3388e9e6,
         type: 3}
       propertyPath: m_RootOrder
@@ -147549,6 +147554,11 @@ PrefabInstance:
         type: 3}
       propertyPath: m_Name
       value: Car
+      objectReference: {fileID: 0}
+    - target: {fileID: 7992547461815291038, guid: e981d8875be24c94287a83ae3388e9e6,
+        type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0.4991
       objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e981d8875be24c94287a83ae3388e9e6, type: 3}
