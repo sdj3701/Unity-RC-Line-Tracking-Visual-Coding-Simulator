@@ -493,6 +493,29 @@ public class BlockCodeExecutor : MonoBehaviour
                 Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} logical={logicalOp}, left={leftValue}, right={rightValue}, logicalResult={logicalResult}, condition={condition}</color>");
             }
         }
+        // conditionVar/conditionPin이 있으면 digitalRead(pin) 조건으로 판단
+        else if (!string.IsNullOrEmpty(node.conditionVar) || node.conditionPin >= 0)
+        {
+            if (arduino == null)
+            {
+                Debug.LogWarning("<color=red>[3] ExecuteIfBlock: arduino is NULL for pin condition!</color>");
+                condition = false;
+            }
+            else
+            {
+                int conditionPin = node.conditionPin >= 0 ? node.conditionPin : 0;
+                if (!string.IsNullOrEmpty(node.conditionVar))
+                {
+                    conditionPin = (int)GetVariable(node.conditionVar, conditionPin);
+                }
+
+                bool pinValue = arduino.DigitalRead(conditionPin);
+                int pinAsInt = pinValue ? 1 : 0;
+                condition = (pinAsInt == (int)node.conditionValue);
+
+                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} pin={conditionPin}, pinValue={pinAsInt}, conditionValue={node.conditionValue}, condition={condition}</color>");
+            }
+        }
         // conditionSensorFunction이 있으면 센서 값을 읽어서 조건 판단
         else if (!string.IsNullOrEmpty(node.conditionSensorFunction))
         {
@@ -1172,7 +1195,7 @@ public class BlockCodeExecutor : MonoBehaviour
         public List<float> args;      // 함수 호출 시 전달할 숫자 인자들
         public List<string> argVars;  // 변수명 인자들 (null이면 해당 인덱스는 args 값 사용)
         public string conditionVar;
-        public int conditionPin;      // if/ifElse용 조건 핀
+        public int conditionPin = -1; // if/ifElse용 조건 핀
         public string conditionSensorFunction; // if/ifElse용 센서 기반 조건 (예: "leftSensor")
         public string conditionLogicalOp; // if/ifElse용 논리 조건 ("and" | "or")
         public string conditionLeftSensorFunction;  // 논리 조건 좌항 센서

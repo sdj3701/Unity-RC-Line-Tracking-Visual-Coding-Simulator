@@ -1,6 +1,7 @@
 // Assets/Scripts/Core/BE2XmlToRuntimeJson.cs
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Xml.Linq;
@@ -1444,7 +1445,7 @@ public static class BE2XmlToRuntimeJson
     {
         // If header/section does not provide an explicit comparison value,
         // treat sensor condition as "if (sensor == true)" by default.
-        var node = new LoopBlockNode { type = type, conditionValue = 1 };
+        var node = new LoopBlockNode { type = type, conditionValue = 1, conditionPin = -1 };
         
         // 1. headerInputs에서 조건 추출 (digitalRead 또는 Block_Read 블록)
         var headerInputs = block.Element("headerInputs")?.Elements("Input").ToList();
@@ -1505,35 +1506,22 @@ public static class BE2XmlToRuntimeJson
             // 단일 센서 조건 처리 (Block_Read / Block Op Variable)
             else if (TryExtractConditionSensorFunction(opBlock, out string sensorFunction))
             {
-                node.conditionSensorFunction = sensorFunction;
-            }
-            // digitalRead 블록 처리 (기존 로직)
-            else if (opName != null && opName.Contains("digitalRead"))
-            {
-                // digitalRead 블록에서 핀 추출
-                var pinVarName = opBlock.Element("varName")?.Value;
-                if (!string.IsNullOrEmpty(pinVarName))
+                // Block_Read 계열은 digitalRead(pin) 입력으로도 들어오므로,
+                // 정규 센서 함수명이 아니면 pin 참조 조건으로 처리한다.
+                if (ShouldTreatAsPinCondition(opBlock, sensorFunction))
                 {
-                    node.conditionPin = ResolveInt(pinVarName);
+                    ApplyConditionPinReference(node, sensorFunction);
                 }
                 else
                 {
-                    // 내부 inputs에서 핀 값 추출
-                    var innerInputs = opBlock.Descendants("Input").ToList();
-                    if (innerInputs.Count > 0)
-                    {
-                        var innerOpBlock = innerInputs[0].Element("operation")?.Element("Block");
-                        if (innerOpBlock != null)
-                        {
-                            var innerVarName = innerOpBlock.Element("varName")?.Value;
-                            node.conditionPin = ResolveInt(innerVarName);
-                        }
-                        else
-                        {
-                            node.conditionPin = ResolveInt(innerInputs[0].Element("value")?.Value);
-                        }
-                    }
+                    node.conditionSensorFunction = sensorFunction;
                 }
+            }
+            // digitalRead 블록 처리 (기존 로직)
+            else if (!string.IsNullOrEmpty(opName) && opName.IndexOf("digitalRead", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                var pinToken = ExtractConditionPinToken(opBlock);
+                ApplyConditionPinReference(node, pinToken);
             }
         }
         
@@ -1736,6 +1724,108 @@ public static class BE2XmlToRuntimeJson
         }
 
         return false;
+    }
+
+    static bool ShouldTreatAsPinCondition(XElement conditionBlock, string candidateSensorFunction)
+    {
+        if (conditionBlock == null || string.IsNullOrEmpty(candidateSensorFunction))
+            return false;
+
+        var blockName = conditionBlock.Element("blockName")?.Value?.Trim();
+        if (string.IsNullOrEmpty(blockName))
+            return false;
+
+        bool isReadBlock =
+            blockName.IndexOf("digitalRead", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            blockName.IndexOf("Block_Read", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        if (!isReadBlock)
+            return false;
+
+        return !IsCanonicalSensorFunction(candidateSensorFunction);
+    }
+
+    static bool IsCanonicalSensorFunction(string sensorFunction)
+    {
+        if (string.IsNullOrEmpty(sensorFunction))
+            return false;
+
+        string compact = sensorFunction.Trim().Replace(" ", "");
+        const string leftPrefix = "leftSensor";
+        const string rightPrefix = "rightSensor";
+
+        if (compact.StartsWith(leftPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            string suffix = compact.Substring(leftPrefix.Length);
+            return string.IsNullOrEmpty(suffix) || suffix.All(char.IsDigit);
+        }
+
+        if (compact.StartsWith(rightPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            string suffix = compact.Substring(rightPrefix.Length);
+            return string.IsNullOrEmpty(suffix) || suffix.All(char.IsDigit);
+        }
+
+        return false;
+    }
+
+    static string ExtractConditionPinToken(XElement conditionBlock)
+    {
+        if (conditionBlock == null)
+            return null;
+
+        // 1) direct varName
+        var directVarName = conditionBlock.Element("varName")?.Value?.Trim();
+        if (!string.IsNullOrEmpty(directVarName))
+            return directVarName;
+
+        // 2) first inner input
+        var innerInputs = conditionBlock.Descendants("Input").ToList();
+        if (innerInputs.Count == 0)
+            return null;
+
+        var firstInput = innerInputs[0];
+        var innerOpBlock = firstInput.Element("operation")?.Element("Block");
+        if (innerOpBlock != null)
+        {
+            var innerVarName = innerOpBlock.Element("varName")?.Value?.Trim();
+            if (!string.IsNullOrEmpty(innerVarName))
+                return innerVarName;
+
+            var innerValue = innerOpBlock.Element("value")?.Value?.Trim();
+            if (!string.IsNullOrEmpty(innerValue))
+                return innerValue;
+        }
+
+        var directValue = firstInput.Element("value")?.Value?.Trim();
+        return string.IsNullOrEmpty(directValue) ? null : directValue;
+    }
+
+    static void ApplyConditionPinReference(LoopBlockNode node, string rawPinToken)
+    {
+        if (node == null || string.IsNullOrWhiteSpace(rawPinToken))
+            return;
+
+        string token = rawPinToken.Trim();
+
+        if (int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedPin) ||
+            int.TryParse(token, out parsedPin))
+        {
+            node.conditionPin = parsedPin;
+            node.conditionVar = null;
+            return;
+        }
+
+        if (float.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedFloatPin) ||
+            float.TryParse(token, out parsedFloatPin))
+        {
+            node.conditionPin = Mathf.RoundToInt(parsedFloatPin);
+            node.conditionVar = null;
+            return;
+        }
+
+        node.conditionVar = token;
+        node.conditionPin = ResolveInt(token); // init 시점 값으로 fallback
     }
 
     static string NormalizeSensorFunctionName(string rawName)
@@ -1968,7 +2058,9 @@ public static class BE2XmlToRuntimeJson
                 // conditionSensorFunction이 있으면 센서 기반 조건, 아니면 핀 기반 조건
                 else if (!string.IsNullOrEmpty(node.conditionSensorFunction))
                     parts.Add($"\"conditionSensorFunction\": \"{EscapeJson(node.conditionSensorFunction)}\"");
-                else
+                else if (!string.IsNullOrEmpty(node.conditionVar))
+                    parts.Add($"\"conditionVar\": \"{EscapeJson(node.conditionVar)}\"");
+                else if (node.conditionPin >= 0)
                     parts.Add($"\"conditionPin\": {node.conditionPin}");
                 parts.Add($"\"conditionValue\": {node.conditionValue}");
                 
@@ -2043,6 +2135,7 @@ public static class BE2XmlToRuntimeJson
         
         // For if/ifElse
         public int conditionPin;
+        public string conditionVar;
         public string conditionSensorFunction;  // 센서 기반 조건 (예: "leftSensor", "rightSensor")
         public string conditionLogicalOp;       // "and" | "or"
         public string conditionLeftSensorFunction;
