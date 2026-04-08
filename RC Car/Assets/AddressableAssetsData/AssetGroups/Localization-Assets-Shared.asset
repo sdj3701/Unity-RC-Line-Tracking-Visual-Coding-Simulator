@@ -21,6 +21,10 @@ MonoBehaviour:
     m_Address: Assets/Languages Shared Data.asset
     m_ReadOnly: 1
     m_SerializedLabels: []
+  - m_GUID: c7eb812c989c2704a8ccb0384f2f6a64
+    m_Address: Assets/BlockCodeUI Shared Data.asset
+    m_ReadOnly: 1
+    m_SerializedLabels: []
   m_ReadOnly: 1
   m_Settings: {fileID: 11400000, guid: e84c760266b24854e83b94d5d0bd7641, type: 2}
   m_SchemaSet:
