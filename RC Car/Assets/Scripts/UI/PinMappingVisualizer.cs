@@ -18,6 +18,8 @@ public class PinMappingVisualizer : MonoBehaviour
     [Header("Sensor Pin Labels")]
     [SerializeField] TextMeshProUGUI leftSensorLabel;
     [SerializeField] TextMeshProUGUI rightSensorLabel;
+    [SerializeField] TextMeshProUGUI leftSensor2Label;
+    [SerializeField] TextMeshProUGUI rightSensor2Label;
     
     [Header("Left Motor Pin Labels")]
     [SerializeField] TextMeshProUGUI leftMotorForwardLabel;
@@ -74,6 +76,8 @@ public class PinMappingVisualizer : MonoBehaviour
         // 각 핀별로 맵핑 여부에 따라 색상 설정
         SetLabelColorByMapping(leftSensorLabel, arduino.defaultLeftSensorPin, mappedPins);
         SetLabelColorByMapping(rightSensorLabel, arduino.defaultRightSensorPin, mappedPins);
+        SetLabelColorByMapping(leftSensor2Label, arduino.defaultLeftSensor2Pin, mappedPins);
+        SetLabelColorByMapping(rightSensor2Label, arduino.defaultRightSensor2Pin, mappedPins);
         SetLabelColorByMapping(leftMotorForwardLabel, arduino.defaultLeftMotorFPin, mappedPins);
         SetLabelColorByMapping(leftMotorBackwardLabel, arduino.defaultLeftMotorBPin, mappedPins);
         SetLabelColorByMapping(rightMotorForwardLabel, arduino.defaultRightMotorFPin, mappedPins);
@@ -107,6 +111,8 @@ public class PinMappingVisualizer : MonoBehaviour
         
         SetLabelText(leftSensorLabel, "L Sensor", arduino.defaultLeftSensorPin);
         SetLabelText(rightSensorLabel, "R Sensor", arduino.defaultRightSensorPin);
+        SetLabelText(leftSensor2Label, "L Sensor2", arduino.defaultLeftSensor2Pin);
+        SetLabelText(rightSensor2Label, "R Sensor2", arduino.defaultRightSensor2Pin);
         SetLabelText(leftMotorForwardLabel, "L Motor F", arduino.defaultLeftMotorFPin);
         SetLabelText(leftMotorBackwardLabel, "L Motor B", arduino.defaultLeftMotorBPin);
         SetLabelText(rightMotorForwardLabel, "R Motor F", arduino.defaultRightMotorFPin);
@@ -130,6 +136,8 @@ public class PinMappingVisualizer : MonoBehaviour
     {
         SetLabelColor(leftSensorLabel, color);
         SetLabelColor(rightSensorLabel, color);
+        SetLabelColor(leftSensor2Label, color);
+        SetLabelColor(rightSensor2Label, color);
         SetLabelColor(leftMotorForwardLabel, color);
         SetLabelColor(leftMotorBackwardLabel, color);
         SetLabelColor(rightMotorForwardLabel, color);
