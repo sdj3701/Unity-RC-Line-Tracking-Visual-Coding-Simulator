@@ -42108,6 +42108,7 @@ MonoBehaviour:
   hiddenTop: 137.55
   hiddenBottom: 0
   hiddenWidth: 1050
+  _blocksSelectionCanvas: {fileID: 0}
 --- !u!1 &685017608
 GameObject:
   m_ObjectHideFlags: 0
@@ -88934,7 +88935,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 482, y: 65}
+  m_AnchoredPosition: {x: 482, y: 69}
   m_SizeDelta: {x: 60, y: 60}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1474676492
@@ -88958,8 +88959,12 @@ MonoBehaviour:
   isExpanded: 1
   collapsedWidth: 567
   expandedWidth: 1500
+  hiddenTop: 137.55
+  hiddenBottom: 0
+  hiddenWidth: 1045
   collapsedButtonX: 482
   expandedButtonX: 1400
+  hideBlocksSelection: {fileID: 0}
 --- !u!114 &1474676493
 MonoBehaviour:
   m_ObjectHideFlags: 0

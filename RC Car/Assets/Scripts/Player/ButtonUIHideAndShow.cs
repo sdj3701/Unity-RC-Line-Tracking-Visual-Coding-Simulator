@@ -1,88 +1,80 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
+using MG_BlocksEngine2.Environment;
 
 public class ButtonUIHideAndShow : MonoBehaviour
 {
     [Header("UI References")]
-    [Tooltip("확장/축소할 UI 패널")]
     public RectTransform targetPanel;
-    
-    [Tooltip("회전할 화살표 이미지 (RectTransform)")]
     public RectTransform arrowImage;
-    
-    [Tooltip("활성화/비활성화할 Canvas")]
     public GameObject[] targetCanvas;
-    
+
     [Header("Settings")]
-    [Tooltip("UI가 현재 확장되어 있는지 여부")]
     public bool isExpanded = true;
-    
+
     [Header("Panel Width")]
-    [Tooltip("축소 상태일 때 너비")]
     public float collapsedWidth = 567f;
-    
-    [Tooltip("확장 상태일 때 너비")]
     public float expandedWidth = 1500f;
-    
+
+    [Header("Hidden Layout")]
+    public float hiddenTop = 137.55f;
+    public float hiddenBottom = 0f;
+    public float hiddenWidth = 1450f;
+    public float hiddenWidth2 = 1045f;
+    public float hiddenWidth3 = 1988f;
+
     [Header("Button Position")]
-    [Tooltip("축소 상태일 때 버튼 X 위치")]
     public float collapsedButtonX = 482f;
-    
-    [Tooltip("확장 상태일 때 버튼 X 위치")]
     public float expandedButtonX = 1400f;
-    
+
+    [Header("Integration")]
+    public BE2_HideBlocksSelection hideBlocksSelection;
+
     private RectTransform buttonRectTransform;
-    
+
     void Start()
-    {       
-        // 버튼의 RectTransform 가져오기
+    {
         buttonRectTransform = GetComponent<RectTransform>();
-        
-        // 초기 상태 설정
+
+        if (hideBlocksSelection == null)
+            hideBlocksSelection = FindObjectOfType<BE2_HideBlocksSelection>();
+
         UpdateUIState();
     }
-    
-    /// <summary>
-    /// UI 확장/축소 토글 및 이미지 Y축 180도 회전
-    /// </summary>
+
+    private bool IsBlocksSelectionHidden()
+    {
+        if (hideBlocksSelection == null)
+            hideBlocksSelection = FindObjectOfType<BE2_HideBlocksSelection>();
+
+        if (hideBlocksSelection == null || hideBlocksSelection._blocksSelectionCanvas == null)
+            return false;
+
+        return !hideBlocksSelection._blocksSelectionCanvas.gameObject.activeSelf;
+    }
+
     public void ToggleUI()
     {
         isExpanded = !isExpanded;
         UpdateUIState();
     }
-    
-    /// <summary>
-    /// 현재 상태에 따라 UI 업데이트
-    /// </summary>
+
     private void UpdateUIState()
     {
-        // 타겟 패널 너비 변경
-        if (targetPanel != null)
-        {
-            Vector2 sizeDelta = targetPanel.sizeDelta;
-            sizeDelta.x = isExpanded ? collapsedWidth : expandedWidth;
-            targetPanel.sizeDelta = sizeDelta;
-        }
-        
-        // 화살표 이미지 Y축 180도 회전
         if (arrowImage != null)
         {
-            // isExpanded가 true면 0도, false면 180도
             float rotationY = isExpanded ? 0f : 180f;
             arrowImage.localRotation = Quaternion.Euler(0f, rotationY, 0f);
         }
-        
-        // 버튼 위치 변경
+
         if (buttonRectTransform != null)
         {
             Vector2 anchoredPos = buttonRectTransform.anchoredPosition;
             anchoredPos.x = isExpanded ? collapsedButtonX : expandedButtonX;
             buttonRectTransform.anchoredPosition = anchoredPos;
         }
-        
-        // Canvas 활성화/비활성화
+
         if (targetCanvas != null)
         {
             for (int i = 0; i < targetCanvas.Length; i++)
@@ -91,6 +83,34 @@ public class ButtonUIHideAndShow : MonoBehaviour
                 {
                     targetCanvas[i].SetActive(isExpanded);
                 }
+            }
+        }
+
+        if (targetPanel != null)
+        {
+            bool blocksSelectionHidden = IsBlocksSelectionHidden();
+            if (blocksSelectionHidden)
+            {
+                targetPanel.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, hiddenWidth);
+
+                // Anchor mode에 따라 SetSizeWithCurrentAnchors가 체감되지 않는 경우를 방지
+                Vector2 hiddenSizeDelta = targetPanel.sizeDelta;
+                hiddenSizeDelta.x = targetCanvas[0].gameObject.activeSelf ? hiddenWidth2 : hiddenWidth3;
+                targetPanel.sizeDelta = hiddenSizeDelta;
+
+                Vector2 offsetMin = targetPanel.offsetMin;
+                offsetMin.y = hiddenBottom;
+                targetPanel.offsetMin = offsetMin;
+
+                Vector2 offsetMax = targetPanel.offsetMax;
+                offsetMax.y = -hiddenTop;
+                targetPanel.offsetMax = offsetMax;
+            }
+            else
+            {
+                Vector2 sizeDelta = targetPanel.sizeDelta;
+                sizeDelta.x = isExpanded ? collapsedWidth : expandedWidth;
+                targetPanel.sizeDelta = sizeDelta;
             }
         }
     }
