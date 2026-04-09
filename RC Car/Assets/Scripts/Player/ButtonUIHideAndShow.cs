@@ -21,17 +21,17 @@ public class ButtonUIHideAndShow : MonoBehaviour
     
     [Header("Panel Width")]
     [Tooltip("축소 상태일 때 너비")]
-    public float collapsedWidth = 837.7477f;
+    public float collapsedWidth = 567f;
     
     [Tooltip("확장 상태일 때 너비")]
-    public float expandedWidth = 1850f;
+    public float expandedWidth = 1500f;
     
     [Header("Button Position")]
     [Tooltip("축소 상태일 때 버튼 X 위치")]
-    public float collapsedButtonX = 760f;
+    public float collapsedButtonX = 482f;
     
     [Tooltip("확장 상태일 때 버튼 X 위치")]
-    public float expandedButtonX = 1770f;
+    public float expandedButtonX = 1400f;
     
     private RectTransform buttonRectTransform;
     
