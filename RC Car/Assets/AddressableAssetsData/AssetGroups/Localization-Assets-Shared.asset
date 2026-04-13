@@ -29,6 +29,10 @@ MonoBehaviour:
     m_Address: Assets/BlockCode In UI Shared Data.asset
     m_ReadOnly: 1
     m_SerializedLabels: []
+  - m_GUID: 3a1cf5ddb85293f478be3ee86521084e
+    m_Address: Assets/RCCarUI Shared Data.asset
+    m_ReadOnly: 1
+    m_SerializedLabels: []
   m_ReadOnly: 1
   m_Settings: {fileID: 11400000, guid: e84c760266b24854e83b94d5d0bd7641, type: 2}
   m_SchemaSet:
