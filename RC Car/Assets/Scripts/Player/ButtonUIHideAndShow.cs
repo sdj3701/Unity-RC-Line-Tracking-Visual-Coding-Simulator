@@ -5,30 +5,30 @@ using MG_BlocksEngine2.Environment;
 
 public class ButtonUIHideAndShow : MonoBehaviour
 {
-    [Header("UI References")]
+    [Header("UI 참조")]
     public RectTransform targetPanel;
     public RectTransform arrowImage;
     public GameObject[] targetCanvas;
 
-    [Header("Settings")]
+    [Header("설정")]
     public bool isExpanded = true;
 
-    [Header("Panel Width")]
+    [Header("패널 너비")]
     public float collapsedWidth = 567f;
     public float expandedWidth = 1500f;
 
-    [Header("Hidden Layout")]
+    [Header("숨김 레이아웃")]
     public float hiddenTop = 137.55f;
     public float hiddenBottom = 0f;
     public float hiddenWidth = 1450f;
     public float hiddenWidth2 = 1045f;
     public float hiddenWidth3 = 1988f;
 
-    [Header("Button Position")]
+    [Header("버튼 위치")]
     public float collapsedButtonX = 482f;
     public float expandedButtonX = 1400f;
 
-    [Header("Integration")]
+    [Header("연동")]
     public BE2_HideBlocksSelection hideBlocksSelection;
 
     private RectTransform buttonRectTransform;
@@ -93,7 +93,7 @@ public class ButtonUIHideAndShow : MonoBehaviour
             {
                 targetPanel.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, hiddenWidth);
 
-                // Anchor mode에 따라 SetSizeWithCurrentAnchors가 체감되지 않는 경우를 방지
+                // 앵커 설정에 따라 SetSizeWithCurrentAnchors 반영이 약할 수 있어 sizeDelta를 함께 보정
                 Vector2 hiddenSizeDelta = targetPanel.sizeDelta;
                 hiddenSizeDelta.x = targetCanvas[0].gameObject.activeSelf ? hiddenWidth2 : hiddenWidth3;
                 targetPanel.sizeDelta = hiddenSizeDelta;

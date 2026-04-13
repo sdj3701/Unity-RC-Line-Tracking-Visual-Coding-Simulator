@@ -8,8 +8,8 @@ using MG_BlocksEngine2.Core;
 
 namespace MG_BlocksEngine2.Environment
 {
-    // v2.10 - bugfix: hide programmingEnv on WebGl not working properly
-    // v2.7 - added a class to the extras that implements the logic for show/hide the Blocks Selection panel  
+    // v2.10 - 버그 수정: WebGL에서 programmingEnv 숨김이 정상 동작하지 않던 문제 수정
+    // v2.7 - 기능 추가: Blocks Selection 패널 표시/숨김 로직을 담당하는 클래스 추가
     public class BE2_HideBlocksSelection : MonoBehaviour
     {
         [System.Serializable]
@@ -21,7 +21,7 @@ namespace MG_BlocksEngine2.Environment
             public Vector2 offsetMax;
         }
 
-        [Header("Hidden Layout")]
+        [Header("숨김 레이아웃")]
         [SerializeField] float hiddenTop = 137.55f;
         [SerializeField] float hiddenBottom = 0f;
         [SerializeField] float hiddenWidth = 1450f;
@@ -57,11 +57,6 @@ namespace MG_BlocksEngine2.Environment
                 }
             }
         }
-
-        // void Update()
-        // {
-
-        // }
 
         public void HideBlocksSelection()
         {
