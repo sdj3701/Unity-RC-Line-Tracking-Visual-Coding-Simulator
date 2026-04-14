@@ -41,6 +41,24 @@ MonoBehaviour:
     m_SerializedLabels:
     - Locale-ko-KR
     - Preload
+  - m_GUID: 485fb10f84ad5094b93b1cffcc861a05
+    m_Address: NetworkUI_ko-KR
+    m_ReadOnly: 1
+    m_SerializedLabels:
+    - Locale-ko-KR
+    - Preload
+  - m_GUID: 6fd4da614b3d523489f55c0066824cd7
+    m_Address: Complete UI_ko-KR
+    m_ReadOnly: 1
+    m_SerializedLabels:
+    - Locale-ko-KR
+    - Preload
+  - m_GUID: cc2171fa468e89a429a6ad26a2d08944
+    m_Address: Login_ko-KR
+    m_ReadOnly: 1
+    m_SerializedLabels:
+    - Locale-ko-KR
+    - Preload
   m_ReadOnly: 1
   m_Settings: {fileID: 11400000, guid: e84c760266b24854e83b94d5d0bd7641, type: 2}
   m_SchemaSet:

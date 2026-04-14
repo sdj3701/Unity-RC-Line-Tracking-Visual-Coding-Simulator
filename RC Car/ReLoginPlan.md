@@ -325,3 +325,129 @@ Assets/Scripts
 2. `T2` 완료 전에는 인터페이스 분리(T3 이상)로 넘어가지 않는다.
 3. `T4~T7`은 반드시 순서대로 진행한다. (의존성 방향이 맞아야 회귀가 줄어듦)
 4. `T8`은 마지막에 수행한다. (UI는 가장 마지막에 얇게 정리)
+
+---
+
+## 17) 현재 코드 기준 진행 상태 업데이트 (2026-04-14)
+
+- 실제 저장소 상태는 위 계획 순서와 100% 일치하지 않는다.
+- 현재 코드는 `T3` 인터페이스 도입 전에 `T4`, `T5` 성격의 일부 분리가 먼저 반영되어 있다.
+- 아래 상태 표시는 "계획상 순서"가 아니라 "현재 코드에 실제로 반영된 정도" 기준으로 기록한다.
+
+### 17-1. Task 진행 요약
+
+- `T0`: 미기록
+- 기준선 체크리스트(수동 로그인 성공/실패, 토큰 검증 후 로비 이동)를 문서에 남긴 기록은 아직 없다.
+
+- `T1`: 완료
+- 반영 파일
+- `Assets/Scripts/App/Defines/AppScenes.cs`
+- `Assets/Scripts/App/Defines/ApiRoutes.cs`
+- `Assets/Scripts/App/Defines/HttpHeaders.cs`
+- `Assets/Scripts/App/Config/AppApiConfig.cs`
+- `Assets/Scripts/App/Networking/ApiUrlResolver.cs`
+- 반영 내용
+- 로그인/검증 경로, 씬 이름, 공통 헤더 키를 Define로 모았다.
+- 환경별 base URL과 timeout을 `AppApiConfig`로 분리했다.
+- 최종 URL 조합을 `ApiUrlResolver.Build(...)` 경로로 통일했다.
+
+- `T2`: 완료
+- 반영 파일
+- `Assets/Scripts/Auth/AuthManager.cs`
+- 반영 내용
+- `_apiConfig`, `_baseUrlOverride`, `_loginRoute`, `_tokenValidationRoute` 필드가 들어갔다.
+- `ResolveLoginEndpoint()`, `ResolveTokenValidationEndpoint()`, `ResolveLoginSceneName()`, `ResolveLobbySceneName()`가 추가되었다.
+- `AuthManager` 내부 하드코딩 URL/씬 문자열을 Define + Config 조합 방식으로 바꿨다.
+
+- `T3`: 미착수
+- 현재 상태
+- `IAuthApiClient`, `ITokenValidationClient`, `IAuthSessionStore`, `ISceneNavigator` 같은 인터페이스 파일이 아직 없다.
+- 구현 교체 경계와 주입 구조는 아직 만들어지지 않았다.
+
+- `T4`: 부분 완료
+- 반영 파일
+- `Assets/Scripts/Auth/AuthApiClient.cs`
+- `Assets/Scripts/Auth/AuthManager.cs`
+- 반영 내용
+- 로그인 HTTP 요청/응답 파싱 책임은 `AuthApiClient`로 분리되어 있다.
+- 다만 `AuthManager`가 `EnsureApiClient()` 내부에서 직접 생성하고 있어 DI/주입 구조는 아직 아니다.
+
+- `T5`: 부분 완료
+- 반영 파일
+- `Assets/Scripts/Auth/AuthSessionStore.cs`
+- `Assets/Scripts/Auth/AuthManager.cs`
+- 반영 내용
+- PlayerPrefs 저장/조회/삭제 책임은 `AuthSessionStore`로 분리되어 있다.
+- 다만 정적 호출 방식이므로 인터페이스 경계 분리까지는 아직 진행되지 않았다.
+
+- `T6`: 미착수
+- 현재 상태
+- 씬 이동은 아직 `AuthManager` 내부에서 `SceneManager.LoadScene(...)`로 직접 처리한다.
+
+- `T7`: 미착수
+- 현재 상태
+- `CredentialLoginUseCase`, `TokenValidationUseCase`, `AuthBootstrap`, `LoginSceneNavigator` 등 목표 클래스는 아직 없다.
+- 로그인/검증 오케스트레이션은 여전히 `AuthManager`가 들고 있다.
+
+- `T8`: 진행 1차 완료
+- 반영 파일
+- `Assets/Scripts/Auth/AuthManualTokenFallbackUI.cs`
+- 반영 내용
+- 기존 `OnGUI()` 기반 IMGUI 로그인 입력 UI를 제거했다.
+- 로그인 씬에 이미 배치된 UGUI/TMP 오브젝트를 런타임에서 찾아 바인딩하도록 변경했다.
+- 우선 연결 대상은 `Panel Login`, `InputField ID`, `InputField Passward`, `ButConfirm`, `ButCancel`이다.
+- 새 버튼이 없을 경우 `Login Button`, `Exit Button `도 fallback 대상으로 찾도록 했다.
+- 비밀번호 입력 필드는 런타임에서 `TMP_InputField.ContentType.Password`로 강제해 씬 설정 누락을 보정한다.
+- 상태 메시지용 `TMP_Text`가 씬에 없으면 `Status Text`를 런타임에서 생성한다.
+- 로그인 진행 중에는 입력창/버튼을 비활성화하고 로딩 패널을 사용할 수 있도록 했다.
+- 씬 전환 시 기존 이벤트를 해제하고 로그인 씬 UI를 다시 찾아 재바인딩하도록 정리했다.
+- 남은 항목
+- `AuthManager.Instance` 직접 의존은 아직 남아 있다.
+- 따라서 `T8`은 "GUI -> UI 전환"은 완료했지만 "인터페이스 기반 호출부 정리"까지 완료된 상태는 아니다.
+
+- `T9`: 미착수
+- 현재 상태
+- 레거시 경로 삭제, 클래스명 정리, 전체 회귀 테스트는 아직 남아 있다.
+
+### 17-2. 이번 작업 상세 (2026-04-14)
+
+- 변경 파일
+- `Assets/Scripts/Auth/AuthManualTokenFallbackUI.cs`
+
+- 이번에 실제로 한 일
+- `RuntimeInitializeOnLoadMethod` 기반 자동 생성 방식은 유지했다.
+- 즉, 씬에 별도 스크립트 연결이 없어도 기존처럼 런타임에서 로그인 UI 컨트롤러가 살아난다.
+- `OnGUI`, `GUI.TextField`, `GUI.PasswordField`, `GUI.Button`, `GUIStyle` 기반 코드를 전부 제거했다.
+- 현재 씬 루트를 순회하면서 이름 기준으로 UI 오브젝트를 찾는 헬퍼를 추가했다.
+- 찾은 UI에 `onClick`, `onValueChanged`, `onSubmit` 이벤트를 연결했다.
+- 입력값이 바뀌면 이전 오류 메시지를 지우도록 처리했다.
+- 로그인 시작 시 `Logging in...` 메시지를 표시하고, 완료 시 UI 상태를 다시 복구하도록 했다.
+- 로그인 실패 시 `AuthErrorMapper`가 반환한 사용자 메시지를 상태 텍스트에 노출하도록 했다.
+- 테스트 인증 경로(`TestAuthManager`, `00_TestLogin`)는 기존과 동일하게 본 바인더 생성 대상에서 제외했다.
+
+### 17-3. 검증 결과
+
+- 실행 명령
+- `dotnet build Assembly-CSharp.csproj -nologo`
+
+- 결과
+- `0 Error`
+- `4 Warning`
+- 이번 변경으로 새 컴파일 에러는 발생하지 않았다.
+- 경고는 기존 프로젝트의 다른 파일에서 발생한 기존 경고다.
+- `Assets/Scripts/Map/CreateMap.cs`
+- `Assets/Scripts/Auth/Test/TestAuthManager.cs`
+- `Assets/Scripts/ChatRoom/HostJoinRequestMonitorGUI.cs`
+
+## 18) 다음 작업 권장 순서 (현재 상태 기준)
+
+1. `T3` 인터페이스 추가
+2. `IAuthApiClient`, `IAuthSessionStore`, `ISceneNavigator`부터 최소 단위로 도입한다.
+3. `T6` 씬 이동 분리
+4. `AuthManager` 내부 `SceneManager.LoadScene(...)`를 `LoginSceneNavigator`로 이동한다.
+5. `T7` UseCase 분리
+6. `LoginWithCredentialsAsync`와 `ValidateTokenWithServer(...)`를 UseCase/Client 경계로 이동한다.
+7. `T8` 2차 정리
+8. 현재 UI 바인더에서 `AuthManager.Instance` 직접 참조를 제거하고 인터페이스 기반 호출 구조로 바꾼다.
+9. `T9` 레거시 정리
+10. 이름이 혼동되는 `AuthManualTokenFallbackUI` 클래스명/파일명을 정리할지 검토하고, 전체 로그인 회귀 테스트를 수행한다.

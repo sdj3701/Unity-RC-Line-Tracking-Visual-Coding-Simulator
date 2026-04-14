@@ -33,6 +33,18 @@ MonoBehaviour:
     m_Address: Assets/RCCarUI Shared Data.asset
     m_ReadOnly: 1
     m_SerializedLabels: []
+  - m_GUID: c89abc709629c664e8eef53cf81ab345
+    m_Address: Assets/NetworkUI Shared Data.asset
+    m_ReadOnly: 1
+    m_SerializedLabels: []
+  - m_GUID: 1c1e30aa35d503247bbc8150bdc04ceb
+    m_Address: Assets/Complete UI Shared Data.asset
+    m_ReadOnly: 1
+    m_SerializedLabels: []
+  - m_GUID: 4050215cc72d74541ba7334d147b85b1
+    m_Address: Assets/Login Shared Data.asset
+    m_ReadOnly: 1
+    m_SerializedLabels: []
   m_ReadOnly: 1
   m_Settings: {fileID: 11400000, guid: e84c760266b24854e83b94d5d0bd7641, type: 2}
   m_SchemaSet:
