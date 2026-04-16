@@ -27,6 +27,14 @@ MonoBehaviour:
     m_Key: Passward
     m_Metadata:
       m_Items: []
+  - m_Id: 722228477566976
+    m_Key: LoginBut
+    m_Metadata:
+      m_Items: []
+  - m_Id: 722312254595072
+    m_Key: Quit
+    m_Metadata:
+      m_Items: []
   m_Metadata:
     m_Items: []
   m_KeyGenerator:

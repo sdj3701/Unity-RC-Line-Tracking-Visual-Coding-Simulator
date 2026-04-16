@@ -1376,9 +1376,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_StringReference:
     m_TableReference:
-      m_TableCollectionName: GUID:9af9e3422fe0e604aa3bdfc4221ebedc
+      m_TableCollectionName: GUID:4050215cc72d74541ba7334d147b85b1
     m_TableEntryReference:
-      m_KeyId: 24231460610048
+      m_KeyId: 722312254595072
       m_Key: 
     m_FallbackState: 0
     m_WaitForCompletion: 0
@@ -1422,7 +1422,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Cancel
+  m_text: Quit
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: b156f025693309949be23bcd02c22788, type: 2}
   m_sharedMaterial: {fileID: 8535083353321770985, guid: b156f025693309949be23bcd02c22788,
@@ -3224,9 +3224,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_StringReference:
     m_TableReference:
-      m_TableCollectionName: GUID:1c1e30aa35d503247bbc8150bdc04ceb
+      m_TableCollectionName: GUID:4050215cc72d74541ba7334d147b85b1
     m_TableEntryReference:
-      m_KeyId: 2327307755520
+      m_KeyId: 722228477566976
       m_Key: 
     m_FallbackState: 0
     m_WaitForCompletion: 0
@@ -3270,7 +3270,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Confirm
+  m_text: Login
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: b156f025693309949be23bcd02c22788, type: 2}
   m_sharedMaterial: {fileID: 8535083353321770985, guid: b156f025693309949be23bcd02c22788,

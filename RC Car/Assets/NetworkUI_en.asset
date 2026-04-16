@@ -26,6 +26,18 @@ MonoBehaviour:
     m_Localized: User Block Code List
     m_Metadata:
       m_Items: []
+  - m_Id: 1021411847708672
+    m_Localized: host Join Request Monitor
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1021424518701056
+    m_Localized: 'Number of participants :'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1021442076057600
+    m_Localized: 'Number of people waiting :'
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

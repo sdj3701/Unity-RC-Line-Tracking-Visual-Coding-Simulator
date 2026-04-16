@@ -30,6 +30,14 @@ MonoBehaviour:
     m_Localized: Passward
     m_Metadata:
       m_Items: []
+  - m_Id: 722228477566976
+    m_Localized: Login
+    m_Metadata:
+      m_Items: []
+  - m_Id: 722312254595072
+    m_Localized: Quit
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

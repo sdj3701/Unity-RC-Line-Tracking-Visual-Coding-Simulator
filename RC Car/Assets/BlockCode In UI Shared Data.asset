@@ -87,6 +87,34 @@ MonoBehaviour:
     m_Key: Define
     m_Metadata:
       m_Items: []
+  - m_Id: 2886223418499072
+    m_Key: 'Variable name:'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 2886284135243776
+    m_Key: Create
+    m_Metadata:
+      m_Items: []
+  - m_Id: 2886306776096768
+    m_Key: Cancel
+    m_Metadata:
+      m_Items: []
+  - m_Id: 2886637383720960
+    m_Key: Create a Block
+    m_Metadata:
+      m_Items: []
+  - m_Id: 2886823988305920
+    m_Key: Add Label
+    m_Metadata:
+      m_Items: []
+  - m_Id: 2886875871846400
+    m_Key: Add Input
+    m_Metadata:
+      m_Items: []
+  - m_Id: 2887795569467392
+    m_Key: Enter file name
+    m_Metadata:
+      m_Items: []
   m_Metadata:
     m_Items: []
   m_KeyGenerator:
