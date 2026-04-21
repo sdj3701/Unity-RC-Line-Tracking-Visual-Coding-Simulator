@@ -1,3 +1,5 @@
+using System.Threading.Tasks;
+using RC.Network.Fusion;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -14,6 +16,9 @@ public class LobbyUIController : MonoBehaviour
     [SerializeField] private TMP_Text _statusText;
     [SerializeField] private LobbyRoomFlow _roomFlow;
     [SerializeField] private ChatRoomManager _chatRoomManager;
+
+    [Header("Photon Room Path")]
+    [SerializeField] private bool _usePhotonRoomCreation = true;
 
     [Header("Scene Transition (ChatRoom Path)")]
     [SerializeField] private bool _moveToNetworkSceneOnChatRoomReady = true;
@@ -133,6 +138,12 @@ public class LobbyUIController : MonoBehaviour
         if (!TryReadCreateInputs(out string roomName, out string maxUserCountRaw))
             return;
 
+        if (_usePhotonRoomCreation)
+        {
+            _ = CreatePhotonRoomFromInputsAsync(roomName, maxUserCountRaw);
+            return;
+        }
+
         if (_chatRoomManager != null)
         {
             _chatRoomManager.CreateRoom(roomName, maxUserCountRaw);
@@ -147,6 +158,39 @@ public class LobbyUIController : MonoBehaviour
 
         // 레거시 룸 플로우 fallback. maxUserCount 입력 검증은 위에서 이미 수행한다.
         _roomFlow.CreateRoom(roomName);
+    }
+
+    private async Task CreatePhotonRoomFromInputsAsync(string roomName, string maxUserCountRaw)
+    {
+        if (!int.TryParse(maxUserCountRaw, out int maxPlayers) || maxPlayers <= 0)
+        {
+            SetStatusText("최대 인원은 1명 이상의 숫자로 입력해주세요.");
+            return;
+        }
+
+        SetCreateButtonInteractable(false);
+        SetStatusText($"\"{roomName}\" Photon 방 생성 중...");
+        FusionDebugLog.Info(FusionDebugFlow.Room, $"Lobby create button requested Photon room. room={roomName}, maxPlayers={maxPlayers}");
+
+        FusionRoomService roomService = FusionRoomService.GetOrCreate();
+        bool success = await roomService.CreateRoomAsync(
+            roomName,
+            maxPlayers,
+            _targetSceneName,
+            _moveToNetworkSceneOnChatRoomReady);
+
+        if (!success)
+        {
+            SetCreateButtonInteractable(true);
+            string message = string.IsNullOrWhiteSpace(roomService.LastErrorMessage)
+                ? "Photon 방 생성에 실패했습니다."
+                : roomService.LastErrorMessage;
+            SetStatusText(message);
+            return;
+        }
+
+        SetStatusText("Photon 방 생성 완료. 네트워크 씬으로 이동합니다.");
+        SetCreateButtonInteractable(!_moveToNetworkSceneOnChatRoomReady);
     }
 
     /// <summary>

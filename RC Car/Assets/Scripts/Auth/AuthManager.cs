@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Auth.Models;
+using RC.Network.Fusion;
 using RC.App.Config;
 using RC.App.Defines;
 using RC.App.Networking;
@@ -45,6 +46,11 @@ namespace Auth
         [Header("Runtime")]
         [SerializeField] private bool _useAutoLogin = false;
         [SerializeField] private bool _useDeepLinkLogin = true;
+
+        [Header("Photon Fusion")]
+        [SerializeField] private bool _connectPhotonBeforeLobbyScene = true;
+        [SerializeField] private FusionAuthMode _photonAuthMode = FusionAuthMode.UserIdOnly;
+        [SerializeField] private bool _usePhotonAuthPostData = false;
 
         [Header("Editor Test")]
         [SerializeField] private bool _useTestTokenInEditor = false;
@@ -295,6 +301,9 @@ namespace Auth
                     SaveTokenLocally(accessToken, refreshToken);
                     DebugLogLoginPayload(accessToken, refreshToken, result.User);
                     LastAuthErrorMessage = null;
+
+                    if (!await ConnectPhotonBeforeLobbySceneAsync(suppressFailureFeedback))
+                        return false;
 
                     OnLoginSuccess?.Invoke();
 
@@ -584,6 +593,51 @@ namespace Auth
         }
 
         /// <summary>
+        /// API 토큰 검증 성공 후 Photon 로비까지 연결한다.
+        /// 이 단계가 실패하면 로비 씬으로 넘어가지 않는다.
+        /// </summary>
+        private async Task<bool> ConnectPhotonBeforeLobbySceneAsync(bool suppressFailureFeedback)
+        {
+            if (!_connectPhotonBeforeLobbyScene)
+            {
+                FusionDebugLog.Warning(FusionDebugFlow.Auth, "Photon lobby connection before lobby scene is disabled.");
+                return true;
+            }
+
+            FusionDebugLog.Info(FusionDebugFlow.Auth, $"AccessToken verified. Connecting Photon lobby before scene transition. authMode={_photonAuthMode}");
+
+            FusionConnectionManager connectionManager = FusionConnectionManager.GetOrCreate();
+            connectionManager.ConfigureAuthentication(_photonAuthMode, _usePhotonAuthPostData);
+
+            bool connected = await connectionManager.ConnectToPhotonLobbyAsync();
+            if (connected)
+            {
+                FusionLobbyService.GetOrCreate().RefreshFromConnectionManager();
+                FusionDebugLog.Info(FusionDebugFlow.Auth, "Photon lobby connection verified. Lobby scene transition is allowed.");
+                return true;
+            }
+
+            string message = string.IsNullOrWhiteSpace(connectionManager.LastErrorMessage)
+                ? "Photon 로비 접속에 실패했습니다."
+                : connectionManager.LastErrorMessage;
+
+            LastAuthErrorMessage = message;
+            IsAuthenticated = false;
+            CurrentUser = null;
+            _accessToken = null;
+            _refreshToken = null;
+            AuthSessionStore.Clear();
+
+            if (!suppressFailureFeedback)
+            {
+                FusionDebugLog.Error(FusionDebugFlow.Auth, message);
+                OnLoginFailed?.Invoke(message);
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// 로그인 성공 시 디버깅용 인증 페이로드를 출력한다.
         /// </summary>
         private void DebugLogLoginPayload(string accessToken, string refreshToken, UserInfo user)
@@ -591,7 +645,8 @@ namespace Auth
             if (!_debugLogLoginPayload)
                 return;
 
-            string safeRefreshToken = string.IsNullOrWhiteSpace(refreshToken) ? "(empty)" : refreshToken;
+            string safeAccessToken = BuildTokenPreview(accessToken);
+            string safeRefreshToken = BuildTokenPreview(refreshToken);
             string userJson = user == null ? "null" : JsonUtility.ToJson(user, true);
 
             // 흐름 주석:
@@ -599,9 +654,21 @@ namespace Auth
             // API 응답/파싱/검증 결과를 빠르게 확인한다.
             Debug.Log(
                 $"[AuthManager] Login Success Payload\n" +
-                $"AccessToken: {accessToken}\n" +
+                $"AccessToken: {safeAccessToken}\n" +
                 $"RefreshToken: {safeRefreshToken}\n" +
                 $"UserInfo: {userJson}");
+        }
+
+        private static string BuildTokenPreview(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                return "(empty)";
+
+            string trimmed = token.Trim();
+            if (trimmed.Length <= 8)
+                return "***";
+
+            return trimmed.Substring(0, 4) + "...***..." + trimmed.Substring(trimmed.Length - 4);
         }
 
         /// <summary>
@@ -722,6 +789,11 @@ namespace Auth
         /// </summary>
         public void Logout()
         {
+            if (FusionConnectionManager.Instance != null)
+                _ = FusionConnectionManager.Instance.ShutdownAsync();
+
+            FusionRoomSessionContext.Clear();
+
             _accessToken = null;
             _refreshToken = null;
             IsAuthenticated = false;

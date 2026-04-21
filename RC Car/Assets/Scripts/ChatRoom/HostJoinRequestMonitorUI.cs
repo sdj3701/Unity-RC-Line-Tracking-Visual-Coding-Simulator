@@ -1,7 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using Auth;
+using Fusion;
+using RC.Network.Fusion;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -48,18 +49,14 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
 
     private const float MinPollIntervalSeconds = 0.5f;
 
-    private readonly List<ChatRoomJoinRequestInfo> _latestRequests = new List<ChatRoomJoinRequestInfo>();
+    private readonly List<FusionPendingJoinRequestInfo> _latestRequests = new List<FusionPendingJoinRequestInfo>();
     private readonly List<HostJoinRequestItemUI> _spawnedItems = new List<HostJoinRequestItemUI>();
-    private readonly HashSet<string> _approvedClientKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-    private ChatRoomManager _chatRoomManager;
+    private FusionConnectionManager _connectionManager;
     private Coroutine _pollingCoroutine;
-    private Coroutine _pendingFetchWhenIdleCoroutine;
     private bool _isBound;
-    private bool _fetchInProgress;
-    private string _trackedRoomId = string.Empty;
-    private string _lastError = string.Empty;
-    private string _activeDecisionRequestKey = string.Empty;
+    private int _currentPlayerCount;
+    private int _currentMaxPlayers;
 
     private void Awake()
     {
@@ -74,10 +71,10 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
     private void OnEnable()
     {
         BindButtons();
-        TryEnsureAndBindManager();
+        TryEnsureAndBindConnectionManager();
         DisableLegacyGuiMonitorIfNeeded();
         RefreshHostVisibility();
-        RefreshAllUi();
+        RefreshFromFusionState();
 
         if (_fetchOnEnable)
             FetchNow();
@@ -92,11 +89,8 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
     private void OnDisable()
     {
         StopPolling();
-        StopPendingFetchWhenIdle();
         UnbindButtons();
-        UnbindManagerEvents();
-        _fetchInProgress = false;
-        _activeDecisionRequestKey = string.Empty;
+        UnbindConnectionManager();
     }
 
     public void StartPolling()
@@ -104,8 +98,8 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
         if (_pollingCoroutine != null)
             return;
 
-        _pollingCoroutine = StartCoroutine(PollJoinRequestsLoop());
-        SetStatus("Join request polling started.");
+        _pollingCoroutine = StartCoroutine(PollFusionStateLoop());
+        SetStatus("Photon join request monitor started.");
     }
 
     public void StopPolling()
@@ -115,15 +109,15 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
 
         StopCoroutine(_pollingCoroutine);
         _pollingCoroutine = null;
-        SetStatus("Join request polling stopped.");
+        SetStatus("Photon join request monitor stopped.");
     }
 
     public void FetchNow()
     {
-        TryFetchJoinRequests();
+        RefreshFromFusionState();
     }
 
-    private IEnumerator PollJoinRequestsLoop()
+    private IEnumerator PollFusionStateLoop()
     {
         while (enabled)
         {
@@ -131,310 +125,152 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
             yield return new WaitForSeconds(interval);
 
             if (IsPanelVisible())
-                TryFetchJoinRequests();
+                RefreshFromFusionState();
         }
 
         _pollingCoroutine = null;
     }
 
-    private void TryFetchJoinRequests()
+    private bool TryEnsureAndBindConnectionManager()
+    {
+        FusionConnectionManager manager = FusionConnectionManager.GetOrCreate();
+        if (_connectionManager == manager && _isBound)
+            return true;
+
+        UnbindConnectionManager();
+        _connectionManager = manager;
+
+        if (_connectionManager == null)
+            return false;
+
+        _connectionManager.OnPendingJoinRequestsChanged += HandlePendingJoinRequestsChanged;
+        _connectionManager.OnPlayerCountChanged += HandlePlayerCountChanged;
+        _connectionManager.OnStatusChanged += HandleStatusChanged;
+        _isBound = true;
+        return true;
+    }
+
+    private void UnbindConnectionManager()
+    {
+        if (!_isBound || _connectionManager == null)
+            return;
+
+        _connectionManager.OnPendingJoinRequestsChanged -= HandlePendingJoinRequestsChanged;
+        _connectionManager.OnPlayerCountChanged -= HandlePlayerCountChanged;
+        _connectionManager.OnStatusChanged -= HandleStatusChanged;
+        _connectionManager = null;
+        _isBound = false;
+    }
+
+    private void RefreshFromFusionState()
     {
         RefreshHostVisibility();
 
         if (_hostOnly && !CanCurrentUserManageHostRequests(out string reason))
         {
-            SetStatus($"Host check failed. Fetch skipped. reason={reason}");
+            SetStatus($"Host check failed. reason={reason}");
             RefreshInteractableState();
             return;
         }
 
-        if (_fetchInProgress)
+        if (!TryEnsureAndBindConnectionManager())
         {
-            SetStatus("Join request fetch is already in progress.");
+            SetStatus("FusionConnectionManager is missing.");
             RefreshInteractableState();
             return;
         }
 
-        if (!TryEnsureAndBindManager())
+        NetworkRunner runner = _connectionManager.Runner;
+        if (runner != null && runner.IsRunning && !runner.IsShutdown)
         {
-            SetStatus("ChatRoomManager is missing.");
-            RefreshInteractableState();
-            return;
+            FusionRoomSessionInfo context = FusionRoomSessionContext.Current;
+            int fallbackPlayerCount = context != null ? context.PlayerCount : (runner.IsServer ? 1 : 0);
+            int fallbackMaxPlayers = context != null ? context.MaxPlayers : 0;
+            _currentPlayerCount = FusionPlayerCountUtility.ResolveCurrentPlayerCount(runner, fallbackPlayerCount);
+            _currentMaxPlayers = FusionPlayerCountUtility.ResolveMaxPlayers(runner, fallbackMaxPlayers);
+        }
+        else
+        {
+            FusionRoomSessionInfo context = FusionRoomSessionContext.Current;
+            _currentPlayerCount = context != null ? context.PlayerCount : 0;
+            _currentMaxPlayers = context != null ? context.MaxPlayers : 0;
         }
 
-        string roomId = ResolveTargetRoomId();
-        if (string.IsNullOrWhiteSpace(roomId))
-        {
-            SetStatus("Room ID is empty. Set RoomSessionContext or override.");
-            RefreshInteractableState();
-            return;
-        }
-
-        if (_chatRoomManager.IsBusy)
-        {
-            QueueFetchWhenManagerIsIdle();
-            SetStatus("ChatRoomManager is busy. Fetch queued.");
-            RefreshInteractableState();
-            return;
-        }
-
-        ResetTrackingIfRoomChanged(roomId);
-        _lastError = string.Empty;
-        _fetchInProgress = true;
-        RefreshInteractableState();
-
-        _chatRoomManager.FetchJoinRequests(roomId, ResolveTokenOverride());
-        SetStatus($"Join request fetch requested. roomId={roomId}");
-    }
-
-    private bool TryEnsureAndBindManager()
-    {
-        if (_chatRoomManager == null)
-            _chatRoomManager = ChatRoomManager.Instance;
-
-        if (_chatRoomManager == null && _createChatRoomManagerIfMissing)
-        {
-            var managerObject = new GameObject("ChatRoomManager (Runtime)");
-            _chatRoomManager = managerObject.AddComponent<ChatRoomManager>();
-            Log("ChatRoomManager instance was missing. Created runtime ChatRoomManager.");
-        }
-
-        if (_chatRoomManager == null)
-            return false;
-
-        if (_isBound)
-            return true;
-
-        _chatRoomManager.OnJoinRequestsFetchStarted += HandleJoinRequestsFetchStarted;
-        _chatRoomManager.OnJoinRequestsFetchSucceeded += HandleJoinRequestsFetchSucceeded;
-        _chatRoomManager.OnJoinRequestsFetchFailed += HandleJoinRequestsFetchFailed;
-        _chatRoomManager.OnJoinRequestsFetchCanceled += HandleJoinRequestsFetchCanceled;
-        _chatRoomManager.OnJoinRequestDecisionStarted += HandleJoinRequestDecisionStarted;
-        _chatRoomManager.OnJoinRequestDecisionSucceeded += HandleJoinRequestDecisionSucceeded;
-        _chatRoomManager.OnJoinRequestDecisionFailed += HandleJoinRequestDecisionFailed;
-        _chatRoomManager.OnJoinRequestDecisionCanceled += HandleJoinRequestDecisionCanceled;
-        _isBound = true;
-        return true;
-    }
-
-    private void UnbindManagerEvents()
-    {
-        if (!_isBound || _chatRoomManager == null)
-            return;
-
-        _chatRoomManager.OnJoinRequestsFetchStarted -= HandleJoinRequestsFetchStarted;
-        _chatRoomManager.OnJoinRequestsFetchSucceeded -= HandleJoinRequestsFetchSucceeded;
-        _chatRoomManager.OnJoinRequestsFetchFailed -= HandleJoinRequestsFetchFailed;
-        _chatRoomManager.OnJoinRequestsFetchCanceled -= HandleJoinRequestsFetchCanceled;
-        _chatRoomManager.OnJoinRequestDecisionStarted -= HandleJoinRequestDecisionStarted;
-        _chatRoomManager.OnJoinRequestDecisionSucceeded -= HandleJoinRequestDecisionSucceeded;
-        _chatRoomManager.OnJoinRequestDecisionFailed -= HandleJoinRequestDecisionFailed;
-        _chatRoomManager.OnJoinRequestDecisionCanceled -= HandleJoinRequestDecisionCanceled;
-        _isBound = false;
-    }
-
-    private void HandleJoinRequestsFetchStarted(string roomId)
-    {
-        string targetRoomId = ResolveTargetRoomId();
-        if (!IsSameRoom(targetRoomId, roomId))
-            return;
-
-        _fetchInProgress = true;
-        RefreshInteractableState();
-        SetStatus($"Join request fetch started. roomId={roomId}");
-    }
-
-    private void HandleJoinRequestsFetchSucceeded(ChatRoomJoinRequestInfo[] requests)
-    {
-        _fetchInProgress = false;
-        _lastError = string.Empty;
         _latestRequests.Clear();
-
+        IReadOnlyList<FusionPendingJoinRequestInfo> requests = _connectionManager.PendingJoinRequests;
         if (requests != null)
         {
-            for (int i = 0; i < requests.Length; i++)
+            for (int i = 0; i < requests.Count; i++)
             {
-                ChatRoomJoinRequestInfo request = requests[i];
-                if (request == null)
-                    continue;
-
-                _latestRequests.Add(request);
-
-                if (IsApprovedStatus(request.Status))
-                    TrackApprovedClient(request);
+                FusionPendingJoinRequestInfo request = requests[i];
+                if (request != null)
+                    _latestRequests.Add(request);
             }
         }
 
         RefreshAllUi();
-        SetStatus($"Join requests updated. pending={GetPendingRequestCount()}");
     }
 
-    private void HandleJoinRequestsFetchFailed(string message)
+    private void HandlePendingJoinRequestsChanged(IReadOnlyList<FusionPendingJoinRequestInfo> requests)
     {
-        _fetchInProgress = false;
-        _lastError = string.IsNullOrWhiteSpace(message) ? "Join request fetch failed." : message;
-        RefreshInteractableState();
-        SetStatus($"Join request fetch failed. message={_lastError}");
-    }
+        _latestRequests.Clear();
 
-    private void HandleJoinRequestsFetchCanceled()
-    {
-        _fetchInProgress = false;
-        RefreshInteractableState();
-        SetStatus("Join request fetch canceled.");
-    }
-
-    private void HandleJoinRequestDecisionStarted(string roomId, string requestId, bool approve)
-    {
-        RefreshInteractableState();
-        SetStatus($"Join request decision started. action={(approve ? "ACCEPT" : "REJECT")}, requestId={requestId}");
-    }
-
-    private void HandleJoinRequestDecisionSucceeded(ChatRoomJoinRequestDecisionInfo info)
-    {
-        ClearActiveDecision(info != null ? info.RoomId : string.Empty, info != null ? info.RequestId : string.Empty);
-
-        string action = info != null && info.Approved ? "ACCEPT" : "REJECT";
-        long code = info != null ? info.ResponseCode : 0;
-
-        if (info != null)
+        if (requests != null)
         {
-            if (info.Approved)
-                TrackApprovedClient(info.RoomId, info.RequestId);
-
-            UpdateLatestRequestStatus(info.RoomId, info.RequestId, info.Approved ? "APPROVED" : "REJECTED");
+            for (int i = 0; i < requests.Count; i++)
+            {
+                FusionPendingJoinRequestInfo request = requests[i];
+                if (request != null)
+                    _latestRequests.Add(request);
+            }
         }
 
         RefreshAllUi();
-        SetStatus($"Join request decision succeeded. action={action}, requestId={info?.RequestId}, code={code}");
-
-        QueueFetchWhenManagerIsIdle();
+        SetStatus($"Pending Photon join requests updated. count={_latestRequests.Count}");
     }
 
-    private void HandleJoinRequestDecisionFailed(string roomId, string requestId, bool approve, string message)
+    private void HandlePlayerCountChanged(int playerCount, int maxPlayers)
     {
-        ClearActiveDecision(roomId, requestId);
-
-        string action = approve ? "ACCEPT" : "REJECT";
-        _lastError = string.IsNullOrWhiteSpace(message) ? "Join request decision failed." : message;
-        RefreshInteractableState();
-        SetStatus($"Join request decision failed. action={action}, requestId={requestId}, message={_lastError}");
+        _currentPlayerCount = playerCount;
+        _currentMaxPlayers = maxPlayers;
+        RefreshCountTexts();
     }
 
-    private void HandleJoinRequestDecisionCanceled(string roomId, string requestId, bool approve)
+    private void HandleStatusChanged(string status)
     {
-        ClearActiveDecision(roomId, requestId);
-        RefreshInteractableState();
-        SetStatus($"Join request decision canceled. action={(approve ? "ACCEPT" : "REJECT")}, requestId={requestId}");
-    }
-
-    private void TryDecideJoinRequest(ChatRoomJoinRequestInfo request, bool approve)
-    {
-        if (request == null)
+        if (string.IsNullOrWhiteSpace(status))
             return;
 
+        SetStatus(status);
+    }
+
+    private void TryDecideJoinRequest(string requestId, bool approve)
+    {
         if (_hostOnly && !CanCurrentUserManageHostRequests(out string reason))
         {
             SetStatus($"Host check failed. Decision blocked. reason={reason}");
             return;
         }
 
-        if (!TryEnsureAndBindManager())
+        if (!TryEnsureAndBindConnectionManager())
         {
-            SetStatus("ChatRoomManager is missing.");
+            SetStatus("FusionConnectionManager is missing.");
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(_activeDecisionRequestKey))
+        if (string.IsNullOrWhiteSpace(requestId))
         {
-            SetStatus("A join request decision is already in progress.");
-            RefreshInteractableState();
+            SetStatus("Photon requestId is empty.");
             return;
         }
 
-        if (_chatRoomManager.IsBusy)
-        {
-            SetStatus("ChatRoomManager is busy. Decision skipped.");
-            RefreshInteractableState();
-            return;
-        }
+        bool handled = approve
+            ? _connectionManager.ApproveJoinRequest(requestId)
+            : _connectionManager.RejectJoinRequest(requestId);
 
-        string roomId = !string.IsNullOrWhiteSpace(request.RoomId)
-            ? request.RoomId.Trim()
-            : ResolveTargetRoomId();
-        string requestId = string.IsNullOrWhiteSpace(request.RequestId) ? string.Empty : request.RequestId.Trim();
-
-        if (string.IsNullOrWhiteSpace(roomId) || string.IsNullOrWhiteSpace(requestId))
-        {
-            SetStatus("RoomId or RequestId is empty. Decision cannot be sent.");
-            return;
-        }
-
-        _activeDecisionRequestKey = BuildJoinRequestKey(request);
-        if (string.IsNullOrWhiteSpace(_activeDecisionRequestKey))
-            _activeDecisionRequestKey = requestId;
-
-        _lastError = string.Empty;
-        RefreshInteractableState();
-        SetStatus($"Join request decision requested. action={(approve ? "ACCEPT" : "REJECT")}, requestId={requestId}");
-
-        _chatRoomManager.DecideJoinRequest(roomId, requestId, approve, ResolveTokenOverride());
-    }
-
-    private void QueueFetchWhenManagerIsIdle()
-    {
-        if (_pendingFetchWhenIdleCoroutine != null)
-            return;
-
-        _pendingFetchWhenIdleCoroutine = StartCoroutine(FetchWhenManagerIsIdle());
-    }
-
-    private void StopPendingFetchWhenIdle()
-    {
-        if (_pendingFetchWhenIdleCoroutine == null)
-            return;
-
-        StopCoroutine(_pendingFetchWhenIdleCoroutine);
-        _pendingFetchWhenIdleCoroutine = null;
-    }
-
-    private IEnumerator FetchWhenManagerIsIdle()
-    {
-        while (enabled)
-        {
-            if (_chatRoomManager == null && !TryEnsureAndBindManager())
-                break;
-
-            if (_chatRoomManager != null &&
-                !_chatRoomManager.IsBusy &&
-                !_fetchInProgress &&
-                string.IsNullOrWhiteSpace(_activeDecisionRequestKey))
-            {
-                _pendingFetchWhenIdleCoroutine = null;
-                FetchNow();
-                yield break;
-            }
-
-            yield return null;
-        }
-
-        _pendingFetchWhenIdleCoroutine = null;
-    }
-
-    private void ResetTrackingIfRoomChanged(string roomId)
-    {
-        if (string.IsNullOrWhiteSpace(roomId))
-            return;
-
-        if (string.Equals(_trackedRoomId, roomId, StringComparison.Ordinal))
-            return;
-
-        _trackedRoomId = roomId;
-        _latestRequests.Clear();
-        _approvedClientKeys.Clear();
-        _activeDecisionRequestKey = string.Empty;
-        RefreshAllUi();
-        SetStatus($"Tracking room changed. roomId={roomId}");
+        SetStatus(handled
+            ? $"Photon join request {(approve ? "accepted" : "rejected")}. requestId={requestId}"
+            : $"Photon join request not found. requestId={requestId}");
     }
 
     private void RefreshAllUi()
@@ -447,10 +283,10 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
     private void RefreshCountTexts()
     {
         if (_currentMemberCountText != null)
-            _currentMemberCountText.text = FormatCountText(_currentMemberCountFormat, GetRoomMemberCount());
+            _currentMemberCountText.text = FormatCountText(_currentMemberCountFormat, GetRoomMemberCount(), _currentMaxPlayers);
 
         if (_pendingRequestCountText != null)
-            _pendingRequestCountText.text = FormatCountText(_pendingRequestCountFormat, GetPendingRequestCount());
+            _pendingRequestCountText.text = FormatCountText(_pendingRequestCountFormat, GetPendingRequestCount(), 0);
     }
 
     private void RebuildRequestListUi()
@@ -464,14 +300,14 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
         {
             for (int i = 0; i < _latestRequests.Count; i++)
             {
-                ChatRoomJoinRequestInfo request = _latestRequests[i];
-                if (request == null || !IsPendingStatus(request.Status))
+                FusionPendingJoinRequestInfo request = _latestRequests[i];
+                if (request == null)
                     continue;
 
                 pendingCount++;
                 HostJoinRequestItemUI item = Instantiate(_requestItemPrefab, _requestListContent);
                 item.gameObject.SetActive(true);
-                item.Configure(request, HandleItemAcceptClicked, HandleItemRejectClicked);
+                item.ConfigurePhoton(request, HandleItemAcceptClicked, HandleItemRejectClicked);
                 _spawnedItems.Add(item);
             }
         }
@@ -494,11 +330,10 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
     private void RefreshInteractableState()
     {
         bool hostAllowed = !_hostOnly || CanCurrentUserManageHostRequests(out _);
-        bool decisionBusy = !string.IsNullOrWhiteSpace(_activeDecisionRequestKey);
-        bool interactable = hostAllowed && !_fetchInProgress && !decisionBusy;
+        bool interactable = hostAllowed;
 
         if (_refreshButton != null)
-            _refreshButton.interactable = hostAllowed && !_fetchInProgress;
+            _refreshButton.interactable = hostAllowed;
 
         for (int i = 0; i < _spawnedItems.Count; i++)
         {
@@ -528,7 +363,7 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
         if (!_disableLegacyGuiMonitorOnEnable)
             return;
 
-        HostJoinRequestMonitorGUI[] legacyMonitors = FindObjectsOfType<HostJoinRequestMonitorGUI>();
+        HostJoinRequestMonitorGUI[] legacyMonitors = FindObjectsOfType<HostJoinRequestMonitorGUI>(true);
         for (int i = 0; i < legacyMonitors.Length; i++)
         {
             HostJoinRequestMonitorGUI legacyMonitor = legacyMonitors[i];
@@ -569,264 +404,69 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
             _refreshButton.onClick.RemoveListener(FetchNow);
     }
 
-    private void HandleItemAcceptClicked(ChatRoomJoinRequestInfo request)
+    private void HandleItemAcceptClicked(string requestId)
     {
-        TryDecideJoinRequest(request, true);
+        TryDecideJoinRequest(requestId, true);
     }
 
-    private void HandleItemRejectClicked(ChatRoomJoinRequestInfo request)
+    private void HandleItemRejectClicked(string requestId)
     {
-        TryDecideJoinRequest(request, false);
-    }
-
-    private void TrackApprovedClient(string roomId, string requestId)
-    {
-        ChatRoomJoinRequestInfo request = FindLatestRequest(roomId, requestId);
-        if (request != null)
-        {
-            TrackApprovedClient(request);
-            return;
-        }
-
-        string fallbackKey = string.IsNullOrWhiteSpace(requestId) ? string.Empty : requestId.Trim();
-        if (!string.IsNullOrWhiteSpace(fallbackKey))
-            _approvedClientKeys.Add(fallbackKey);
-    }
-
-    private void TrackApprovedClient(ChatRoomJoinRequestInfo request)
-    {
-        if (request != null &&
-            !string.IsNullOrWhiteSpace(request.RequestUserId) &&
-            !string.IsNullOrWhiteSpace(request.RequestId))
-        {
-            _approvedClientKeys.Remove(request.RequestId.Trim());
-        }
-
-        string key = BuildApprovedClientKey(request);
-        if (!string.IsNullOrWhiteSpace(key))
-            _approvedClientKeys.Add(key);
-    }
-
-    private ChatRoomJoinRequestInfo FindLatestRequest(string roomId, string requestId)
-    {
-        string normalizedRequestId = string.IsNullOrWhiteSpace(requestId) ? string.Empty : requestId.Trim();
-        string normalizedRoomId = string.IsNullOrWhiteSpace(roomId) ? string.Empty : roomId.Trim();
-
-        for (int i = 0; i < _latestRequests.Count; i++)
-        {
-            ChatRoomJoinRequestInfo request = _latestRequests[i];
-            if (request == null)
-                continue;
-
-            string currentRequestId = string.IsNullOrWhiteSpace(request.RequestId) ? string.Empty : request.RequestId.Trim();
-            if (!string.IsNullOrWhiteSpace(normalizedRequestId) &&
-                string.Equals(currentRequestId, normalizedRequestId, StringComparison.Ordinal))
-            {
-                return request;
-            }
-
-            if (string.IsNullOrWhiteSpace(normalizedRequestId) &&
-                !string.IsNullOrWhiteSpace(normalizedRoomId) &&
-                string.Equals(
-                    string.IsNullOrWhiteSpace(request.RoomId) ? string.Empty : request.RoomId.Trim(),
-                    normalizedRoomId,
-                    StringComparison.Ordinal))
-            {
-                return request;
-            }
-        }
-
-        return null;
-    }
-
-    private void UpdateLatestRequestStatus(string roomId, string requestId, string status)
-    {
-        ChatRoomJoinRequestInfo request = FindLatestRequest(roomId, requestId);
-        if (request != null)
-            request.Status = status;
-    }
-
-    private void ClearActiveDecision(string roomId, string requestId)
-    {
-        if (string.IsNullOrWhiteSpace(_activeDecisionRequestKey))
-            return;
-
-        string key = BuildJoinRequestKey(new ChatRoomJoinRequestInfo
-        {
-            RoomId = roomId,
-            RequestId = requestId
-        });
-
-        if (string.IsNullOrWhiteSpace(key) ||
-            string.Equals(_activeDecisionRequestKey, key, StringComparison.Ordinal))
-        {
-            _activeDecisionRequestKey = string.Empty;
-        }
+        TryDecideJoinRequest(requestId, false);
     }
 
     private bool CanCurrentUserManageHostRequests(out string reason)
     {
         reason = string.Empty;
 
-        RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
-        if (currentRoom == null)
+        FusionConnectionManager manager = FusionConnectionManager.Instance;
+        NetworkRunner runner = manager != null ? manager.Runner : null;
+        if (runner != null && runner.IsRunning && !runner.IsShutdown)
         {
-            reason = "RoomSessionContext.CurrentRoom is null";
-            return false;
+            bool isHostRunner = runner.IsServer;
+            reason = isHostRunner
+                ? $"Photon runner is server. session={runner.SessionInfo.Name}"
+                : $"Photon runner is not server. session={runner.SessionInfo.Name}";
+            return isHostRunner;
         }
 
-        string hostUserId = string.IsNullOrWhiteSpace(currentRoom.HostUserId)
-            ? string.Empty
-            : currentRoom.HostUserId.Trim();
-        if (string.IsNullOrWhiteSpace(hostUserId))
+        FusionRoomSessionInfo context = FusionRoomSessionContext.Current;
+        if (context != null)
         {
-            reason = "HostUserId is empty";
-            return false;
+            bool isHostContext = context.IsHost || context.GameMode == GameMode.Host;
+            reason = isHostContext
+                ? $"Fusion session context indicates host. session={context.SessionName}"
+                : $"Fusion session context indicates client. session={context.SessionName}";
+            return isHostContext;
         }
 
-        if (AuthManager.Instance == null || AuthManager.Instance.CurrentUser == null)
-        {
-            reason = "Current user is not resolved";
-            return false;
-        }
-
-        string currentUserId = string.IsNullOrWhiteSpace(AuthManager.Instance.CurrentUser.userId)
-            ? string.Empty
-            : AuthManager.Instance.CurrentUser.userId.Trim();
-        if (string.IsNullOrWhiteSpace(currentUserId))
-        {
-            reason = "Current user id is empty";
-            return false;
-        }
-
-        bool isHost = string.Equals(hostUserId, currentUserId, StringComparison.Ordinal);
-        reason = isHost
-            ? "Current user matches HostUserId"
-            : $"Current user does not match HostUserId (host={hostUserId}, me={currentUserId})";
-        return isHost;
-    }
-
-    private string ResolveTargetRoomId()
-    {
-        if (!string.IsNullOrWhiteSpace(_roomIdOverride))
-            return _roomIdOverride.Trim();
-
-        RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
-        if (currentRoom != null && !string.IsNullOrWhiteSpace(currentRoom.RoomId))
-            return currentRoom.RoomId.Trim();
-
-        return string.Empty;
-    }
-
-    private string ResolveTokenOverride()
-    {
-        return string.IsNullOrWhiteSpace(_accessTokenOverride)
-            ? null
-            : _accessTokenOverride.Trim();
+        reason = "Fusion runner/session context unavailable";
+        return false;
     }
 
     private int GetRoomMemberCount()
     {
-        RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
-        if (currentRoom == null || string.IsNullOrWhiteSpace(currentRoom.RoomId))
-            return 0;
-
-        var approvedUsers = new HashSet<string>(_approvedClientKeys, StringComparer.OrdinalIgnoreCase);
-
-        for (int i = 0; i < _latestRequests.Count; i++)
-        {
-            ChatRoomJoinRequestInfo request = _latestRequests[i];
-            if (request == null || !IsApprovedStatus(request.Status))
-                continue;
-
-            string userKey = BuildApprovedClientKey(request);
-
-            if (!string.IsNullOrWhiteSpace(userKey))
-                approvedUsers.Add(userKey);
-        }
-
-        return 1 + approvedUsers.Count;
+        return Mathf.Max(0, _currentPlayerCount);
     }
 
     private int GetPendingRequestCount()
     {
-        int pendingCount = 0;
-
-        for (int i = 0; i < _latestRequests.Count; i++)
-        {
-            ChatRoomJoinRequestInfo request = _latestRequests[i];
-            if (request != null && IsPendingStatus(request.Status))
-                pendingCount++;
-        }
-
-        return pendingCount;
+        return _latestRequests.Count;
     }
 
-    private static string BuildJoinRequestKey(ChatRoomJoinRequestInfo info)
-    {
-        if (info == null)
-            return string.Empty;
-
-        if (!string.IsNullOrWhiteSpace(info.RequestId))
-            return info.RequestId.Trim();
-
-        string roomId = string.IsNullOrWhiteSpace(info.RoomId) ? string.Empty : info.RoomId.Trim();
-        string userId = string.IsNullOrWhiteSpace(info.RequestUserId) ? string.Empty : info.RequestUserId.Trim();
-        string createdAt = string.IsNullOrWhiteSpace(info.CreatedAtUtc) ? string.Empty : info.CreatedAtUtc.Trim();
-        return $"{roomId}|{userId}|{createdAt}";
-    }
-
-    private static string BuildApprovedClientKey(ChatRoomJoinRequestInfo info)
-    {
-        if (info == null)
-            return string.Empty;
-
-        if (!string.IsNullOrWhiteSpace(info.RequestUserId))
-            return info.RequestUserId.Trim();
-
-        if (!string.IsNullOrWhiteSpace(info.RequestId))
-            return info.RequestId.Trim();
-
-        return BuildJoinRequestKey(info);
-    }
-
-    private static bool IsPendingStatus(string status)
-    {
-        if (string.IsNullOrWhiteSpace(status))
-            return true;
-
-        string normalized = status.Trim().ToUpperInvariant();
-        return normalized == "REQUESTED" || normalized == "PENDING";
-    }
-
-    private static bool IsApprovedStatus(string status)
-    {
-        if (string.IsNullOrWhiteSpace(status))
-            return false;
-
-        string normalized = status.Trim().ToUpperInvariant();
-        return normalized == "APPROVED" || normalized == "ACCEPTED";
-    }
-
-    private static bool IsSameRoom(string expectedRoomId, string incomingRoomId)
-    {
-        string left = string.IsNullOrWhiteSpace(expectedRoomId) ? string.Empty : expectedRoomId.Trim();
-        string right = string.IsNullOrWhiteSpace(incomingRoomId) ? string.Empty : incomingRoomId.Trim();
-        return string.Equals(left, right, StringComparison.Ordinal);
-    }
-
-    private static string FormatCountText(string format, int value)
+    private static string FormatCountText(string format, int value, int maxValue)
     {
         if (string.IsNullOrWhiteSpace(format))
-            return value.ToString();
+            return maxValue > 0 ? $"{value}/{maxValue}" : value.ToString();
 
         try
         {
-            return string.Format(format, value);
+            return format.Contains("{1}")
+                ? string.Format(format, value, maxValue)
+                : string.Format(format, value);
         }
         catch (FormatException)
         {
-            return value.ToString();
+            return maxValue > 0 ? $"{value}/{maxValue}" : value.ToString();
         }
     }
 

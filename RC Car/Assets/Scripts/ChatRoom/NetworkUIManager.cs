@@ -1,5 +1,5 @@
-using System;
-using Auth;
+using Fusion;
+using RC.Network.Fusion;
 using UnityEngine;
 
 public class NetworkUIManager : MonoBehaviour
@@ -41,41 +41,41 @@ public class NetworkUIManager : MonoBehaviour
 
     private static UserRole ResolveRole(out string reason)
     {
-        RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
-        if (currentRoom == null)
+        FusionConnectionManager connectionManager = FusionConnectionManager.Instance;
+        NetworkRunner runner = connectionManager != null ? connectionManager.Runner : null;
+
+        if (runner != null && runner.IsRunning && !runner.IsShutdown)
         {
-            reason = "RoomSessionContext.CurrentRoom is null";
-            return UserRole.Unknown;
+            if (runner.IsServer)
+            {
+                reason = $"Photon runner is server. session={runner.SessionInfo.Name}";
+                return UserRole.Host;
+            }
+
+            if (runner.IsClient)
+            {
+                reason = $"Photon runner is client. session={runner.SessionInfo.Name}";
+                return UserRole.Client;
+            }
         }
 
-        string hostUserId = string.IsNullOrWhiteSpace(currentRoom.HostUserId)
-            ? string.Empty
-            : currentRoom.HostUserId.Trim();
-        if (string.IsNullOrWhiteSpace(hostUserId))
+        FusionRoomSessionInfo context = FusionRoomSessionContext.Current;
+        if (context != null)
         {
-            reason = "HostUserId is empty";
-            return UserRole.Unknown;
+            if (context.IsHost || context.GameMode == GameMode.Host)
+            {
+                reason = $"Fusion session context indicates host. session={context.SessionName}";
+                return UserRole.Host;
+            }
+
+            if (context.GameMode == GameMode.Client)
+            {
+                reason = $"Fusion session context indicates client. session={context.SessionName}";
+                return UserRole.Client;
+            }
         }
 
-        if (AuthManager.Instance == null || AuthManager.Instance.CurrentUser == null)
-        {
-            reason = "Current user is not resolved";
-            return UserRole.Unknown;
-        }
-
-        string currentUserId = string.IsNullOrWhiteSpace(AuthManager.Instance.CurrentUser.userId)
-            ? string.Empty
-            : AuthManager.Instance.CurrentUser.userId.Trim();
-        if (string.IsNullOrWhiteSpace(currentUserId))
-        {
-            reason = "Current user id is empty";
-            return UserRole.Unknown;
-        }
-
-        bool isHost = string.Equals(hostUserId, currentUserId, StringComparison.Ordinal);
-        reason = isHost
-            ? $"host={hostUserId}, me={currentUserId}"
-            : $"current user does not match host (host={hostUserId}, me={currentUserId})";
-        return isHost ? UserRole.Host : UserRole.Client;
+        reason = "Photon runner/session context unavailable";
+        return UserRole.Unknown;
     }
 }

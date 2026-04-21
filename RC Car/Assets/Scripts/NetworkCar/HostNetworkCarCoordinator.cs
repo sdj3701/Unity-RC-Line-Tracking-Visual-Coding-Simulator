@@ -3,10 +3,13 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Auth;
+using Fusion;
+using Fusion.Sockets;
+using RC.Network.Fusion;
 using UnityEngine;
 using UnityEngine.UI;
 
-public class HostNetworkCarCoordinator : MonoBehaviour
+public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
 {
     [Header("References")]
     [SerializeField] private ChatRoomManager _chatRoomManager;
@@ -49,6 +52,10 @@ public class HostNetworkCarCoordinator : MonoBehaviour
     private HostBlockCodeResolver _codeResolver;
     private bool _isBound;
     private float _nextPendingResolveTryAt;
+    private NetworkRunner _boundRunner;
+    private bool _runnerCallbacksBound;
+    private readonly Dictionary<PlayerRef, string> _userIdByPlayer =
+        new Dictionary<PlayerRef, string>();
 
     private static readonly string[] UserIdCandidateKeys =
     {
@@ -72,7 +79,9 @@ public class HostNetworkCarCoordinator : MonoBehaviour
         EnsureServices();
         BindButtons();
         BindManagerEvents();
+        BindRunnerCallbacks();
         TryFetchJoinRequestsNow();
+        SyncFusionParticipants();
         UpdateSummary();
     }
 
@@ -80,6 +89,7 @@ public class HostNetworkCarCoordinator : MonoBehaviour
     {
         UnbindButtons();
         UnbindManagerEvents();
+        UnbindRunnerCallbacks();
 
         if (_executionScheduler != null)
             _executionScheduler.StopExecution();
@@ -90,6 +100,8 @@ public class HostNetworkCarCoordinator : MonoBehaviour
         if (_executionScheduler != null && _executionScheduler.IsRunning)
             UpdateSummary();
 
+        BindRunnerCallbacks();
+        SyncFusionParticipants();
         TryResolvePendingShareOwners();
     }
 
@@ -181,8 +193,6 @@ public class HostNetworkCarCoordinator : MonoBehaviour
             return;
         }
 
-        _chatRoomManager.OnJoinRequestsFetchSucceeded += HandleJoinRequestsFetchSucceeded;
-        _chatRoomManager.OnJoinRequestDecisionSucceeded += HandleJoinRequestDecisionSucceeded;
         _chatRoomManager.OnBlockShareListFetchSucceeded += HandleBlockShareListFetchSucceeded;
         _chatRoomManager.OnBlockShareDetailFetchSucceeded += HandleBlockShareDetailFetchSucceeded;
         _chatRoomManager.OnBlockShareSaveSucceeded += HandleBlockShareSaveSucceeded;
@@ -196,8 +206,6 @@ public class HostNetworkCarCoordinator : MonoBehaviour
         if (!_isBound || _chatRoomManager == null)
             return;
 
-        _chatRoomManager.OnJoinRequestsFetchSucceeded -= HandleJoinRequestsFetchSucceeded;
-        _chatRoomManager.OnJoinRequestDecisionSucceeded -= HandleJoinRequestDecisionSucceeded;
         _chatRoomManager.OnBlockShareListFetchSucceeded -= HandleBlockShareListFetchSucceeded;
         _chatRoomManager.OnBlockShareDetailFetchSucceeded -= HandleBlockShareDetailFetchSucceeded;
         _chatRoomManager.OnBlockShareSaveSucceeded -= HandleBlockShareSaveSucceeded;
@@ -211,6 +219,9 @@ public class HostNetworkCarCoordinator : MonoBehaviour
         if (!_fetchJoinRequestsOnEnable || _chatRoomManager == null)
             return;
 
+        if (FusionConnectionManager.Instance != null && FusionConnectionManager.Instance.IsInGameSession)
+            return;
+
         if (_chatRoomManager.IsBusy)
             return;
 
@@ -219,6 +230,87 @@ public class HostNetworkCarCoordinator : MonoBehaviour
             return;
 
         _chatRoomManager.FetchJoinRequests(roomId, ResolveTokenOverride());
+    }
+
+    private void BindRunnerCallbacks()
+    {
+        NetworkRunner runner = FusionConnectionManager.Instance != null
+            ? FusionConnectionManager.Instance.Runner
+            : null;
+
+        if (runner == null || runner.IsShutdown)
+        {
+            UnbindRunnerCallbacks();
+            return;
+        }
+
+        if (_runnerCallbacksBound && ReferenceEquals(_boundRunner, runner))
+            return;
+
+        UnbindRunnerCallbacks();
+        runner.RemoveCallbacks(this);
+        runner.AddCallbacks(this);
+        _boundRunner = runner;
+        _runnerCallbacksBound = true;
+
+        if (_debugLog)
+            Log($"Bound Fusion runner callbacks. session={runner.SessionInfo.Name}, isServer={runner.IsServer}, isClient={runner.IsClient}");
+    }
+
+    private void UnbindRunnerCallbacks()
+    {
+        if (!_runnerCallbacksBound || _boundRunner == null)
+            return;
+
+        _boundRunner.RemoveCallbacks(this);
+        _boundRunner = null;
+        _runnerCallbacksBound = false;
+    }
+
+    private void SyncFusionParticipants()
+    {
+        if (_boundRunner == null || !_boundRunner.IsRunning || _boundRunner.IsShutdown || !_boundRunner.IsServer)
+            return;
+
+        foreach (PlayerRef player in _boundRunner.ActivePlayers)
+            EnsureParticipantForPlayer(_boundRunner, player, "active-player-sync");
+    }
+
+    private void EnsureParticipantForPlayer(NetworkRunner runner, PlayerRef player, string source)
+    {
+        if (runner == null || !runner.IsServer)
+            return;
+
+        string userId = ResolveFusionUserId(runner, player);
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            _statusReporter?.SetWarning($"Photon userId unresolved. player={player}, source={source}");
+            return;
+        }
+
+        _userIdByPlayer[player] = userId;
+        EnsureParticipantSlotAndCar(userId, userName: userId, source: source, ownerPlayer: player);
+        UpdateSummary();
+    }
+
+    private string ResolveFusionUserId(NetworkRunner runner, PlayerRef player)
+    {
+        if (runner == null)
+            return string.Empty;
+
+        string userId = runner.GetPlayerUserId(player);
+        if (!string.IsNullOrWhiteSpace(userId))
+            return userId.Trim();
+
+        if (player == runner.LocalPlayer &&
+            AuthManager.Instance != null &&
+            AuthManager.Instance.CurrentUser != null &&
+            !string.IsNullOrWhiteSpace(AuthManager.Instance.CurrentUser.userId))
+        {
+            return AuthManager.Instance.CurrentUser.userId.Trim();
+        }
+
+        return string.Empty;
     }
 
     private void HandleJoinRequestsFetchSucceeded(ChatRoomJoinRequestInfo[] requests)
@@ -252,7 +344,7 @@ public class HostNetworkCarCoordinator : MonoBehaviour
             return;
         }
 
-        EnsureParticipantSlotAndCar(userId, userName: userId, source: "approve");
+        EnsureParticipantSlotAndCar(userId, userName: userId, source: "approve", ownerPlayer: default);
         UpdateSummary();
     }
 
@@ -613,7 +705,7 @@ public class HostNetworkCarCoordinator : MonoBehaviour
         _statusReporter?.SetWarning($"Save canceled. shareId={shareId}");
     }
 
-    private void EnsureParticipantSlotAndCar(string userIdRaw, string userName, string source)
+    private void EnsureParticipantSlotAndCar(string userIdRaw, string userName, string source, PlayerRef ownerPlayer)
     {
         string userId = string.IsNullOrWhiteSpace(userIdRaw) ? string.Empty : userIdRaw.Trim();
         if (string.IsNullOrWhiteSpace(userId))
@@ -628,7 +720,12 @@ public class HostNetworkCarCoordinator : MonoBehaviour
 
         HostCarBinding binding = _bindingStore.UpsertParticipant(slot);
         Color color = _colorAllocator.Resolve(slot.SlotIndex);
-        HostCarRuntimeRefs refs = _carSpawner.EnsureCarForSlot(slot.SlotIndex, userId, binding != null ? binding.RuntimeRefs : null, color);
+        HostCarRuntimeRefs refs = _carSpawner.EnsureCarForSlot(
+            slot.SlotIndex,
+            userId,
+            ownerPlayer,
+            binding != null ? binding.RuntimeRefs : null,
+            color);
         _bindingStore.UpsertRuntimeRefs(userId, refs, color);
 
         if (created)
@@ -759,6 +856,10 @@ public class HostNetworkCarCoordinator : MonoBehaviour
 
     private string ResolveTargetRoomId()
     {
+        FusionRoomSessionInfo fusionContext = FusionRoomSessionContext.Current;
+        if (fusionContext != null && !string.IsNullOrWhiteSpace(fusionContext.SessionName))
+            return fusionContext.SessionName.Trim();
+
         RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
         if (currentRoom != null && !string.IsNullOrWhiteSpace(currentRoom.RoomId))
             return currentRoom.RoomId.Trim();
@@ -768,6 +869,13 @@ public class HostNetworkCarCoordinator : MonoBehaviour
 
     private bool IsHost()
     {
+        if (_boundRunner != null && _boundRunner.IsRunning && !_boundRunner.IsShutdown)
+            return _boundRunner.IsServer;
+
+        FusionRoomSessionInfo context = FusionRoomSessionContext.Current;
+        if (context != null)
+            return context.IsHost || context.GameMode == GameMode.Host;
+
         RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
         if (currentRoom == null || string.IsNullOrWhiteSpace(currentRoom.HostUserId))
             return false;
@@ -781,6 +889,102 @@ public class HostNetworkCarCoordinator : MonoBehaviour
             : AuthManager.Instance.CurrentUser.userId.Trim();
 
         return string.Equals(hostUserId, currentUserId, StringComparison.Ordinal);
+    }
+
+    public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
+    {
+        EnsureParticipantForPlayer(runner, player, "player-joined");
+    }
+
+    public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
+    {
+        if (_userIdByPlayer.TryGetValue(player, out string userId))
+        {
+            _statusReporter?.SetInfo($"Photon player left. user={userId}, player={player}");
+            _userIdByPlayer.Remove(player);
+        }
+
+        UpdateSummary();
+    }
+
+    public void OnConnectedToServer(NetworkRunner runner)
+    {
+        BindRunnerCallbacks();
+        SyncFusionParticipants();
+    }
+
+    public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason)
+    {
+        _statusReporter?.SetWarning($"Photon disconnected. reason={reason}");
+    }
+
+    public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason)
+    {
+        if (_boundRunner == runner)
+        {
+            _boundRunner = null;
+            _runnerCallbacksBound = false;
+        }
+
+        _statusReporter?.SetWarning($"Photon runner shutdown. reason={shutdownReason}");
+    }
+
+    public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token)
+    {
+    }
+
+    public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason)
+    {
+    }
+
+    public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList)
+    {
+    }
+
+    public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data)
+    {
+    }
+
+    public void OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken)
+    {
+    }
+
+    public void OnSceneLoadDone(NetworkRunner runner)
+    {
+        BindRunnerCallbacks();
+        SyncFusionParticipants();
+    }
+
+    public void OnSceneLoadStart(NetworkRunner runner)
+    {
+    }
+
+    public void OnInput(NetworkRunner runner, NetworkInput input)
+    {
+    }
+
+    public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input)
+    {
+    }
+
+    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ArraySegment<byte> data)
+    {
+    }
+
+    public void OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress)
+    {
+    }
+
+    public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message)
+    {
+    }
+
+    public void OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player)
+    {
+    }
+
+    public void OnObjectExitAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player)
+    {
     }
 
     private void UpdateSummary()

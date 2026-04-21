@@ -1,4 +1,5 @@
 using System;
+using RC.Network.Fusion;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -13,9 +14,12 @@ public sealed class HostJoinRequestItemUI : MonoBehaviour
     [SerializeField] private Button _acceptButton;
     [SerializeField] private Button _rejectButton;
 
-    private ChatRoomJoinRequestInfo _request;
-    private Action<ChatRoomJoinRequestInfo> _onAccept;
-    private Action<ChatRoomJoinRequestInfo> _onReject;
+    private ChatRoomJoinRequestInfo _legacyRequest;
+    private FusionPendingJoinRequestInfo _photonRequest;
+    private Action<ChatRoomJoinRequestInfo> _onLegacyAccept;
+    private Action<ChatRoomJoinRequestInfo> _onLegacyReject;
+    private Action<string> _onPhotonAccept;
+    private Action<string> _onPhotonReject;
 
     private void Awake()
     {
@@ -35,9 +39,32 @@ public sealed class HostJoinRequestItemUI : MonoBehaviour
         ResolveReferencesIfMissing();
         UnbindButtons();
 
-        _request = request;
-        _onAccept = onAccept;
-        _onReject = onReject;
+        _legacyRequest = request;
+        _photonRequest = null;
+        _onLegacyAccept = onAccept;
+        _onLegacyReject = onReject;
+        _onPhotonAccept = null;
+        _onPhotonReject = null;
+
+        UpdateUserIdText();
+        BindButtons();
+        SetInteractable(true);
+    }
+
+    public void ConfigurePhoton(
+        FusionPendingJoinRequestInfo request,
+        Action<string> onAccept,
+        Action<string> onReject)
+    {
+        ResolveReferencesIfMissing();
+        UnbindButtons();
+
+        _legacyRequest = null;
+        _photonRequest = request;
+        _onLegacyAccept = null;
+        _onLegacyReject = null;
+        _onPhotonAccept = onAccept;
+        _onPhotonReject = onReject;
 
         UpdateUserIdText();
         BindButtons();
@@ -46,7 +73,10 @@ public sealed class HostJoinRequestItemUI : MonoBehaviour
 
     public void SetInteractable(bool interactable)
     {
-        bool hasRequestId = _request != null && !string.IsNullOrWhiteSpace(_request.RequestId);
+        bool hasRequestId =
+            (_legacyRequest != null && !string.IsNullOrWhiteSpace(_legacyRequest.RequestId)) ||
+            (_photonRequest != null && !string.IsNullOrWhiteSpace(_photonRequest.RequestId));
+
         bool enabled = interactable && hasRequestId;
 
         if (_acceptButton != null)
@@ -101,26 +131,52 @@ public sealed class HostJoinRequestItemUI : MonoBehaviour
         if (_userIdText == null)
             return;
 
-        string userId = _request != null && !string.IsNullOrWhiteSpace(_request.RequestUserId)
-            ? _request.RequestUserId.Trim()
-            : _unknownUserLabel;
+        string label = _unknownUserLabel;
 
-        _userIdText.text = userId;
+        if (_photonRequest != null)
+        {
+            string userId = string.IsNullOrWhiteSpace(_photonRequest.UserId)
+                ? _unknownUserLabel
+                : _photonRequest.UserId.Trim();
+            string displayName = string.IsNullOrWhiteSpace(_photonRequest.DisplayName)
+                ? string.Empty
+                : _photonRequest.DisplayName.Trim();
+
+            label = string.IsNullOrWhiteSpace(displayName) || string.Equals(displayName, userId, StringComparison.Ordinal)
+                ? userId
+                : $"{userId} ({displayName})";
+        }
+        else if (_legacyRequest != null)
+        {
+            label = !string.IsNullOrWhiteSpace(_legacyRequest.RequestUserId)
+                ? _legacyRequest.RequestUserId.Trim()
+                : _unknownUserLabel;
+        }
+
+        _userIdText.text = label;
     }
 
     private void HandleAcceptClicked()
     {
-        if (_request == null)
+        if (_photonRequest != null)
+        {
+            _onPhotonAccept?.Invoke(_photonRequest.RequestId);
             return;
+        }
 
-        _onAccept?.Invoke(_request);
+        if (_legacyRequest != null)
+            _onLegacyAccept?.Invoke(_legacyRequest);
     }
 
     private void HandleRejectClicked()
     {
-        if (_request == null)
+        if (_photonRequest != null)
+        {
+            _onPhotonReject?.Invoke(_photonRequest.RequestId);
             return;
+        }
 
-        _onReject?.Invoke(_request);
+        if (_legacyRequest != null)
+            _onLegacyReject?.Invoke(_legacyRequest);
     }
 }

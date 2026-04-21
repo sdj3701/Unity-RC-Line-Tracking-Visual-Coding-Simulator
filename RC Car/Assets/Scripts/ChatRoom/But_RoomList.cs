@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
+using RC.Network.Fusion;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -19,6 +21,7 @@ public class But_RoomList : MonoBehaviour
     [SerializeField] private bool _closePanelOnJoinRequestSubmit = true;
     [SerializeField] private bool _moveToSceneOnConfirm = true;
     [SerializeField] private string _targetSceneName = "03_NetworkCarTest";
+    [SerializeField] private bool _usePhotonRooms = true;
     [SerializeField] private bool _waitForJoinApproval = true;
     [SerializeField] private float _joinApprovalPollIntervalSeconds = 2f;
     [SerializeField] private bool _stopPollingWhenRejected = true;
@@ -30,6 +33,7 @@ public class But_RoomList : MonoBehaviour
     private readonly List<Toggle> _spawnedToggles = new List<Toggle>();
     private readonly Dictionary<string, ChatRoomSummaryInfo> _roomMap = new Dictionary<string, ChatRoomSummaryInfo>();
     private ChatRoomManager _boundManager;
+    private FusionLobbyService _boundPhotonLobbyService;
     private string _pendingJoinRequestId = string.Empty;
     private string _pendingJoinRoomId = string.Empty;
     private bool _isWaitingJoinApproval;
@@ -60,7 +64,10 @@ public class But_RoomList : MonoBehaviour
             _but_Confirm.onClick.AddListener(OnClickConfirm);
         }
 
-        TryBindManagerEvents();
+        if (_usePhotonRooms)
+            BindPhotonLobbyService();
+        else
+            TryBindManagerEvents();
         TryResolveContentRoot();
     }
 
@@ -74,17 +81,30 @@ public class But_RoomList : MonoBehaviour
 
         if (_but_Confirm != null)
             _but_Confirm.onClick.RemoveListener(OnClickConfirm);
-        UnbindManagerEvents();
+
+        if (_usePhotonRooms)
+            UnbindPhotonLobbyService();
+        else
+            UnbindManagerEvents();
         StopJoinApprovalPolling();
     }
 
     private void Update()
     {
+        if (_usePhotonRooms)
+            return;
+
         TryPollJoinApprovalStatus();
     }
 
     public void OnClickFetchRoomList()
     {
+        if (_usePhotonRooms)
+        {
+            _ = FetchPhotonRoomListAsync();
+            return;
+        }
+
         TryBindManagerEvents();
 
         if (_boundManager == null)
@@ -109,6 +129,12 @@ public class But_RoomList : MonoBehaviour
         {
             if (_debugLog)
                 Debug.LogWarning("[But_RoomList] No room is selected.");
+            return;
+        }
+
+        if (_usePhotonRooms)
+        {
+            _ = JoinSelectedPhotonRoomAsync();
             return;
         }
 
@@ -150,6 +176,94 @@ public class But_RoomList : MonoBehaviour
             SceneManager.LoadScene(_targetSceneName);
     }
 
+    private async Task FetchPhotonRoomListAsync()
+    {
+        TryResolveContentRoot();
+
+        FusionConnectionManager connection = FusionConnectionManager.GetOrCreate();
+        if (!connection.IsInSessionLobby)
+        {
+            FusionDebugLog.Info(FusionDebugFlow.Lobby, "Room list requested before Photon lobby was ready. Connecting lobby first.");
+            bool connected = await connection.ConnectToPhotonLobbyAsync();
+            if (!connected)
+            {
+                FusionDebugLog.Error(FusionDebugFlow.Lobby, $"Photon lobby connection failed. {connection.LastErrorMessage}");
+                return;
+            }
+        }
+
+        FusionLobbyService lobbyService = FusionLobbyService.GetOrCreate();
+        lobbyService.RefreshFromConnectionManager();
+        HandlePhotonRoomListSucceeded(lobbyService.Rooms);
+    }
+
+    private async Task JoinSelectedPhotonRoomAsync()
+    {
+        string sessionName = SelectedRoomId != null ? SelectedRoomId.Trim() : string.Empty;
+        if (string.IsNullOrWhiteSpace(sessionName))
+        {
+            FusionDebugLog.Warning(FusionDebugFlow.Room, "Photon room join skipped because no room is selected.");
+            return;
+        }
+
+        FusionLobbyService lobbyService = FusionLobbyService.GetOrCreate();
+        lobbyService.RefreshFromConnectionManager();
+        lobbyService.TryGetRoom(sessionName, out FusionRoomInfo roomInfo);
+
+        if (_roomListPanel != null)
+            _roomListPanel.SetActive(false);
+
+        FusionDebugLog.Info(FusionDebugFlow.Room, $"Photon room join requested from room list. session={sessionName}");
+        FusionRoomService roomService = FusionRoomService.GetOrCreate();
+        bool success = await roomService.JoinRoomAsync(
+            sessionName,
+            roomInfo,
+            _targetSceneName,
+            _moveToSceneOnConfirm);
+
+        if (!success)
+            FusionDebugLog.Error(FusionDebugFlow.Room, $"Photon room join failed. {roomService.LastErrorMessage}");
+    }
+
+    private void HandlePhotonRoomListSucceeded(IReadOnlyList<FusionRoomInfo> rooms)
+    {
+        if (rooms == null || rooms.Count == 0)
+        {
+            HandleRoomListSucceeded(Array.Empty<ChatRoomSummaryInfo>());
+            FusionDebugLog.Info(FusionDebugFlow.Lobby, "Photon room list is empty.");
+            return;
+        }
+
+        var converted = new ChatRoomSummaryInfo[rooms.Count];
+        for (int i = 0; i < rooms.Count; i++)
+        {
+            FusionRoomInfo room = rooms[i];
+            converted[i] = new ChatRoomSummaryInfo
+            {
+                RoomId = room.SessionName,
+                Title = BuildPhotonRoomLabel(room),
+                OwnerUserId = room.HostUserId,
+                CreatedAtUtc = room.CreatedAtUtc
+            };
+        }
+
+        HandleRoomListSucceeded(converted);
+        FusionDebugLog.Info(FusionDebugFlow.Lobby, $"Photon room list rendered. count={converted.Length}");
+    }
+
+    private static string BuildPhotonRoomLabel(FusionRoomInfo room)
+    {
+        if (room == null)
+            return "Photon Room";
+
+        string title = string.IsNullOrWhiteSpace(room.DisplayName)
+            ? room.SessionName
+            : room.DisplayName;
+
+        string state = room.IsOpen ? "Open" : "Closed";
+        return $"{title} ({room.PlayerCount}/{room.MaxPlayers}) {state}";
+    }
+
     private void TryBindManagerEvents()
     {
         ChatRoomManager manager = ChatRoomManager.Instance;
@@ -168,6 +282,37 @@ public class But_RoomList : MonoBehaviour
         _boundManager.OnMyJoinRequestStatusFetchSucceeded += HandleMyJoinRequestStatusFetchSucceeded;
         _boundManager.OnMyJoinRequestStatusFetchFailed += HandleMyJoinRequestStatusFetchFailed;
         _boundManager.OnMyJoinRequestStatusFetchCanceled += HandleMyJoinRequestStatusFetchCanceled;
+    }
+
+    private void BindPhotonLobbyService()
+    {
+        FusionLobbyService lobbyService = FusionLobbyService.GetOrCreate();
+        if (_boundPhotonLobbyService == lobbyService)
+            return;
+
+        UnbindPhotonLobbyService();
+        _boundPhotonLobbyService = lobbyService;
+        _boundPhotonLobbyService.OnRoomsUpdated += HandlePhotonRoomsUpdated;
+    }
+
+    private void UnbindPhotonLobbyService()
+    {
+        if (_boundPhotonLobbyService == null)
+            return;
+
+        _boundPhotonLobbyService.OnRoomsUpdated -= HandlePhotonRoomsUpdated;
+        _boundPhotonLobbyService = null;
+    }
+
+    private void HandlePhotonRoomsUpdated(IReadOnlyList<FusionRoomInfo> rooms)
+    {
+        if (!_usePhotonRooms)
+            return;
+
+        if (_roomListPanel != null && !_roomListPanel.activeInHierarchy)
+            return;
+
+        HandlePhotonRoomListSucceeded(rooms);
     }
 
     private void UnbindManagerEvents()

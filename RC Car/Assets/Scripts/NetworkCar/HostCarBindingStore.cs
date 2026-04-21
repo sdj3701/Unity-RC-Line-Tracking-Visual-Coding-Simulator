@@ -1,3 +1,4 @@
+using Fusion;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -213,9 +214,12 @@ public sealed class HostCarBindingStore
 public sealed class HostCarRuntimeRefs
 {
     public GameObject CarObject;
+    public NetworkObject NetworkObject;
+    public NetworkRCCar NetworkCar;
     public VirtualCarPhysics Physics;
     public BlockCodeExecutor Executor;
     public VirtualArduinoMicro Arduino;
+    public PlayerRef OwnerPlayer;
 }
 
 public sealed class HostCarBinding
