@@ -21,6 +21,7 @@ namespace RC.Network.Fusion
     public sealed class FusionPendingJoinRequestInfo
     {
         public string RequestId { get; set; }
+        public string RequestKey { get; set; }
         public string UserId { get; set; }
         public string DisplayName { get; set; }
         public string RemoteAddress { get; set; }
@@ -29,7 +30,7 @@ namespace RC.Network.Fusion
 
         public override string ToString()
         {
-            return $"request={RequestId}, user={UserId}, name={DisplayName}, remote={RemoteAddress}, tokenBytes={TokenBytes}";
+            return $"request={RequestId}, key={RequestKey}, user={UserId}, name={DisplayName}, remote={RemoteAddress}, tokenBytes={TokenBytes}";
         }
     }
 
@@ -70,7 +71,22 @@ namespace RC.Network.Fusion
 
             try
             {
-                string json = Encoding.UTF8.GetString(token);
+                int length = token.Length;
+                while (length > 0 && token[length - 1] == 0)
+                    length--;
+
+                if (length <= 0)
+                    return null;
+
+                string json = Encoding.UTF8.GetString(token, 0, length);
+                int nullIndex = json.IndexOf('\0');
+                if (nullIndex >= 0)
+                    json = json.Substring(0, nullIndex);
+
+                json = json.Trim();
+                if (string.IsNullOrWhiteSpace(json))
+                    return null;
+
                 return JsonUtility.FromJson<FusionConnectionTokenPayload>(json);
             }
             catch (Exception)
@@ -122,6 +138,7 @@ namespace RC.Network.Fusion
         [Header("Join Approval")]
         [SerializeField] private FusionJoinApprovalMode _joinApprovalMode = FusionJoinApprovalMode.Manual;
         [SerializeField] private float _manualJoinRequestTimeoutSeconds = 30f;
+        [SerializeField] private float _manualApprovalGraceSeconds = 15f;
 
         [Header("Debug")]
         [SerializeField] private bool _debugLog = true;
@@ -129,6 +146,9 @@ namespace RC.Network.Fusion
         private readonly List<SessionInfo> _sessionInfos = new List<SessionInfo>();
         private readonly List<FusionPendingJoinRequestInfo> _pendingJoinRequestInfos = new List<FusionPendingJoinRequestInfo>();
         private readonly Dictionary<string, PendingJoinRequest> _pendingJoinRequests = new Dictionary<string, PendingJoinRequest>();
+        private readonly Dictionary<string, string> _pendingJoinRequestKeyById = new Dictionary<string, string>();
+        private readonly Dictionary<string, List<string>> _pendingJoinRequestIdsByKey = new Dictionary<string, List<string>>();
+        private readonly Dictionary<string, float> _manualApprovedRequestKeyUntil = new Dictionary<string, float>();
         private NetworkRunner _runner;
         private bool _ownsRunnerObject;
         private bool _isConnectingToLobby;
@@ -177,6 +197,7 @@ namespace RC.Network.Fusion
         private void Update()
         {
             RejectExpiredJoinRequests();
+            CleanupExpiredManualApprovals();
         }
 
         public static FusionConnectionManager GetOrCreate()
@@ -354,6 +375,7 @@ namespace RC.Network.Fusion
             _isInSessionLobby = false;
             _sessionInfos.Clear();
             ClearPendingJoinRequests();
+            ClearManualApprovals();
             FusionRoomSessionContext.Clear();
             OnSessionListChanged?.Invoke(_sessionInfos);
         }
@@ -503,9 +525,11 @@ namespace RC.Network.Fusion
             }
 
             string requestId = Guid.NewGuid().ToString("N");
+            string requestKey = BuildJoinRequestKey(request, payload, token);
             var info = new FusionPendingJoinRequestInfo
             {
                 RequestId = requestId,
+                RequestKey = requestKey,
                 UserId = payload != null ? Normalize(payload.userId) : string.Empty,
                 DisplayName = payload != null ? Normalize(payload.displayName) : string.Empty,
                 RemoteAddress = request.RemoteAddress.ToString(),
@@ -513,10 +537,27 @@ namespace RC.Network.Fusion
                 TokenBytes = token != null ? token.Length : 0
             };
 
+            if (IsManuallyApprovedRequestKey(requestKey))
+            {
+                request.Accept();
+                FusionDebugLog.Info(
+                    FusionDebugFlow.Room,
+                    $"Join request auto-accepted after manual approval. {info}");
+                return;
+            }
+
             request.Waiting();
-            _pendingJoinRequests[requestId] = new PendingJoinRequest(request, info, Time.unscaledTime + Mathf.Max(1f, _manualJoinRequestTimeoutSeconds));
-            _pendingJoinRequestInfos.Add(info);
-            FusionDebugLog.Warning(FusionDebugFlow.Room, $"Join request waiting for host decision. {info}");
+            AddPendingJoinRequest(
+                requestId,
+                requestKey,
+                new PendingJoinRequest(request, info, Time.unscaledTime + Mathf.Max(1f, _manualJoinRequestTimeoutSeconds)));
+
+            int duplicateCount = CountPendingRequestsForKey(requestKey);
+            FusionDebugLog.Warning(
+                FusionDebugFlow.Room,
+                duplicateCount > 1
+                    ? $"Join request refreshed for existing client. duplicates={duplicateCount}, {info}"
+                    : $"Join request waiting for host decision. {info}");
             OnPendingJoinRequestsChanged?.Invoke(_pendingJoinRequestInfos);
         }
 
@@ -630,14 +671,53 @@ namespace RC.Network.Fusion
             if (!_pendingJoinRequests.TryGetValue(normalizedRequestId, out PendingJoinRequest pending))
                 return false;
 
-            if (approve)
-                pending.Request.Accept();
-            else
-                pending.Request.Refuse();
+            string requestKey = ResolveRequestKey(normalizedRequestId, pending);
+            List<string> targetRequestIds = CollectRequestIdsForDecision(normalizedRequestId, requestKey);
+            if (targetRequestIds.Count == 0)
+                targetRequestIds.Add(normalizedRequestId);
 
-            RemovePendingJoinRequest(normalizedRequestId);
-            FusionDebugLog.Info(FusionDebugFlow.Room, $"Join request {(approve ? "accepted" : "rejected")}. {pending.Info}");
-            return true;
+            string acceptedRequestId = approve
+                ? ResolveLatestRequestId(targetRequestIds, normalizedRequestId)
+                : string.Empty;
+
+            bool handled = false;
+            int refusedDuplicates = 0;
+            PendingJoinRequest acceptedPending = pending;
+
+            for (int i = 0; i < targetRequestIds.Count; i++)
+            {
+                string targetId = targetRequestIds[i];
+                if (!_pendingJoinRequests.TryGetValue(targetId, out PendingJoinRequest targetPending))
+                    continue;
+
+                if (approve && string.Equals(targetId, acceptedRequestId, StringComparison.Ordinal))
+                {
+                    targetPending.Request.Accept();
+                    acceptedPending = targetPending;
+                    handled = true;
+                }
+                else
+                {
+                    targetPending.Request.Refuse();
+                    refusedDuplicates++;
+                    handled = true;
+                }
+            }
+
+            RemovePendingJoinRequests(targetRequestIds);
+
+            if (handled)
+            {
+                if (approve)
+                    RememberManualApproval(requestKey);
+
+                FusionPendingJoinRequestInfo logInfo = approve ? acceptedPending.Info : pending.Info;
+                FusionDebugLog.Info(
+                    FusionDebugFlow.Room,
+                    $"Join request {(approve ? "accepted" : "rejected")}. duplicatesClosed={Mathf.Max(0, refusedDuplicates)}, {logInfo}");
+            }
+
+            return handled;
         }
 
         private void RejectExpiredJoinRequests()
@@ -667,28 +747,234 @@ namespace RC.Network.Fusion
                     continue;
 
                 pending.Request.Refuse();
-                RemovePendingJoinRequest(requestId);
                 FusionDebugLog.Warning(FusionDebugFlow.Room, $"Join request timed out and was rejected. {pending.Info}");
             }
+
+            RemovePendingJoinRequests(expiredIds);
         }
 
         private void RemovePendingJoinRequest(string requestId)
         {
-            _pendingJoinRequests.Remove(requestId);
+            if (string.IsNullOrWhiteSpace(requestId))
+                return;
+
+            RemovePendingJoinRequests(new List<string> { requestId.Trim() });
+        }
+
+        private void RemovePendingJoinRequests(IList<string> requestIds)
+        {
+            if (requestIds == null || requestIds.Count == 0)
+                return;
+
+            for (int i = 0; i < requestIds.Count; i++)
+            {
+                string requestId = requestIds[i];
+                if (string.IsNullOrWhiteSpace(requestId))
+                    continue;
+
+                string normalizedRequestId = requestId.Trim();
+                _pendingJoinRequests.Remove(normalizedRequestId);
+                RemovePendingRequestKey(normalizedRequestId);
+                RemovePendingRequestInfo(normalizedRequestId);
+            }
+
+            OnPendingJoinRequestsChanged?.Invoke(_pendingJoinRequestInfos);
+        }
+
+        private void RemovePendingRequestInfo(string requestId)
+        {
             for (int i = _pendingJoinRequestInfos.Count - 1; i >= 0; i--)
             {
                 if (string.Equals(_pendingJoinRequestInfos[i].RequestId, requestId, StringComparison.Ordinal))
                     _pendingJoinRequestInfos.RemoveAt(i);
             }
-
-            OnPendingJoinRequestsChanged?.Invoke(_pendingJoinRequestInfos);
         }
 
         private void ClearPendingJoinRequests()
         {
             _pendingJoinRequests.Clear();
+            _pendingJoinRequestKeyById.Clear();
+            _pendingJoinRequestIdsByKey.Clear();
             _pendingJoinRequestInfos.Clear();
             OnPendingJoinRequestsChanged?.Invoke(_pendingJoinRequestInfos);
+        }
+
+        private void ClearManualApprovals()
+        {
+            _manualApprovedRequestKeyUntil.Clear();
+        }
+
+        private void RememberManualApproval(string requestKey)
+        {
+            string key = Normalize(requestKey);
+            if (string.IsNullOrWhiteSpace(key))
+                return;
+
+            float graceSeconds = Mathf.Max(1f, _manualApprovalGraceSeconds);
+            _manualApprovedRequestKeyUntil[key] = Time.unscaledTime + graceSeconds;
+        }
+
+        private bool IsManuallyApprovedRequestKey(string requestKey)
+        {
+            string key = Normalize(requestKey);
+            if (string.IsNullOrWhiteSpace(key))
+                return false;
+
+            if (!_manualApprovedRequestKeyUntil.TryGetValue(key, out float approvedUntil))
+                return false;
+
+            if (Time.unscaledTime <= approvedUntil)
+                return true;
+
+            _manualApprovedRequestKeyUntil.Remove(key);
+            return false;
+        }
+
+        private void CleanupExpiredManualApprovals()
+        {
+            if (_manualApprovedRequestKeyUntil.Count == 0)
+                return;
+
+            List<string> expiredKeys = null;
+            foreach (KeyValuePair<string, float> pair in _manualApprovedRequestKeyUntil)
+            {
+                if (Time.unscaledTime <= pair.Value)
+                    continue;
+
+                if (expiredKeys == null)
+                    expiredKeys = new List<string>();
+
+                expiredKeys.Add(pair.Key);
+            }
+
+            if (expiredKeys == null)
+                return;
+
+            for (int i = 0; i < expiredKeys.Count; i++)
+                _manualApprovedRequestKeyUntil.Remove(expiredKeys[i]);
+        }
+
+        private void AddPendingJoinRequest(string requestId, string requestKey, PendingJoinRequest pending)
+        {
+            _pendingJoinRequests[requestId] = pending;
+
+            string key = Normalize(requestKey);
+            if (string.IsNullOrWhiteSpace(key))
+                key = requestId;
+
+            _pendingJoinRequestKeyById[requestId] = key;
+
+            if (!_pendingJoinRequestIdsByKey.TryGetValue(key, out List<string> requestIds) || requestIds == null)
+            {
+                requestIds = new List<string>();
+                _pendingJoinRequestIdsByKey[key] = requestIds;
+            }
+
+            requestIds.Add(requestId);
+            UpsertPendingRequestInfo(pending.Info);
+        }
+
+        private void UpsertPendingRequestInfo(FusionPendingJoinRequestInfo info)
+        {
+            if (info == null)
+                return;
+
+            string requestKey = Normalize(info.RequestKey);
+            if (!string.IsNullOrWhiteSpace(requestKey))
+            {
+                for (int i = _pendingJoinRequestInfos.Count - 1; i >= 0; i--)
+                {
+                    FusionPendingJoinRequestInfo existing = _pendingJoinRequestInfos[i];
+                    if (existing != null &&
+                        string.Equals(existing.RequestKey, requestKey, StringComparison.Ordinal))
+                    {
+                        _pendingJoinRequestInfos.RemoveAt(i);
+                    }
+                }
+            }
+
+            _pendingJoinRequestInfos.Add(info);
+        }
+
+        private void RemovePendingRequestKey(string requestId)
+        {
+            if (!_pendingJoinRequestKeyById.TryGetValue(requestId, out string requestKey))
+                return;
+
+            _pendingJoinRequestKeyById.Remove(requestId);
+
+            if (!_pendingJoinRequestIdsByKey.TryGetValue(requestKey, out List<string> requestIds) || requestIds == null)
+                return;
+
+            requestIds.RemoveAll(id => string.Equals(id, requestId, StringComparison.Ordinal));
+            if (requestIds.Count == 0)
+                _pendingJoinRequestIdsByKey.Remove(requestKey);
+        }
+
+        private string ResolveRequestKey(string requestId, PendingJoinRequest pending)
+        {
+            if (!string.IsNullOrWhiteSpace(requestId) &&
+                _pendingJoinRequestKeyById.TryGetValue(requestId, out string mappedKey) &&
+                !string.IsNullOrWhiteSpace(mappedKey))
+            {
+                return mappedKey;
+            }
+
+            if (pending.Info != null && !string.IsNullOrWhiteSpace(pending.Info.RequestKey))
+                return pending.Info.RequestKey.Trim();
+
+            return requestId;
+        }
+
+        private List<string> CollectRequestIdsForDecision(string requestId, string requestKey)
+        {
+            if (!string.IsNullOrWhiteSpace(requestKey) &&
+                _pendingJoinRequestIdsByKey.TryGetValue(requestKey.Trim(), out List<string> mappedIds) &&
+                mappedIds != null &&
+                mappedIds.Count > 0)
+            {
+                return new List<string>(mappedIds);
+            }
+
+            return new List<string> { requestId };
+        }
+
+        private string ResolveLatestRequestId(List<string> requestIds, string fallbackRequestId)
+        {
+            string latestRequestId = fallbackRequestId;
+            float latestTimeout = float.MinValue;
+
+            if (requestIds == null)
+                return latestRequestId;
+
+            for (int i = 0; i < requestIds.Count; i++)
+            {
+                string requestId = requestIds[i];
+                if (string.IsNullOrWhiteSpace(requestId))
+                    continue;
+
+                if (!_pendingJoinRequests.TryGetValue(requestId, out PendingJoinRequest pending))
+                    continue;
+
+                if (pending.TimeoutAt >= latestTimeout)
+                {
+                    latestTimeout = pending.TimeoutAt;
+                    latestRequestId = requestId;
+                }
+            }
+
+            return latestRequestId;
+        }
+
+        private int CountPendingRequestsForKey(string requestKey)
+        {
+            string key = Normalize(requestKey);
+            if (string.IsNullOrWhiteSpace(key))
+                return 0;
+
+            return _pendingJoinRequestIdsByKey.TryGetValue(key, out List<string> requestIds) && requestIds != null
+                ? requestIds.Count
+                : 0;
         }
 
         private void LogJoinDecision(
@@ -703,6 +989,44 @@ namespace RC.Network.Fusion
             FusionDebugLog.Info(
                 FusionDebugFlow.Room,
                 $"Join request {action}. remote={request.RemoteAddress}, user={userId}, name={displayName}, tokenBytes={tokenBytes}");
+        }
+
+        private static string BuildJoinRequestKey(
+            NetworkRunnerCallbackArgs.ConnectRequest request,
+            FusionConnectionTokenPayload payload,
+            byte[] token)
+        {
+            string userId = payload != null ? Normalize(payload.userId) : string.Empty;
+            if (!string.IsNullOrWhiteSpace(userId))
+                return $"user:{userId}";
+
+            string tokenFingerprint = BuildTokenFingerprint(token);
+            if (!string.IsNullOrWhiteSpace(tokenFingerprint))
+                return $"token:{tokenFingerprint}";
+
+            return $"remote:{request.RemoteAddress}";
+        }
+
+        private static string BuildTokenFingerprint(byte[] token)
+        {
+            if (token == null || token.Length == 0)
+                return string.Empty;
+
+            int length = token.Length;
+            while (length > 0 && token[length - 1] == 0)
+                length--;
+
+            if (length <= 0)
+                return string.Empty;
+
+            unchecked
+            {
+                uint hash = 2166136261u;
+                for (int i = 0; i < length; i++)
+                    hash = (hash ^ token[i]) * 16777619u;
+
+                return $"{length}:{hash:X8}";
+            }
         }
 
         private static string Normalize(string value)

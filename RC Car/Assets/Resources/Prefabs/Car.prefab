@@ -571,6 +571,8 @@ GameObject:
   - component: {fileID: 7992547460853634588}
   - component: {fileID: 7992547460853634591}
   - component: {fileID: 7992547460853634590}
+  - component: {fileID: -9122266755832461152}
+  - component: {fileID: -5865372314226533455}
   m_Layer: 8
   m_Name: Car
   m_TagString: Untagged
@@ -627,6 +629,10 @@ MonoBehaviour:
   includeInactive: 1
   applyOnStart: 0
   initialColor: {r: 1, g: 1, b: 1, a: 1}
+  colorButtons: []
+  buttonColors: []
+  autoBindColorButtons: 1
+  useButtonGraphicColor: 1
 --- !u!114 &7992547460853634562
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -749,6 +755,41 @@ MonoBehaviour:
   - {fileID: 7992547459898176974}
   - {fileID: 7992547459859819495}
   blockCodeExecutor: {fileID: 0}
+--- !u!114 &-9122266755832461152
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7992547460853634585}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: -1552182283, guid: e725a070cec140c4caffb81624c8c787, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  SortKey: 3676978530
+  ObjectInterest: 1
+  Flags: 262145
+  NestedObjects: []
+  NetworkedBehaviours:
+  - {fileID: -5865372314226533455}
+  ForceRemoteRenderTimeframe: 0
+--- !u!114 &-5865372314226533455
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7992547460853634585}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6a390fbf05fb4f245a8282c3d6dcc289, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _syncPosition: 1
+  _syncRotation: 1
+  _clientLerpAlpha: 0.35
+  _debugLog: 0
 --- !u!1 &7992547461011867504
 GameObject:
   m_ObjectHideFlags: 0
