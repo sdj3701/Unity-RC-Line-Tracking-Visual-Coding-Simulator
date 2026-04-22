@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Auth;
 using MG_BlocksEngine2.Storage;
+using RC.Network.Fusion;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -11,9 +12,12 @@ using UnityEngine.UI;
 
 public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
 {
+    private const string BlueLogColor = "#33A6FF";
+
     [Header("Target")]
     [SerializeField] private HostBlockShareAutoRefreshPanel _sourcePanel;
     [SerializeField] private Button _saveButton;
+    [SerializeField] private Button _refreshVerifyButton;
     [SerializeField] private TMP_Text _statusText;
     [SerializeField] private TMP_Text _resultBoolText;
 
@@ -25,17 +29,23 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
 
     private ChatRoomManager _boundManager;
     private bool _isSaving;
+    private bool _isRefreshingVerify;
     private string _activeShareId = string.Empty;
+    private string _activeVerifyShareId = string.Empty;
     private string _activeFileNameHint = string.Empty;
     private int _activeUserLevelSeqHint;
     private TaskCompletionSource<SaveAwaitResult> _saveAwaitTcs;
+    private TaskCompletionSource<DetailAwaitResult> _detailAwaitTcs;
     private int _batchTotal;
     private int _batchCurrent;
 
     public bool HasSaveResult { get; private set; }
     public bool LastSaveResult { get; private set; }
+    public bool HasVerifyResult { get; private set; }
+    public bool LastVerifyResult { get; private set; }
 
     private const float SaveAwaitTimeoutSeconds = 20f;
+    private const float DetailAwaitTimeoutSeconds = 15f;
     private const float BusyWaitTimeoutSeconds = 10f;
 
     private sealed class SaveAwaitResult
@@ -43,6 +53,13 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         public bool Success;
         public string Message;
         public ChatRoomBlockShareSaveInfo Info;
+    }
+
+    private sealed class DetailAwaitResult
+    {
+        public bool Success;
+        public string Message;
+        public ChatRoomBlockShareInfo Info;
     }
 
     private void OnEnable()
@@ -56,6 +73,12 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
             _saveButton.onClick.AddListener(OnClickSaveToMyLevel);
         }
 
+        if (_refreshVerifyButton != null)
+        {
+            _refreshVerifyButton.onClick.RemoveListener(OnClickRefreshVerify);
+            _refreshVerifyButton.onClick.AddListener(OnClickRefreshVerify);
+        }
+
         TryBindManagerEvents();
         UpdateResultBoolText();
         UpdateButtonInteractable();
@@ -66,22 +89,36 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         if (_saveButton != null)
             _saveButton.onClick.RemoveListener(OnClickSaveToMyLevel);
 
+        if (_refreshVerifyButton != null)
+            _refreshVerifyButton.onClick.RemoveListener(OnClickRefreshVerify);
+
         UnbindManagerEvents();
         _isSaving = false;
+        _isRefreshingVerify = false;
         _activeShareId = string.Empty;
+        _activeVerifyShareId = string.Empty;
         _activeFileNameHint = string.Empty;
         _activeUserLevelSeqHint = 0;
         _saveAwaitTcs = null;
+        _detailAwaitTcs = null;
         _batchTotal = 0;
         _batchCurrent = 0;
         HasSaveResult = false;
         LastSaveResult = false;
+        HasVerifyResult = false;
+        LastVerifyResult = false;
         UpdateResultBoolText();
         UpdateButtonInteractable();
     }
 
     public void OnClickSaveToMyLevel()
     {
+        if (_isRefreshingVerify)
+        {
+            SetStatus("Refresh verify is already running.");
+            return;
+        }
+
         if (_isSaving)
         {
             SetStatus("Save is already running.");
@@ -111,6 +148,43 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         _ = SaveSelectedSharesAsync(shareIds);
     }
 
+    public void OnClickRefreshVerify()
+    {
+        if (_isSaving)
+        {
+            SetStatus("Save is already running.");
+            return;
+        }
+
+        if (_isRefreshingVerify)
+        {
+            SetStatus("Refresh verify is already running.");
+            return;
+        }
+
+        TryBindManagerEvents();
+        if (_boundManager == null)
+        {
+            SetStatus("ChatRoomManager is null.");
+            return;
+        }
+
+        if (_sourcePanel == null)
+        {
+            SetStatus("Source panel is not assigned.");
+            return;
+        }
+
+        string shareId = ResolveSelectedShareId();
+        if (string.IsNullOrWhiteSpace(shareId))
+        {
+            SetStatus("Select one block share first.");
+            return;
+        }
+
+        _ = RefreshSelectedShareVerificationAsync(shareId);
+    }
+
     private void TryBindManagerEvents()
     {
         ChatRoomManager manager = ChatRoomManager.Instance;
@@ -125,6 +199,9 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         _boundManager.OnBlockShareSaveSucceeded += HandleSaveSucceeded;
         _boundManager.OnBlockShareSaveFailed += HandleSaveFailed;
         _boundManager.OnBlockShareSaveCanceled += HandleSaveCanceled;
+        _boundManager.OnBlockShareDetailFetchSucceeded += HandleDetailFetchSucceeded;
+        _boundManager.OnBlockShareDetailFetchFailed += HandleDetailFetchFailed;
+        _boundManager.OnBlockShareDetailFetchCanceled += HandleDetailFetchCanceled;
     }
 
     private void UnbindManagerEvents()
@@ -135,6 +212,9 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         _boundManager.OnBlockShareSaveSucceeded -= HandleSaveSucceeded;
         _boundManager.OnBlockShareSaveFailed -= HandleSaveFailed;
         _boundManager.OnBlockShareSaveCanceled -= HandleSaveCanceled;
+        _boundManager.OnBlockShareDetailFetchSucceeded -= HandleDetailFetchSucceeded;
+        _boundManager.OnBlockShareDetailFetchFailed -= HandleDetailFetchFailed;
+        _boundManager.OnBlockShareDetailFetchCanceled -= HandleDetailFetchCanceled;
         _boundManager = null;
     }
 
@@ -187,9 +267,65 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         });
     }
 
+    private void HandleDetailFetchSucceeded(ChatRoomBlockShareInfo info)
+    {
+        if (!_isRefreshingVerify)
+            return;
+
+        string shareId = info != null ? info.BlockShareId : string.Empty;
+        if (!IsActiveVerifyShare(shareId))
+            return;
+
+        CompleteCurrentDetail(new DetailAwaitResult
+        {
+            Success = true,
+            Message = string.Empty,
+            Info = info
+        });
+    }
+
+    private void HandleDetailFetchFailed(string roomId, string shareId, string message)
+    {
+        if (!_isRefreshingVerify)
+            return;
+
+        if (!IsActiveVerifyShare(shareId))
+            return;
+
+        CompleteCurrentDetail(new DetailAwaitResult
+        {
+            Success = false,
+            Message = string.IsNullOrWhiteSpace(message) ? "detail fetch failed" : message,
+            Info = null
+        });
+    }
+
+    private void HandleDetailFetchCanceled(string roomId, string shareId)
+    {
+        if (!_isRefreshingVerify)
+            return;
+
+        if (!IsActiveVerifyShare(shareId))
+            return;
+
+        CompleteCurrentDetail(new DetailAwaitResult
+        {
+            Success = false,
+            Message = "detail fetch canceled",
+            Info = null
+        });
+    }
+
     private bool IsActiveShare(string shareId)
     {
         string current = string.IsNullOrWhiteSpace(_activeShareId) ? string.Empty : _activeShareId.Trim();
+        string incoming = string.IsNullOrWhiteSpace(shareId) ? string.Empty : shareId.Trim();
+        return string.Equals(current, incoming, StringComparison.Ordinal);
+    }
+
+    private bool IsActiveVerifyShare(string shareId)
+    {
+        string current = string.IsNullOrWhiteSpace(_activeVerifyShareId) ? string.Empty : _activeVerifyShareId.Trim();
         string incoming = string.IsNullOrWhiteSpace(shareId) ? string.Empty : shareId.Trim();
         return string.Equals(current, incoming, StringComparison.Ordinal);
     }
@@ -221,6 +357,15 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         }
 
         return result;
+    }
+
+    private string ResolveSelectedShareId()
+    {
+        if (_sourcePanel == null)
+            return string.Empty;
+
+        string shareId = _sourcePanel.SelectedShareId;
+        return string.IsNullOrWhiteSpace(shareId) ? string.Empty : shareId.Trim();
     }
 
     private async Task SaveSelectedSharesAsync(List<string> shareIds)
@@ -311,6 +456,122 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         }
     }
 
+    private async Task RefreshSelectedShareVerificationAsync(string shareId)
+    {
+        string normalizedShareId = string.IsNullOrWhiteSpace(shareId) ? string.Empty : shareId.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedShareId))
+            return;
+
+        _isRefreshingVerify = true;
+        _activeVerifyShareId = normalizedShareId;
+        CaptureActiveSelectionHints(_activeVerifyShareId);
+        UpdateButtonInteractable();
+
+        try
+        {
+            if (_refreshListAfterSave && _sourcePanel != null)
+                _sourcePanel.RequestListNow();
+
+            bool isIdle = await WaitUntilManagerIdleAsync(BusyWaitTimeoutSeconds);
+            if (!isIdle)
+            {
+                SetVerifyResult(false);
+                SetStatus($"Verify skipped(busy-timeout). shareId={_activeVerifyShareId}");
+                LogBlue($"Verify skipped: manager busy timeout. shareId={_activeVerifyShareId}");
+                return;
+            }
+
+            string roomId = ResolveTargetRoomId(_activeVerifyShareId);
+            if (string.IsNullOrWhiteSpace(roomId))
+            {
+                SetVerifyResult(false);
+                SetStatus($"Verify failed(room-missing). shareId={_activeVerifyShareId}");
+                LogBlue($"Verify failed: apiRoomId is empty. shareId={_activeVerifyShareId}");
+                return;
+            }
+
+            _detailAwaitTcs = new TaskCompletionSource<DetailAwaitResult>();
+            _boundManager.FetchBlockShareDetail(roomId, _activeVerifyShareId, ResolveTokenOverride());
+            SetStatus($"Verify refresh requested. shareId={_activeVerifyShareId}");
+            LogBlue($"Verify refresh requested. roomId={roomId}, shareId={_activeVerifyShareId}");
+
+            DetailAwaitResult detailResult = await AwaitCurrentDetailAsync(DetailAwaitTimeoutSeconds);
+            if (detailResult == null || !detailResult.Success || detailResult.Info == null)
+            {
+                string message = detailResult != null && !string.IsNullOrWhiteSpace(detailResult.Message)
+                    ? detailResult.Message
+                    : "detail fetch failed";
+                SetVerifyResult(false);
+                SetStatus($"Verify failed(detail). shareId={_activeVerifyShareId}, message={message}");
+                LogBlue($"Verify detail failed. shareId={_activeVerifyShareId}, message={message}");
+                return;
+            }
+
+            ChatRoomBlockShareInfo detail = detailResult.Info;
+            CaptureActiveSelectionHints(_activeVerifyShareId);
+            LogBlue(
+                $"Verify detail refreshed. shareId={detail.BlockShareId}, roomId={detail.RoomId}, userId={detail.UserId}, userLevelSeq={detail.UserLevelSeq}, fileName={detail.Message}");
+
+            if (detail.UserLevelSeq <= 0)
+            {
+                SetVerifyResult(false);
+                SetStatus($"Verify result: no userLevelSeq. shareId={_activeVerifyShareId}");
+                LogBlue($"Verify result: userLevelSeq is empty or invalid. shareId={_activeVerifyShareId}");
+                return;
+            }
+
+            string accessToken = ResolveAccessToken();
+            if (string.IsNullOrWhiteSpace(accessToken))
+            {
+                SetVerifyResult(false);
+                SetStatus($"Verify failed(token-missing). shareId={_activeVerifyShareId}, seq={detail.UserLevelSeq}");
+                LogBlue($"Verify failed: accessToken is empty. shareId={_activeVerifyShareId}, seq={detail.UserLevelSeq}");
+                return;
+            }
+
+            ChatUserLevelDebugResult verifyResult = await ChatUserLevelDebugApi.FetchBySeqAsync(detail.UserLevelSeq, accessToken);
+            if (verifyResult == null || !verifyResult.IsSuccess)
+            {
+                string error = "verify fetch returned null";
+                if (verifyResult != null)
+                {
+                    if (!string.IsNullOrWhiteSpace(verifyResult.ErrorMessage))
+                        error = verifyResult.ErrorMessage.Trim();
+                    else if (verifyResult.ResponseCode > 0)
+                        error = $"HTTP {verifyResult.ResponseCode}";
+                    else
+                        error = "verify fetch failed";
+                }
+                SetVerifyResult(false);
+                SetStatus($"Verify failed(db-fetch). shareId={_activeVerifyShareId}, seq={detail.UserLevelSeq}, message={error}");
+                LogBlue(
+                    $"Verify DB fetch failed. shareId={_activeVerifyShareId}, seq={detail.UserLevelSeq}, code={verifyResult?.ResponseCode}, error={error}, body={TruncateForDebug(verifyResult?.ResponseBody)}");
+                return;
+            }
+
+            string xml = verifyResult.Xml ?? string.Empty;
+            string json = verifyResult.Json ?? string.Empty;
+            int xmlLen = xml.Length;
+            int jsonLen = json.Length;
+            bool hasData = xmlLen > 0 || jsonLen > 0;
+
+            SetVerifyResult(hasData);
+            SetStatus(
+                $"Verify result: {(hasData ? "data-exists" : "data-empty")}. shareId={_activeVerifyShareId}, seq={detail.UserLevelSeq}, xmlLen={xmlLen}, jsonLen={jsonLen}");
+            LogBlue(
+                $"Verify payload checked. shareId={_activeVerifyShareId}, seq={detail.UserLevelSeq}, xmlLen={xmlLen}, jsonLen={jsonLen}, hasData={hasData}, code={verifyResult.ResponseCode}");
+            LogBlue($"Verify XML:\n{TruncateForDebug(xml)}");
+            LogBlue($"Verify JSON:\n{TruncateForDebug(json)}");
+        }
+        finally
+        {
+            _isRefreshingVerify = false;
+            _activeVerifyShareId = string.Empty;
+            _detailAwaitTcs = null;
+            UpdateButtonInteractable();
+        }
+    }
+
     private async Task<bool> WaitUntilManagerIdleAsync(float timeoutSeconds)
     {
         if (_boundManager == null)
@@ -369,6 +630,45 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         };
     }
 
+    private async Task<DetailAwaitResult> AwaitCurrentDetailAsync(float timeoutSeconds)
+    {
+        if (_detailAwaitTcs == null)
+        {
+            return new DetailAwaitResult
+            {
+                Success = false,
+                Message = "internal detail waiter is null",
+                Info = null
+            };
+        }
+
+        float timeout = Mathf.Max(1f, timeoutSeconds);
+        float deadline = Time.realtimeSinceStartup + timeout;
+        Task<DetailAwaitResult> waitTask = _detailAwaitTcs.Task;
+
+        while (!waitTask.IsCompleted)
+        {
+            if (Time.realtimeSinceStartup >= deadline)
+            {
+                return new DetailAwaitResult
+                {
+                    Success = false,
+                    Message = "detail timeout",
+                    Info = null
+                };
+            }
+
+            await Task.Yield();
+        }
+
+        return waitTask.Result ?? new DetailAwaitResult
+        {
+            Success = false,
+            Message = "empty detail result",
+            Info = null
+        };
+    }
+
     private void CompleteCurrentSave(SaveAwaitResult result)
     {
         if (_saveAwaitTcs == null)
@@ -378,6 +678,17 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
             return;
 
         _saveAwaitTcs.TrySetResult(result);
+    }
+
+    private void CompleteCurrentDetail(DetailAwaitResult result)
+    {
+        if (_detailAwaitTcs == null)
+            return;
+
+        if (_detailAwaitTcs.Task.IsCompleted)
+            return;
+
+        _detailAwaitTcs.TrySetResult(result);
     }
 
     private void CaptureActiveSelectionHints(string shareId)
@@ -529,6 +840,14 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         Debug.Log($"<color=#00FF66>[HostBlockShareSaveToMyLevelButton] {text}</color>");
     }
 
+    private void LogBlue(string message)
+    {
+        if (!_debugLog || string.IsNullOrWhiteSpace(message))
+            return;
+
+        Debug.Log($"<color={BlueLogColor}>[HostBlockShareSaveToMyLevelButton] {message}</color>");
+    }
+
     private void LogMappingNeeded(string message)
     {
         if (!_debugLog || string.IsNullOrWhiteSpace(message))
@@ -539,20 +858,47 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
 
     private void UpdateButtonInteractable()
     {
-        if (_saveButton == null)
-            return;
-
         bool interactable = true;
 
-        if (_disableButtonWhileSaving && _isSaving)
+        if (_disableButtonWhileSaving && (_isSaving || _isRefreshingVerify))
             interactable = false;
 
-        _saveButton.interactable = interactable;
+        if (_saveButton != null)
+            _saveButton.interactable = interactable;
+
+        if (_refreshVerifyButton != null)
+            _refreshVerifyButton.interactable = interactable;
     }
 
     private string ResolveTokenOverride()
     {
         return string.IsNullOrWhiteSpace(_tokenOverride) ? null : _tokenOverride.Trim();
+    }
+
+    private string ResolveAccessToken()
+    {
+        string overrideToken = ResolveTokenOverride();
+        if (!string.IsNullOrWhiteSpace(overrideToken))
+            return overrideToken;
+
+        return AuthManager.Instance != null ? AuthManager.Instance.GetAccessToken() : string.Empty;
+    }
+
+    private string ResolveTargetRoomId(string shareId)
+    {
+        ChatRoomBlockShareInfo selectedDetail = _sourcePanel != null ? _sourcePanel.SelectedDetailInfo : null;
+        if (selectedDetail != null &&
+            string.Equals(shareId, selectedDetail.BlockShareId ?? string.Empty, StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(selectedDetail.RoomId))
+        {
+            return selectedDetail.RoomId.Trim();
+        }
+
+        FusionRoomSessionInfo fusionContext = FusionRoomSessionContext.Current;
+        if (fusionContext != null && !string.IsNullOrWhiteSpace(fusionContext.ApiRoomId))
+            return fusionContext.ApiRoomId.Trim();
+
+        return NetworkRoomIdentity.ResolveApiRoomId();
     }
 
     private void SetStatus(string message)
@@ -573,16 +919,26 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         UpdateResultBoolText();
     }
 
+    private void SetVerifyResult(bool success)
+    {
+        HasVerifyResult = true;
+        LastVerifyResult = success;
+        UpdateResultBoolText();
+    }
+
     private void UpdateResultBoolText()
     {
         if (_resultBoolText == null)
             return;
 
-        string value = HasSaveResult
+        string saveValue = HasSaveResult
             ? (LastSaveResult ? "True" : "False")
             : "-";
+        string verifyValue = HasVerifyResult
+            ? (LastVerifyResult ? "True" : "False")
+            : "-";
 
-        _resultBoolText.text = $"Save Result: {value}";
+        _resultBoolText.text = $"Save Result: {saveValue}\nVerify Result: {verifyValue}";
     }
 }
 

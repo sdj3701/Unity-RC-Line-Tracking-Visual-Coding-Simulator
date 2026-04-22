@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using MG_BlocksEngine2.Storage;
+using RC.Network.Fusion;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -321,15 +322,7 @@ public class ClientBlockShareListPanel : MonoBehaviour
             return;
         }
 
-        if (_uploadButtonTarget == null)
-        {
-            SetStatus("Upload target is not assigned.");
-            return;
-        }
-
         LocalCodeEntry entry = _entries[_selectedIndex];
-        string roomId = ResolveTargetRoomId();
-
         if (entry.UserLevelSeq <= 0)
         {
             SetStatus("Invalid userLevelSeq. Check DB entry.");
@@ -342,13 +335,83 @@ public class ClientBlockShareListPanel : MonoBehaviour
             return;
         }
 
-        _uploadButtonTarget.ApplyDraft(entry.UserLevelSeq, entry.FileName, roomId);
-        _uploadButtonTarget.OnClickUploadBlockShare();
+        bool photonSent = TrySendSelectedCodeByPhoton(entry, out string photonMessage);
+        bool apiRequested = TrySendSelectedCodeByApi(entry, out string apiMessage);
 
-        SetStatus($"Send requested: [{entry.UserLevelSeq}] {entry.FileName}");
+        if (photonSent && apiRequested)
+            SetStatus($"Send requested via Photon/API: [{entry.UserLevelSeq}] {entry.FileName}");
+        else if (photonSent)
+            SetStatus($"Send requested via Photon: [{entry.UserLevelSeq}] {entry.FileName}");
+        else if (apiRequested)
+            SetStatus($"Send requested via API: [{entry.UserLevelSeq}] {entry.FileName}");
+        else
+        {
+            SetStatus($"Send failed. photon={photonMessage}, api={apiMessage}");
+            return;
+        }
 
         if (_closeOnLoad)
             SetPanelVisible(false);
+    }
+
+    private bool TrySendSelectedCodeByPhoton(LocalCodeEntry entry, out string message)
+    {
+        message = string.Empty;
+
+        NetworkRCCar car = FindLocalInputAuthorityCar();
+        if (car == null)
+        {
+            message = "local input-authority NetworkRCCar not found";
+            return false;
+        }
+
+        if (!car.TrySubmitCodeSelectionToHost(entry.UserLevelSeq, entry.FileName, out string error))
+        {
+            message = error;
+            return false;
+        }
+
+        message = "sent";
+        return true;
+    }
+
+    private bool TrySendSelectedCodeByApi(LocalCodeEntry entry, out string message)
+    {
+        message = string.Empty;
+
+        if (_uploadButtonTarget == null)
+        {
+            message = "upload target is not assigned";
+            return false;
+        }
+
+        string roomId = ResolveTargetRoomId();
+        if (string.IsNullOrWhiteSpace(roomId))
+        {
+            message = "API roomId is empty";
+            return false;
+        }
+
+        _uploadButtonTarget.ApplyDraft(entry.UserLevelSeq, entry.FileName, roomId);
+        _uploadButtonTarget.OnClickUploadBlockShare();
+        message = "requested";
+        return true;
+    }
+
+    private NetworkRCCar FindLocalInputAuthorityCar()
+    {
+        NetworkRCCar[] cars = FindObjectsOfType<NetworkRCCar>(true);
+        if (cars == null || cars.Length == 0)
+            return null;
+
+        for (int i = 0; i < cars.Length; i++)
+        {
+            NetworkRCCar car = cars[i];
+            if (car != null && car.CanSubmitCodeSelectionToHost)
+                return car;
+        }
+
+        return null;
     }
 
     private void OnCancelClicked()
@@ -418,9 +481,10 @@ public class ClientBlockShareListPanel : MonoBehaviour
     private void UpdateButtons()
     {
         bool hasSelection = _selectedIndex >= 0 && _selectedIndex < _entries.Count;
+        bool canUploadSelection = hasSelection && IsEntryUploadable(_entries[_selectedIndex]);
 
         if (_loadButton != null)
-            _loadButton.interactable = !_isRefreshing && hasSelection;
+            _loadButton.interactable = !_isRefreshing && canUploadSelection;
 
         if (_refreshButton != null)
             _refreshButton.interactable = !_isRefreshing;
@@ -439,26 +503,21 @@ public class ClientBlockShareListPanel : MonoBehaviour
 
         LocalCodeEntry entry = _entries[_selectedIndex];
         string seqState = entry.HasServerSeq ? "server-seq" : "fallback-seq";
-        _selectedText.text = $"Selected: [{entry.UserLevelSeq}] {entry.FileName} ({seqState})";
+        string uploadState = IsEntryUploadable(entry) ? "upload-ready" : "db-save-required";
+        _selectedText.text = $"Selected: [{entry.UserLevelSeq}] {entry.FileName} ({seqState}, {uploadState})";
+    }
+
+    private bool IsEntryUploadable(LocalCodeEntry entry)
+    {
+        return entry.UserLevelSeq > 0 && (entry.HasServerSeq || _allowFallbackSeqUpload);
     }
 
     private string ResolveTargetRoomId()
     {
-        if (_autoRoomFromSession)
-        {
-            RoomInfo sessionRoom = RoomSessionContext.CurrentRoom;
-            if (sessionRoom != null && !string.IsNullOrWhiteSpace(sessionRoom.RoomId))
-                return sessionRoom.RoomId.Trim();
-        }
-
-        if (!string.IsNullOrWhiteSpace(_roomIdOverride))
-            return _roomIdOverride.Trim();
-
-        RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
-        if (currentRoom != null && !string.IsNullOrWhiteSpace(currentRoom.RoomId))
-            return currentRoom.RoomId.Trim();
-
+    if (!_autoRoomFromSession && string.IsNullOrWhiteSpace(_roomIdOverride))
         return string.Empty;
+
+    return NetworkRoomIdentity.ResolveApiRoomId(_roomIdOverride);
     }
 
     private int ResolveUserLevelSeq(string fileName)

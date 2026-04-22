@@ -4,6 +4,11 @@ using UnityEngine;
 
 public class NetworkUIManager : MonoBehaviour
 {
+    [Header("Common UI")]
+    [SerializeField] private GameObject _commonUI;
+    [SerializeField] private bool _showCommonUIForAllRoles = true;
+
+    [Header("Role UI")]
     [SerializeField] private GameObject _hostUI;
     [SerializeField] private GameObject _clientUI;
     [SerializeField] private bool _treatUnknownAsClient = true;
@@ -28,6 +33,13 @@ public class NetworkUIManager : MonoBehaviour
         bool showHostUI = role == UserRole.Host;
         bool showClientUI = role == UserRole.Client ||
                             (role == UserRole.Unknown && _treatUnknownAsClient);
+        bool showCommonUI = _showCommonUIForAllRoles &&
+                            (role == UserRole.Host ||
+                             role == UserRole.Client ||
+                             (role == UserRole.Unknown && _treatUnknownAsClient));
+
+        if (_commonUI != null)
+            _commonUI.SetActive(showCommonUI);
 
         if (_hostUI != null)
             _hostUI.SetActive(showHostUI);
@@ -36,7 +48,7 @@ public class NetworkUIManager : MonoBehaviour
             _clientUI.SetActive(showClientUI);
 
         if (_debugLog)
-            Debug.Log($"[NetworkUIManager] role={role}, reason={reason}, hostUI={showHostUI}, clientUI={showClientUI}");
+            Debug.Log($"[NetworkUIManager] role={role}, reason={reason}, commonUI={showCommonUI}, hostUI={showHostUI}, clientUI={showClientUI}");
     }
 
     private static UserRole ResolveRole(out string reason)

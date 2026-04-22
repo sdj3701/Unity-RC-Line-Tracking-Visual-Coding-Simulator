@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Auth;
@@ -68,11 +69,35 @@ namespace MG_BlocksEngine2.Storage
                 return await SaveWithFallbackAsync(fileName, xmlContent, jsonContent, isModified);
             }
 
+            LogDbInfo(
+                $"[DatabaseStorageProvider] Save request prepared. level='{level}', xmlLen={SafeLength(xmlContent)}, jsonLen={SafeLength(jsonContent)}, isModified={isModified}");
+
             UserLevelEntry existing = await FindEntryByLevelAsync(level, accessToken);
-            bool saved = await SaveOrUpdateRemoteAsync(existing, level, xmlContent, jsonContent, accessToken);
-            if (saved)
+            SaveRemoteResult saveResult = await SaveOrUpdateRemoteAsync(existing, level, xmlContent, jsonContent, accessToken);
+            if (saveResult != null && saveResult.Success)
             {
-                return true;
+                bool verified = await VerifyRemoteSaveAsync(saveResult, level, xmlContent, jsonContent, accessToken);
+                if (verified)
+                    return true;
+
+                Debug.LogWarning(
+                    $"[DatabaseStorageProvider] Save readback verification failed. level='{level}', seq={saveResult.Seq}, method={saveResult.Method}, code={saveResult.ResponseCode}");
+
+                UserLevelEntry retryTarget = saveResult.Seq > 0
+                    ? new UserLevelEntry { Seq = saveResult.Seq, HasSeq = true, Level = level, HasLevel = true }
+                    : await FindEntryByLevelAsync(level, accessToken);
+                SaveRemoteResult jsonRetry = await SaveOrUpdateRemoteJsonOnlyAsync(
+                    retryTarget,
+                    level,
+                    xmlContent,
+                    jsonContent,
+                    accessToken);
+                if (jsonRetry != null && jsonRetry.Success)
+                {
+                    bool retryVerified = await VerifyRemoteSaveAsync(jsonRetry, level, xmlContent, jsonContent, accessToken);
+                    if (retryVerified)
+                        return true;
+                }
             }
 
             return await SaveWithFallbackAsync(fileName, xmlContent, jsonContent, isModified);
@@ -379,7 +404,7 @@ namespace MG_BlocksEngine2.Storage
             }
         }
 
-        private async Task<bool> SaveOrUpdateRemoteAsync(UserLevelEntry existing, string level, string xmlContent, string jsonContent, string accessToken)
+        private async Task<SaveRemoteResult> SaveOrUpdateRemoteAsync(UserLevelEntry existing, string level, string xmlContent, string jsonContent, string accessToken)
         {
             var payload = new SaveCodeRequest
             {
@@ -394,21 +419,62 @@ namespace MG_BlocksEngine2.Storage
             {
                 string updateUrl = BuildUserLevelDetailUrl(existing.Seq);
 
-                bool patched = await SendMultipartAsync(updateUrl, "PATCH", payload, accessToken, "UpdateCode(PATCH)");
-                if (patched)
-                {
-                    return true;
-                }
+                SaveRemoteResult patched = await SendMultipartAsync(updateUrl, "PATCH", payload, accessToken, "UpdateCode(PATCH multipart)");
+                if (patched.Success)
+                    return patched.WithSeqIfMissing(existing.Seq);
 
-                bool put = await SendMultipartAsync(updateUrl, "PUT", payload, accessToken, "UpdateCode(PUT)");
-                return put;
+                SaveRemoteResult patchedJson = await SendJsonAsync(updateUrl, "PATCH", payload, accessToken, "UpdateCode(PATCH json)");
+                if (patchedJson.Success)
+                    return patchedJson.WithSeqIfMissing(existing.Seq);
+
+                SaveRemoteResult put = await SendMultipartAsync(updateUrl, "PUT", payload, accessToken, "UpdateCode(PUT multipart)");
+                if (put.Success)
+                    return put.WithSeqIfMissing(existing.Seq);
+
+                SaveRemoteResult putJson = await SendJsonAsync(updateUrl, "PUT", payload, accessToken, "UpdateCode(PUT json)");
+                return putJson.WithSeqIfMissing(existing.Seq);
             }
 
             string createUrl = BuildUserLevelCollectionUrl();
-            return await SendMultipartAsync(createUrl, UnityWebRequest.kHttpVerbPOST, payload, accessToken, "SaveCode(POST)");
+            SaveRemoteResult created = await SendMultipartAsync(createUrl, UnityWebRequest.kHttpVerbPOST, payload, accessToken, "SaveCode(POST multipart)");
+            if (created.Success)
+                return created;
+
+            return await SendJsonAsync(createUrl, UnityWebRequest.kHttpVerbPOST, payload, accessToken, "SaveCode(POST json)");
         }
 
-        private async Task<bool> SendMultipartAsync(string url, string method, SaveCodeRequest payload, string accessToken, string logTag)
+        private async Task<SaveRemoteResult> SaveOrUpdateRemoteJsonOnlyAsync(
+            UserLevelEntry existing,
+            string level,
+            string xmlContent,
+            string jsonContent,
+            string accessToken)
+        {
+            var payload = new SaveCodeRequest
+            {
+                level = level,
+                xml = xmlContent ?? string.Empty,
+                json = NormalizeRawJson(jsonContent),
+                xmlLongText = xmlContent ?? string.Empty,
+                jsonLongText = NormalizeRawJson(jsonContent)
+            };
+
+            if (existing != null && existing.HasSeq)
+            {
+                string updateUrl = BuildUserLevelDetailUrl(existing.Seq);
+                SaveRemoteResult patchedJson = await SendJsonAsync(updateUrl, "PATCH", payload, accessToken, "VerifyRetry(PATCH json)");
+                if (patchedJson.Success)
+                    return patchedJson.WithSeqIfMissing(existing.Seq);
+
+                SaveRemoteResult putJson = await SendJsonAsync(updateUrl, "PUT", payload, accessToken, "VerifyRetry(PUT json)");
+                return putJson.WithSeqIfMissing(existing.Seq);
+            }
+
+            string createUrl = BuildUserLevelCollectionUrl();
+            return await SendJsonAsync(createUrl, UnityWebRequest.kHttpVerbPOST, payload, accessToken, "VerifyRetry(POST json)");
+        }
+
+        private async Task<SaveRemoteResult> SendMultipartAsync(string url, string method, SaveCodeRequest payload, string accessToken, string logTag)
         {
             List<IMultipartFormSection> sections = new List<IMultipartFormSection>();
             foreach (KeyValuePair<string, string> field in BuildSaveFields(payload))
@@ -416,13 +482,37 @@ namespace MG_BlocksEngine2.Storage
                 sections.Add(new MultipartFormDataSection(field.Key, field.Value ?? string.Empty));
             }
 
+            LogDbInfo(
+                $"[DatabaseStorageProvider] {logTag} request. method={method}, url={url}, level='{payload.level}', xmlLen={SafeLength(payload.xml)}, jsonLen={SafeLength(payload.json)}");
+
             using (var request = UnityWebRequest.Post(url, sections))
             {
                 request.method = method;
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
                 request.SetRequestHeader("Accept", "application/json");
-                return await SendRequestAsync(request, logTag);
+                RequestResult result = await SendRequestForResultAsync(request, logTag);
+                return SaveRemoteResult.FromRequestResult(result, method, url);
+            }
+        }
+
+        private async Task<SaveRemoteResult> SendJsonAsync(string url, string method, SaveCodeRequest payload, string accessToken, string logTag)
+        {
+            string requestJson = BuildSaveJsonBody(payload);
+
+            LogDbInfo(
+                $"[DatabaseStorageProvider] {logTag} request. method={method}, url={url}, level='{payload.level}', xmlLen={SafeLength(payload.xml)}, jsonLen={SafeLength(payload.json)}");
+
+            using (var request = new UnityWebRequest(url, method))
+            {
+                byte[] bodyBytes = Encoding.UTF8.GetBytes(requestJson);
+                request.uploadHandler = new UploadHandlerRaw(bodyBytes);
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Accept", "application/json");
+                RequestResult result = await SendRequestForResultAsync(request, logTag);
+                return SaveRemoteResult.FromRequestResult(result, method, url);
             }
         }
 
@@ -434,8 +524,60 @@ namespace MG_BlocksEngine2.Storage
                 new KeyValuePair<string, string>("xml", payload.xml ?? string.Empty),
                 new KeyValuePair<string, string>("json", payload.json ?? string.Empty),
                 new KeyValuePair<string, string>("xmlLongText", payload.xmlLongText ?? string.Empty),
-                new KeyValuePair<string, string>("jsonLongText", payload.jsonLongText ?? string.Empty)
+                new KeyValuePair<string, string>("jsonLongText", payload.jsonLongText ?? string.Empty),
+                new KeyValuePair<string, string>("xmlData", payload.xml ?? string.Empty),
+                new KeyValuePair<string, string>("jsonData", payload.json ?? string.Empty),
+                new KeyValuePair<string, string>("xml_data", payload.xml ?? string.Empty),
+                new KeyValuePair<string, string>("json_data", payload.json ?? string.Empty),
+                new KeyValuePair<string, string>("xml_long_text", payload.xmlLongText ?? string.Empty),
+                new KeyValuePair<string, string>("json_long_text", payload.jsonLongText ?? string.Empty)
             };
+        }
+
+        private async Task<bool> VerifyRemoteSaveAsync(
+            SaveRemoteResult saveResult,
+            string level,
+            string expectedXml,
+            string expectedJson,
+            string accessToken)
+        {
+            UserLevelEntry entry = null;
+            if (saveResult != null && saveResult.Seq > 0)
+                entry = await GetEntryBySeqAsync(saveResult.Seq, accessToken);
+
+            if (entry == null)
+                entry = await FindEntryByLevelAsync(level, accessToken);
+
+            if (entry != null && entry.HasSeq && (string.IsNullOrEmpty(entry.Xml) || string.IsNullOrEmpty(entry.Json)))
+            {
+                UserLevelEntry detail = await GetEntryBySeqAsync(entry.Seq, accessToken);
+                if (detail != null)
+                    entry = MergeEntry(entry, detail);
+            }
+
+            if (entry == null)
+            {
+                Debug.LogWarning($"[DatabaseStorageProvider] Save verify failed. level='{level}' entry not found.");
+                return false;
+            }
+
+            string actualXml = entry.Xml ?? string.Empty;
+            string actualJson = NormalizeReturnedJson(entry.Json);
+            string normalizedExpectedXml = NormalizeCompareText(expectedXml);
+            string normalizedExpectedJson = NormalizeCompareText(NormalizeRawJson(expectedJson));
+            string normalizedActualXml = NormalizeCompareText(actualXml);
+            string normalizedActualJson = NormalizeCompareText(actualJson);
+
+            bool xmlPresent = !string.IsNullOrWhiteSpace(actualXml);
+            bool jsonPresent = !string.IsNullOrWhiteSpace(actualJson);
+            bool xmlHashMatch = xmlPresent && StableHash(normalizedActualXml) == StableHash(normalizedExpectedXml);
+            bool jsonHashMatch = jsonPresent && StableHash(normalizedActualJson) == StableHash(normalizedExpectedJson);
+
+            LogDbInfo(
+                $"[DatabaseStorageProvider] Save readback. level='{level}', seq={(entry.HasSeq ? entry.Seq.ToString() : "n/a")}, " +
+                $"xmlLen={actualXml.Length}, jsonLen={actualJson.Length}, xmlHashMatch={xmlHashMatch}, jsonHashMatch={jsonHashMatch}");
+
+            return xmlHashMatch && jsonHashMatch;
         }
 
         private async Task<List<UserLevelEntry>> GetMyEntriesAsync(string accessToken)
@@ -498,19 +640,37 @@ namespace MG_BlocksEngine2.Storage
 
         private static async Task<bool> SendRequestAsync(UnityWebRequest request, string logTag)
         {
+            RequestResult result = await SendRequestForResultAsync(request, logTag);
+            return result.Success;
+        }
+
+        private static async Task<RequestResult> SendRequestForResultAsync(UnityWebRequest request, string logTag)
+        {
             UnityWebRequestAsyncOperation op = request.SendWebRequest();
             while (!op.isDone)
             {
                 await Task.Yield();
             }
 
+            string body = request.downloadHandler?.text ?? string.Empty;
             bool success = request.result == UnityWebRequest.Result.Success && request.responseCode >= 200 && request.responseCode < 300;
             if (!success)
             {
-                Debug.LogWarning($"[DatabaseStorageProvider] {logTag} failed. code={request.responseCode}, error={request.error}, body={request.downloadHandler?.text}");
+                Debug.LogWarning($"[DatabaseStorageProvider] {logTag} failed. code={request.responseCode}, error={request.error}, body={body}");
+            }
+            else
+            {
+                LogDbInfo(
+                    $"[DatabaseStorageProvider] {logTag} success. code={request.responseCode}, seq={ExtractSeqFromResponse(body)}, body={TruncateForLog(body)}");
             }
 
-            return success;
+            return new RequestResult
+            {
+                Success = success,
+                ResponseCode = request.responseCode,
+                Body = body,
+                Error = request.error
+            };
         }
 
         private string BuildUserLevelCollectionUrl()
@@ -614,6 +774,26 @@ namespace MG_BlocksEngine2.Storage
                 .Replace("\n", "\\n")
                 .Replace("\r", "\\r")
                 .Replace("\t", "\\t");
+        }
+
+        private static string BuildSaveJsonBody(SaveCodeRequest payload)
+        {
+            string normalizedJson = NormalizeRawJson(payload != null ? payload.json : null);
+            string xml = payload != null ? payload.xml ?? string.Empty : string.Empty;
+            string level = payload != null ? payload.level ?? string.Empty : string.Empty;
+
+            return "{" +
+                   $"\"level\":\"{EscapeJsonString(level)}\"," +
+                   $"\"xml\":\"{EscapeJsonString(xml)}\"," +
+                   $"\"xmlLongText\":\"{EscapeJsonString(xml)}\"," +
+                   $"\"xmlData\":\"{EscapeJsonString(xml)}\"," +
+                   $"\"xml_data\":\"{EscapeJsonString(xml)}\"," +
+                   $"\"json\":{normalizedJson}," +
+                   $"\"jsonLongText\":{normalizedJson}," +
+                   $"\"jsonData\":{normalizedJson}," +
+                   $"\"json_data\":{normalizedJson}," +
+                   $"\"json_long_text\":{normalizedJson}" +
+                   "}";
         }
 
         private static List<UserLevelEntry> ParseUserLevelEntries(string responseText)
@@ -757,10 +937,23 @@ namespace MG_BlocksEngine2.Storage
             bool hasLevel = TryExtractJsonStringOrNumberValue(json, "level", out string level);
 
             string xml = null;
-            bool hasXml = TryExtractJsonStringValue(json, "xml", out xml) || TryExtractJsonStringValue(json, "xmlLongText", out xml);
+            bool hasXml = TryExtractJsonStringValue(json, "xml", out xml) ||
+                          TryExtractJsonStringValue(json, "xmlLongText", out xml) ||
+                          TryExtractJsonStringValue(json, "xmlData", out xml) ||
+                          TryExtractJsonStringValue(json, "xml_data", out xml) ||
+                          TryExtractJsonStringValue(json, "xml_long_text", out xml);
 
             string jsonContent = null;
-            bool hasJson = TryExtractRawJsonField(json, "json", out jsonContent) || TryExtractJsonStringValue(json, "json", out jsonContent);
+            bool hasJson = TryExtractRawJsonField(json, "json", out jsonContent) ||
+                           TryExtractJsonStringValue(json, "json", out jsonContent) ||
+                           TryExtractRawJsonField(json, "jsonLongText", out jsonContent) ||
+                           TryExtractJsonStringValue(json, "jsonLongText", out jsonContent) ||
+                           TryExtractRawJsonField(json, "jsonData", out jsonContent) ||
+                           TryExtractJsonStringValue(json, "jsonData", out jsonContent) ||
+                           TryExtractRawJsonField(json, "json_data", out jsonContent) ||
+                           TryExtractJsonStringValue(json, "json_data", out jsonContent) ||
+                           TryExtractRawJsonField(json, "json_long_text", out jsonContent) ||
+                           TryExtractJsonStringValue(json, "json_long_text", out jsonContent);
 
             if (!hasSeq && !hasLevel && !hasXml && !hasJson)
             {
@@ -911,6 +1104,107 @@ namespace MG_BlocksEngine2.Storage
             return false;
         }
 
+        private static long ExtractSeqFromResponse(string responseBody)
+        {
+            if (string.IsNullOrWhiteSpace(responseBody))
+                return 0L;
+
+            string[] keys =
+            {
+                "seq",
+                "id",
+                "userLevelSeq",
+                "user_level_seq",
+                "levelSeq",
+                "level_seq"
+            };
+
+            for (int i = 0; i < keys.Length; i++)
+            {
+                if (TryExtractJsonLongValue(responseBody, keys[i], out long value) && value > 0)
+                    return value;
+            }
+
+            List<UserLevelEntry> entries = ParseUserLevelEntries(responseBody);
+            for (int i = 0; i < entries.Count; i++)
+            {
+                if (entries[i] != null && entries[i].HasSeq && entries[i].Seq > 0)
+                    return entries[i].Seq;
+            }
+
+            return 0L;
+        }
+
+        private static UserLevelEntry MergeEntry(UserLevelEntry primary, UserLevelEntry detail)
+        {
+            if (primary == null)
+                return detail;
+
+            if (detail == null)
+                return primary;
+
+            return new UserLevelEntry
+            {
+                Seq = detail.HasSeq ? detail.Seq : primary.Seq,
+                HasSeq = detail.HasSeq || primary.HasSeq,
+                Level = !string.IsNullOrWhiteSpace(detail.Level) ? detail.Level : primary.Level,
+                HasLevel = detail.HasLevel || primary.HasLevel,
+                Xml = !string.IsNullOrEmpty(detail.Xml) ? detail.Xml : primary.Xml,
+                Json = !string.IsNullOrEmpty(detail.Json) ? detail.Json : primary.Json
+            };
+        }
+
+        private static string NormalizeReturnedJson(string value)
+        {
+            string trimmed = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+            if (trimmed.Length >= 2 && trimmed[0] == '"' && trimmed[trimmed.Length - 1] == '"')
+            {
+                string inner = trimmed.Substring(1, trimmed.Length - 2);
+                return Regex.Unescape(inner).Replace("\\/", "/").Trim();
+            }
+
+            return trimmed;
+        }
+
+        private static string NormalizeCompareText(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+        }
+
+        private static string StableHash(string value)
+        {
+            string text = value ?? string.Empty;
+            unchecked
+            {
+                const uint offset = 2166136261;
+                const uint prime = 16777619;
+                uint hash = offset;
+
+                for (int i = 0; i < text.Length; i++)
+                {
+                    hash ^= text[i];
+                    hash *= prime;
+                }
+
+                return hash.ToString("X8");
+            }
+        }
+
+        private static int SafeLength(string value)
+        {
+            return string.IsNullOrEmpty(value) ? 0 : value.Length;
+        }
+
+        private static string TruncateForLog(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            string trimmed = value.Trim();
+            const int maxLength = 500;
+            return trimmed.Length <= maxLength ? trimmed : trimmed.Substring(0, maxLength) + "...";
+        }
+
         private async Task<bool> SaveWithFallbackAsync(string fileName, string xmlContent, string jsonContent, bool isModified)
         {
             // Intentionally disabled: remote save must not write to local storage.
@@ -974,6 +1268,51 @@ namespace MG_BlocksEngine2.Storage
             public bool HasLevel;
             public string Xml;
             public string Json;
+        }
+
+        private sealed class RequestResult
+        {
+            public bool Success;
+            public long ResponseCode;
+            public string Body;
+            public string Error;
+        }
+
+        private sealed class SaveRemoteResult
+        {
+            public bool Success;
+            public long Seq;
+            public long ResponseCode;
+            public string ResponseBody;
+            public string Error;
+            public string Method;
+            public string Url;
+
+            public SaveRemoteResult WithSeqIfMissing(long fallbackSeq)
+            {
+                if (Seq <= 0 && fallbackSeq > 0)
+                    Seq = fallbackSeq;
+
+                return this;
+            }
+
+            public static SaveRemoteResult FromRequestResult(RequestResult result, string method, string url)
+            {
+                if (result == null)
+                    result = new RequestResult();
+
+                string body = result.Body ?? string.Empty;
+                return new SaveRemoteResult
+                {
+                    Success = result.Success,
+                    Seq = ExtractSeqFromResponse(body),
+                    ResponseCode = result.ResponseCode,
+                    ResponseBody = body,
+                    Error = result.Error,
+                    Method = method ?? string.Empty,
+                    Url = url ?? string.Empty
+                };
+            }
         }
 
         public sealed class UserLevelFileEntry

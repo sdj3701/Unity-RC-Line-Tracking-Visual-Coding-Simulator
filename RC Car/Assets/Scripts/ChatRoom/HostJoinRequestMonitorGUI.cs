@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using Auth;
+using RC.Network.Fusion;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -399,6 +400,32 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
     {
         reason = string.Empty;
 
+        FusionRoomSessionInfo fusionContext = FusionRoomSessionContext.Current;
+        if (fusionContext != null)
+        {
+            if (fusionContext.IsHost || fusionContext.GameMode == Fusion.GameMode.Host)
+            {
+                reason = "FusionRoomSessionContext indicates host authority";
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(fusionContext.HostUserId) &&
+                AuthManager.Instance != null &&
+                AuthManager.Instance.CurrentUser != null)
+            {
+                string fusionHostUserId = fusionContext.HostUserId.Trim();
+                string currentFusionUserId = string.IsNullOrWhiteSpace(AuthManager.Instance.CurrentUser.userId)
+                    ? string.Empty
+                    : AuthManager.Instance.CurrentUser.userId.Trim();
+
+                bool isFusionHost = string.Equals(fusionHostUserId, currentFusionUserId, StringComparison.Ordinal);
+                reason = isFusionHost
+                    ? "Current user matches Fusion HostUserId"
+                    : $"Current user does not match Fusion HostUserId (host={fusionHostUserId}, me={currentFusionUserId})";
+                return isFusionHost;
+            }
+        }
+
         RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
         if (currentRoom == null)
         {
@@ -442,13 +469,15 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
         if (CanCurrentUserManageHostRequests(out _))
             return "HOST";
 
+        FusionRoomSessionInfo fusionContext = FusionRoomSessionContext.Current;
+        bool hasFusionHostUserId = fusionContext != null && !string.IsNullOrWhiteSpace(fusionContext.HostUserId);
         RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
         bool hasHostUserId = currentRoom != null && !string.IsNullOrWhiteSpace(currentRoom.HostUserId);
         bool hasCurrentUser = AuthManager.Instance != null &&
                               AuthManager.Instance.CurrentUser != null &&
                               !string.IsNullOrWhiteSpace(AuthManager.Instance.CurrentUser.userId);
 
-        if (!hasHostUserId || !hasCurrentUser)
+        if ((!hasHostUserId && !hasFusionHostUserId) || !hasCurrentUser)
             return "UNKNOWN";
 
         return "CLIENT";
@@ -456,14 +485,7 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
 
     private string ResolveTargetRoomId()
     {
-        if (!string.IsNullOrWhiteSpace(_roomIdOverride))
-            return _roomIdOverride.Trim();
-
-        RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
-        if (currentRoom != null && !string.IsNullOrWhiteSpace(currentRoom.RoomId))
-            return currentRoom.RoomId.Trim();
-
-        return string.Empty;
+        return NetworkRoomIdentity.ResolveApiRoomId(_roomIdOverride);
     }
 
     private string ResolveTokenOverride()
@@ -507,8 +529,12 @@ public sealed class HostJoinRequestMonitorGUI : MonoBehaviour
 
     private int GetRoomMemberCount()
     {
+        FusionRoomSessionInfo fusionContext = FusionRoomSessionContext.Current;
+        if (fusionContext != null && fusionContext.PlayerCount > 0)
+            return fusionContext.PlayerCount;
+
         RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
-        if (currentRoom == null || string.IsNullOrWhiteSpace(currentRoom.RoomId))
+        if (currentRoom == null)
             return 0;
         // Member count estimate: host(1) + approved join-request users.
         int hostCount = 1;

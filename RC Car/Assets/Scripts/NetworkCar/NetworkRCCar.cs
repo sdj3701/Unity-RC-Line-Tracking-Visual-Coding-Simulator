@@ -9,12 +9,17 @@ public sealed class NetworkRCCar : NetworkBehaviour
     [SerializeField] private bool _syncPosition = true;
     [SerializeField] private bool _syncRotation = true;
     [SerializeField, Range(0.01f, 1f)] private float _clientLerpAlpha = 0.35f;
+    [SerializeField, Min(0.1f)] private float _clientSnapDistance = 2f;
     [SerializeField] private bool _debugLog;
 
     [Networked] private Vector3 SyncedPosition { get; set; }
     [Networked] private Quaternion SyncedRotation { get; set; }
+    [Networked] private Vector3 SyncedVelocity { get; set; }
+    [Networked] private Vector3 SyncedAngularVelocity { get; set; }
     [Networked] private int SyncedPackedColor { get; set; }
     [Networked] private int SyncedSlotIndex { get; set; }
+    [Networked] private NetworkString<_64> SyncedUserId { get; set; }
+    [Networked] private bool SyncedIsRunning { get; set; }
 
     private Rigidbody _rigidbody;
     private VirtualCarPhysics _physics;
@@ -25,9 +30,23 @@ public sealed class NetworkRCCar : NetworkBehaviour
     private Color _configuredColor = Color.white;
     private bool _hasPendingConfiguration;
     private int _lastAppliedPackedColor = int.MinValue;
+    private string _lastAppliedUserId = string.Empty;
 
-    public string AssignedUserId => _assignedUserId;
+    public string AssignedUserId
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(_assignedUserId))
+                return _assignedUserId;
+
+            string synced = SyncedUserId.ToString();
+            return string.IsNullOrWhiteSpace(synced) ? string.Empty : synced.Trim();
+        }
+    }
+
     public int AssignedSlotIndex => SyncedSlotIndex > 0 ? SyncedSlotIndex : _configuredSlotIndex;
+    public bool IsNetworkRunning => SyncedIsRunning;
+    public bool CanSubmitCodeSelectionToHost => Object != null && Object.HasInputAuthority;
 
     public void ConfigureForHost(string userId, int slotIndex, Color color)
     {
@@ -38,6 +57,51 @@ public sealed class NetworkRCCar : NetworkBehaviour
 
         if (Object != null && Object.HasStateAuthority)
             ApplyPendingConfiguration();
+    }
+
+    public bool TrySubmitCodeSelectionToHost(int userLevelSeq, string fileNameRaw, out string error)
+    {
+        error = string.Empty;
+
+        if (Object == null)
+        {
+            error = "NetworkObject is null.";
+            return false;
+        }
+
+        if (!Object.HasInputAuthority)
+        {
+            error = $"This car has no input authority. netId={Object.Id}";
+            return false;
+        }
+
+        if (userLevelSeq <= 0)
+        {
+            error = "userLevelSeq must be >= 1.";
+            return false;
+        }
+
+        string fileName = TrimForNetworkString(fileNameRaw, 120);
+        RPC_SubmitCodeSelectionToHost(userLevelSeq, fileName);
+
+        if (_debugLog)
+            Debug.Log($"<color=#33A6FF>[NetworkRCCar] Client code selection sent. user={AssignedUserId}, seq={userLevelSeq}, fileName={fileName}, netId={Object.Id}</color>");
+
+        return true;
+    }
+
+    [Rpc(RpcSources.InputAuthority, RpcTargets.StateAuthority)]
+    public void RPC_SubmitCodeSelectionToHost(int userLevelSeq, NetworkString<_128> fileName, RpcInfo info = default)
+    {
+        HostNetworkCarCoordinator coordinator = FindObjectOfType<HostNetworkCarCoordinator>();
+        if (coordinator == null)
+        {
+            if (_debugLog)
+                Debug.LogWarning("[NetworkRCCar] HostNetworkCarCoordinator is missing. Photon code selection ignored.");
+            return;
+        }
+
+        coordinator.HandlePhotonCodeSelection(AssignedUserId, userLevelSeq, fileName.ToString(), info.Source);
     }
 
     public override void Spawned()
@@ -54,9 +118,18 @@ public sealed class NetworkRCCar : NetworkBehaviour
         {
             ApplyTransformState(immediate: true);
             ApplyColorFromNetwork(force: true);
+            ApplyUserIdFromNetwork(force: true);
         }
 
         RenameForDebug();
+
+        if (_debugLog)
+        {
+            string netId = Object != null ? Object.Id.ToString() : "-";
+            string inputAuthority = Object != null ? Object.InputAuthority.ToString() : "-";
+            Debug.Log(
+                $"[NetworkRCCar] spawned. netId={netId}, stateAuthority={Object != null && Object.HasStateAuthority}, inputAuthority={inputAuthority}");
+        }
     }
 
     public override void FixedUpdateNetwork()
@@ -64,6 +137,7 @@ public sealed class NetworkRCCar : NetworkBehaviour
         if (!Object.HasStateAuthority)
             return;
 
+        ApplyAuthorityState();
         ApplyPendingConfiguration();
         CaptureTransformState();
     }
@@ -73,8 +147,10 @@ public sealed class NetworkRCCar : NetworkBehaviour
         if (Object == null || Object.HasStateAuthority)
             return;
 
+        ApplyAuthorityState();
         ApplyTransformState(immediate: false);
         ApplyColorFromNetwork(force: false);
+        ApplyUserIdFromNetwork(force: false);
     }
 
     private void CacheRuntimeRefs()
@@ -118,7 +194,9 @@ public sealed class NetworkRCCar : NetworkBehaviour
 
         SyncedSlotIndex = Mathf.Max(1, _configuredSlotIndex);
         SyncedPackedColor = PackColor(_configuredColor);
+        SyncedUserId = _assignedUserId ?? string.Empty;
         _lastAppliedPackedColor = SyncedPackedColor;
+        _lastAppliedUserId = _assignedUserId ?? string.Empty;
         ApplyColor(_configuredColor);
         _hasPendingConfiguration = false;
         RenameForDebug();
@@ -131,14 +209,30 @@ public sealed class NetworkRCCar : NetworkBehaviour
 
         if (_syncRotation)
             SyncedRotation = transform.rotation;
+
+        if (_rigidbody != null)
+        {
+            SyncedVelocity = _rigidbody.velocity;
+            SyncedAngularVelocity = _rigidbody.angularVelocity;
+        }
+        else
+        {
+            SyncedVelocity = Vector3.zero;
+            SyncedAngularVelocity = Vector3.zero;
+        }
+
+        SyncedIsRunning = _physics != null && _physics.IsRunning;
     }
 
     private void ApplyTransformState(bool immediate)
     {
         Vector3 targetPosition = _syncPosition ? SyncedPosition : transform.position;
         Quaternion targetRotation = _syncRotation ? SyncedRotation : transform.rotation;
+        float snapDistance = Mathf.Max(0.1f, _clientSnapDistance);
+        bool shouldSnap = immediate ||
+                          (_syncPosition && (transform.position - targetPosition).sqrMagnitude > snapDistance * snapDistance);
 
-        if (immediate)
+        if (shouldSnap)
         {
             transform.SetPositionAndRotation(targetPosition, targetRotation);
             return;
@@ -165,6 +259,20 @@ public sealed class NetworkRCCar : NetworkBehaviour
         ApplyColor(UnpackColor(packed));
     }
 
+    private void ApplyUserIdFromNetwork(bool force)
+    {
+        string synced = SyncedUserId.ToString();
+        synced = string.IsNullOrWhiteSpace(synced) ? string.Empty : synced.Trim();
+        if (!force && string.Equals(_lastAppliedUserId, synced, System.StringComparison.Ordinal))
+            return;
+
+        _lastAppliedUserId = synced;
+        if (!string.IsNullOrWhiteSpace(synced))
+            _assignedUserId = synced;
+
+        RenameForDebug();
+    }
+
     private void ApplyColor(Color color)
     {
         Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
@@ -187,13 +295,14 @@ public sealed class NetworkRCCar : NetworkBehaviour
 
     private void RenameForDebug()
     {
-        if (string.IsNullOrWhiteSpace(_assignedUserId) || AssignedSlotIndex <= 0)
+        string userId = AssignedUserId;
+        if (string.IsNullOrWhiteSpace(userId) || AssignedSlotIndex <= 0)
             return;
 
-        name = $"Car_slot{AssignedSlotIndex}_{SafeName(_assignedUserId)}";
+        name = $"Car_slot{AssignedSlotIndex}_{SafeName(userId)}";
 
         if (_debugLog)
-            Debug.Log($"[NetworkRCCar] configured. slot={AssignedSlotIndex}, user={_assignedUserId}, stateAuthority={Object != null && Object.HasStateAuthority}");
+            Debug.Log($"[NetworkRCCar] configured. slot={AssignedSlotIndex}, user={userId}, stateAuthority={Object != null && Object.HasStateAuthority}");
     }
 
     private static int PackColor(Color color)
@@ -214,5 +323,12 @@ public sealed class NetworkRCCar : NetworkBehaviour
     private static string SafeName(string userId)
     {
         return string.IsNullOrWhiteSpace(userId) ? "unknown" : userId.Replace(" ", "_");
+    }
+
+    private static string TrimForNetworkString(string value, int maxLength)
+    {
+        string text = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+        int limit = Mathf.Max(1, maxLength);
+        return text.Length <= limit ? text : text.Substring(0, limit);
     }
 }

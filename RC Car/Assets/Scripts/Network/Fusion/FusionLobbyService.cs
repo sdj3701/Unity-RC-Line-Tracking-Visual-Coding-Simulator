@@ -9,6 +9,7 @@ namespace RC.Network.Fusion
     public sealed class FusionLobbyService : MonoBehaviour
     {
         public const string RoomNameProperty = "roomName";
+        public const string ApiRoomIdProperty = "apiRoomId";
         public const string HostUserIdProperty = "hostUserId";
         public const string HostNameProperty = "hostName";
         public const string ModeProperty = "mode";
@@ -143,6 +144,7 @@ namespace RC.Network.Fusion
             return new FusionRoomInfo
             {
                 SessionName = sessionName,
+                ApiRoomId = GetStringProperty(properties, ApiRoomIdProperty, string.Empty),
                 RoomName = GetStringProperty(properties, RoomNameProperty, sessionName),
                 HostUserId = GetStringProperty(properties, HostUserIdProperty, string.Empty),
                 HostName = GetStringProperty(properties, HostNameProperty, string.Empty),

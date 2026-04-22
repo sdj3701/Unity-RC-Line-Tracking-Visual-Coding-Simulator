@@ -27,6 +27,12 @@ public sealed class NetworkRCCarSpawner
             return null;
         }
 
+        if (!runner.IsServer)
+        {
+            LogWarning($"Network spawn must run on host/server only. slot={slotIndex}, user={userId}, isClient={runner.IsClient}");
+            return null;
+        }
+
         if (carPrefab == null)
         {
             LogWarning("carPrefab is null.");
@@ -39,6 +45,9 @@ public sealed class NetworkRCCarSpawner
             LogWarning($"carPrefab does not contain NetworkObject. prefab={carPrefab.name}");
             return null;
         }
+
+        if (!prefabNetworkObject.gameObject.scene.IsValid() && _debugLog)
+            Debug.Log($"[NetworkRCCarSpawner] Prefab candidate accepted. prefab={carPrefab.name}, slot={slotIndex}, user={userId}");
 
         ResolveSpawnPose(carRoot, slotSpawnPoints, slotIndex, out Vector3 position, out Quaternion rotation);
 

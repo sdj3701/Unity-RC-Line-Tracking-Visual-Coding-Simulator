@@ -38,8 +38,17 @@ public class But_RoomList : MonoBehaviour
     private string _pendingJoinRoomId = string.Empty;
     private bool _isWaitingJoinApproval;
     private float _nextJoinApprovalPollTime;
+    private TaskCompletionSource<PhotonApiJoinRequestResult> _photonApiJoinRequestTcs;
+    private string _pendingPhotonApiRoomId = string.Empty;
 
     public string SelectedRoomId { get; private set; }
+
+    private sealed class PhotonApiJoinRequestResult
+    {
+        public bool Success;
+        public string Message;
+        public ChatRoomJoinRequestInfo Info;
+    }
 
     private void OnEnable()
     {
@@ -66,8 +75,8 @@ public class But_RoomList : MonoBehaviour
 
         if (_usePhotonRooms)
             BindPhotonLobbyService();
-        else
-            TryBindManagerEvents();
+
+        TryBindManagerEvents();
         TryResolveContentRoot();
     }
 
@@ -84,9 +93,10 @@ public class But_RoomList : MonoBehaviour
 
         if (_usePhotonRooms)
             UnbindPhotonLobbyService();
-        else
-            UnbindManagerEvents();
+
+        UnbindManagerEvents();
         StopJoinApprovalPolling();
+        CompletePendingPhotonApiJoinRequest(false, "canceled");
     }
 
     private void Update()
@@ -161,13 +171,12 @@ public class But_RoomList : MonoBehaviour
         if (!_roomMap.TryGetValue(SelectedRoomId, out selectedRoom))
             selectedRoom = new ChatRoomSummaryInfo { RoomId = SelectedRoomId, Title = string.Empty };
 
-        RoomSessionContext.Set(new RoomInfo
-        {
-            RoomId = selectedRoom.RoomId,
-            RoomName = selectedRoom.Title,
-            HostUserId = selectedRoom.OwnerUserId,
-            CreatedAtUtc = selectedRoom.CreatedAtUtc
-        });
+        NetworkRoomIdentity.ApplyRoomContext(
+            apiRoomId: selectedRoom.RoomId,
+            photonSessionName: null,
+            roomName: selectedRoom.Title,
+            hostUserId: selectedRoom.OwnerUserId,
+            createdAtUtc: selectedRoom.CreatedAtUtc);
 
         if (_roomListPanel != null)
             _roomListPanel.SetActive(false);
@@ -210,6 +219,18 @@ public class But_RoomList : MonoBehaviour
         lobbyService.RefreshFromConnectionManager();
         lobbyService.TryGetRoom(sessionName, out FusionRoomInfo roomInfo);
 
+        string apiRoomId = roomInfo != null ? roomInfo.ApiRoomId : string.Empty;
+        if (_useJoinRequestOnConfirm)
+        {
+            PhotonApiJoinRequestResult apiJoinRequest = await RequestApiJoinForPhotonRoomAsync(apiRoomId);
+            if (apiJoinRequest == null || !apiJoinRequest.Success)
+            {
+                string message = apiJoinRequest != null ? apiJoinRequest.Message : "api join request failed";
+                FusionDebugLog.Error(FusionDebugFlow.Room, $"Photon room join blocked because API join request failed. session={sessionName}, apiRoomId={apiRoomId}, message={message}");
+                return;
+            }
+        }
+
         if (_roomListPanel != null)
             _roomListPanel.SetActive(false);
 
@@ -219,10 +240,23 @@ public class But_RoomList : MonoBehaviour
             sessionName,
             roomInfo,
             _targetSceneName,
-            _moveToSceneOnConfirm);
+            loadSceneOnSuccess: false);
 
         if (!success)
+        {
             FusionDebugLog.Error(FusionDebugFlow.Room, $"Photon room join failed. {roomService.LastErrorMessage}");
+            return;
+        }
+
+        NetworkRoomIdentity.ApplyRoomContext(
+            apiRoomId,
+            sessionName,
+            roomInfo != null ? roomInfo.RoomName : sessionName,
+            roomInfo != null ? roomInfo.HostUserId : string.Empty,
+            roomInfo != null ? roomInfo.CreatedAtUtc : string.Empty);
+
+        if (_moveToSceneOnConfirm && !string.IsNullOrWhiteSpace(_targetSceneName))
+            SceneManager.LoadScene(_targetSceneName);
     }
 
     private void HandlePhotonRoomListSucceeded(IReadOnlyList<FusionRoomInfo> rooms)
@@ -279,6 +313,7 @@ public class But_RoomList : MonoBehaviour
         _boundManager.OnListSucceeded += HandleRoomListSucceeded;
         _boundManager.OnJoinRequestSucceeded += HandleJoinRequestSucceeded;
         _boundManager.OnJoinRequestFailed += HandleJoinRequestFailed;
+        _boundManager.OnJoinRequestCanceled += HandleJoinRequestCanceled;
         _boundManager.OnMyJoinRequestStatusFetchSucceeded += HandleMyJoinRequestStatusFetchSucceeded;
         _boundManager.OnMyJoinRequestStatusFetchFailed += HandleMyJoinRequestStatusFetchFailed;
         _boundManager.OnMyJoinRequestStatusFetchCanceled += HandleMyJoinRequestStatusFetchCanceled;
@@ -323,6 +358,7 @@ public class But_RoomList : MonoBehaviour
         _boundManager.OnListSucceeded -= HandleRoomListSucceeded;
         _boundManager.OnJoinRequestSucceeded -= HandleJoinRequestSucceeded;
         _boundManager.OnJoinRequestFailed -= HandleJoinRequestFailed;
+        _boundManager.OnJoinRequestCanceled -= HandleJoinRequestCanceled;
         _boundManager.OnMyJoinRequestStatusFetchSucceeded -= HandleMyJoinRequestStatusFetchSucceeded;
         _boundManager.OnMyJoinRequestStatusFetchFailed -= HandleMyJoinRequestStatusFetchFailed;
         _boundManager.OnMyJoinRequestStatusFetchCanceled -= HandleMyJoinRequestStatusFetchCanceled;
@@ -460,7 +496,18 @@ public class But_RoomList : MonoBehaviour
 
     private void HandleJoinRequestSucceeded(ChatRoomJoinRequestInfo info)
     {
-        StartJoinApprovalPolling(info);
+        if (_photonApiJoinRequestTcs != null)
+        {
+            string pendingRoomId = info != null ? info.RoomId : string.Empty;
+            if (string.IsNullOrWhiteSpace(_pendingPhotonApiRoomId) ||
+                string.Equals(_pendingPhotonApiRoomId, pendingRoomId ?? string.Empty, StringComparison.Ordinal))
+            {
+                CompletePendingPhotonApiJoinRequest(true, string.Empty, info);
+            }
+        }
+
+        if (!_usePhotonRooms)
+            StartJoinApprovalPolling(info);
 
         if (!_debugLog)
             return;
@@ -473,12 +520,19 @@ public class But_RoomList : MonoBehaviour
 
     private void HandleJoinRequestFailed(string message)
     {
+        CompletePendingPhotonApiJoinRequest(false, message);
         StopJoinApprovalPolling();
 
         if (!_debugLog)
             return;
 
         Debug.LogWarning($"[But_RoomList] Join request failed: {message}");
+    }
+
+    private void HandleJoinRequestCanceled()
+    {
+        CompletePendingPhotonApiJoinRequest(false, "canceled");
+        StopJoinApprovalPolling();
     }
 
     private void StartJoinApprovalPolling(ChatRoomJoinRequestInfo info)
@@ -563,6 +617,71 @@ public class But_RoomList : MonoBehaviour
             Debug.LogWarning($"[But_RoomList] Join request status fetch canceled. requestId={requestId}");
     }
 
+    private async Task<PhotonApiJoinRequestResult> RequestApiJoinForPhotonRoomAsync(string apiRoomId)
+    {
+        if (!_useJoinRequestOnConfirm)
+        {
+            return new PhotonApiJoinRequestResult
+            {
+                Success = true,
+                Message = string.Empty,
+                Info = null
+            };
+        }
+
+        string resolvedApiRoomId = string.IsNullOrWhiteSpace(apiRoomId) ? string.Empty : apiRoomId.Trim();
+        if (string.IsNullOrWhiteSpace(resolvedApiRoomId))
+        {
+            return new PhotonApiJoinRequestResult
+            {
+                Success = false,
+                Message = "api roomId is empty",
+                Info = null
+            };
+        }
+
+        TryBindManagerEvents();
+        if (_boundManager == null)
+        {
+            return new PhotonApiJoinRequestResult
+            {
+                Success = false,
+                Message = "ChatRoomManager.Instance is null",
+                Info = null
+            };
+        }
+
+        if (_boundManager.IsBusy)
+        {
+            return new PhotonApiJoinRequestResult
+            {
+                Success = false,
+                Message = "ChatRoomManager is busy",
+                Info = null
+            };
+        }
+
+        _pendingPhotonApiRoomId = resolvedApiRoomId;
+        _photonApiJoinRequestTcs = new TaskCompletionSource<PhotonApiJoinRequestResult>();
+        _boundManager.RequestJoinRequest(resolvedApiRoomId, ResolveTokenOverride());
+        return await _photonApiJoinRequestTcs.Task;
+    }
+
+    private void CompletePendingPhotonApiJoinRequest(bool success, string message, ChatRoomJoinRequestInfo info = null)
+    {
+        if (_photonApiJoinRequestTcs == null)
+            return;
+
+        _photonApiJoinRequestTcs.TrySetResult(new PhotonApiJoinRequestResult
+        {
+            Success = success,
+            Message = string.IsNullOrWhiteSpace(message) ? string.Empty : message.Trim(),
+            Info = info
+        });
+        _photonApiJoinRequestTcs = null;
+        _pendingPhotonApiRoomId = string.Empty;
+    }
+
     private void NavigateToApprovedRoom(string roomId)
     {
         string resolvedRoomId = !string.IsNullOrWhiteSpace(roomId)
@@ -571,13 +690,12 @@ public class But_RoomList : MonoBehaviour
 
         ChatRoomSummaryInfo selectedRoom = ResolveRoomForNavigation(resolvedRoomId);
 
-        RoomSessionContext.Set(new RoomInfo
-        {
-            RoomId = selectedRoom.RoomId,
-            RoomName = selectedRoom.Title,
-            HostUserId = selectedRoom.OwnerUserId,
-            CreatedAtUtc = selectedRoom.CreatedAtUtc
-        });
+        NetworkRoomIdentity.ApplyRoomContext(
+            apiRoomId: selectedRoom.RoomId,
+            photonSessionName: null,
+            roomName: selectedRoom.Title,
+            hostUserId: selectedRoom.OwnerUserId,
+            createdAtUtc: selectedRoom.CreatedAtUtc);
 
         if (_moveToSceneOnConfirm && !string.IsNullOrWhiteSpace(_targetSceneName))
             SceneManager.LoadScene(_targetSceneName);

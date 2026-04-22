@@ -193,6 +193,8 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
             return;
         }
 
+        _chatRoomManager.OnJoinRequestsFetchSucceeded += HandleJoinRequestsFetchSucceeded;
+        _chatRoomManager.OnJoinRequestDecisionSucceeded += HandleJoinRequestDecisionSucceeded;
         _chatRoomManager.OnBlockShareListFetchSucceeded += HandleBlockShareListFetchSucceeded;
         _chatRoomManager.OnBlockShareDetailFetchSucceeded += HandleBlockShareDetailFetchSucceeded;
         _chatRoomManager.OnBlockShareSaveSucceeded += HandleBlockShareSaveSucceeded;
@@ -206,6 +208,8 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
         if (!_isBound || _chatRoomManager == null)
             return;
 
+        _chatRoomManager.OnJoinRequestsFetchSucceeded -= HandleJoinRequestsFetchSucceeded;
+        _chatRoomManager.OnJoinRequestDecisionSucceeded -= HandleJoinRequestDecisionSucceeded;
         _chatRoomManager.OnBlockShareListFetchSucceeded -= HandleBlockShareListFetchSucceeded;
         _chatRoomManager.OnBlockShareDetailFetchSucceeded -= HandleBlockShareDetailFetchSucceeded;
         _chatRoomManager.OnBlockShareSaveSucceeded -= HandleBlockShareSaveSucceeded;
@@ -217,9 +221,6 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
     private void TryFetchJoinRequestsNow()
     {
         if (!_fetchJoinRequestsOnEnable || _chatRoomManager == null)
-            return;
-
-        if (FusionConnectionManager.Instance != null && FusionConnectionManager.Instance.IsInGameSession)
             return;
 
         if (_chatRoomManager.IsBusy)
@@ -310,7 +311,10 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
             return AuthManager.Instance.CurrentUser.userId.Trim();
         }
 
-        return string.Empty;
+        if (player.PlayerId > 0)
+            return $"player-{player.PlayerId}";
+
+        return player.ToString();
     }
 
     private void HandleJoinRequestsFetchSucceeded(ChatRoomJoinRequestInfo[] requests)
@@ -386,6 +390,147 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
     private void HandleBlockShareSaveSucceeded(ChatRoomBlockShareSaveInfo info)
     {
         _ = HandleBlockShareSaveSucceededAsync(info, fromPending: false);
+    }
+
+    public void HandlePhotonCodeSelection(string userIdRaw, int userLevelSeq, string fileNameRaw, PlayerRef sourcePlayer)
+    {
+        if (!IsHost())
+        {
+            if (_debugLog)
+                Log($"Photon code selection ignored on non-host. sourcePlayer={sourcePlayer}, seq={userLevelSeq}, file={fileNameRaw}");
+            return;
+        }
+
+        string userId = NormalizeText(userIdRaw);
+        if (string.IsNullOrWhiteSpace(userId) && _boundRunner != null && sourcePlayer.PlayerId > 0)
+            userId = NormalizeText(ResolveFusionUserId(_boundRunner, sourcePlayer));
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            _statusReporter?.SetWarning($"Photon code selection user unresolved. sourcePlayer={sourcePlayer}, seq={userLevelSeq}, file={fileNameRaw}");
+            return;
+        }
+
+        string fileName = NormalizeText(fileNameRaw);
+        EnsureParticipantSlotAndCar(userId, userName: userId, source: "photon-code-selection", ownerPlayer: sourcePlayer);
+        LogBlue($"Photon code selection received. user={userId}, player={sourcePlayer}, userLevelSeq={userLevelSeq}, fileName={fileName}");
+        _ = HandlePhotonCodeSelectionAsync(userId, userLevelSeq, fileName, sourcePlayer);
+    }
+
+    private async Task HandlePhotonCodeSelectionAsync(string userId, int userLevelSeq, string fileName, PlayerRef sourcePlayer)
+    {
+        if (userLevelSeq <= 0)
+        {
+            _statusReporter?.SetWarning($"Photon code selection ignored: invalid userLevelSeq. user={userId}, seq={userLevelSeq}");
+            return;
+        }
+
+        string shareId = BuildPhotonShareId(userId, userLevelSeq, fileName);
+        string saveKey = BuildSaveDedupeKey(shareId, userLevelSeq);
+        if (!_inProgressSaveKeys.Add(saveKey))
+        {
+            LogBlue($"Photon code selection skipped: already in progress. user={userId}, seq={userLevelSeq}, fileName={fileName}");
+            return;
+        }
+
+        try
+        {
+            int preSlots = _slotRegistry.MaxCount;
+            int preCars = _bindingStore.CountRuntimeCars();
+
+            if (!_slotRegistry.TryGetSlotByUserId(userId, out HostParticipantSlot approvedSlot) || approvedSlot == null)
+            {
+                EnsureParticipantSlotAndCar(userId, userName: userId, source: "photon-code-selection-retry", ownerPlayer: sourcePlayer);
+                _slotRegistry.TryGetSlotByUserId(userId, out approvedSlot);
+            }
+
+            if (approvedSlot == null)
+            {
+                _statusReporter?.SetWarning($"Photon code selection ignored: slot unresolved. user={userId}, seq={userLevelSeq}");
+                return;
+            }
+
+            _bindingStore.UpsertParticipant(approvedSlot);
+
+            string token = ResolveAccessToken();
+            ResolvedCodePayload payload = await _codeResolver.ResolveBySavedSeqAsync(
+                userId,
+                shareId,
+                userLevelSeq,
+                token);
+
+            if (payload == null || !payload.IsSuccess)
+            {
+                string error = payload != null ? payload.Error : "payload is null";
+                _statusReporter?.SetError($"Photon code resolve failed. user={userId}, seq={userLevelSeq}, error={error}");
+                LogSaveTarget(shareId, userLevelSeq, userId, approvedSlot.SlotIndex, null);
+                LogSaveIntegrity(shareId, userLevelSeq, preSlots, preCars);
+                UpdateSummary();
+                return;
+            }
+
+            HostCarBinding binding = _bindingStore.UpsertCode(payload);
+            if (binding == null)
+            {
+                _statusReporter?.SetError($"Photon code mapping failed. user={userId}, seq={userLevelSeq}");
+                LogSaveTarget(shareId, userLevelSeq, userId, approvedSlot.SlotIndex, null);
+                LogSaveIntegrity(shareId, userLevelSeq, preSlots, preCars);
+                UpdateSummary();
+                return;
+            }
+
+            binding.SlotIndex = approvedSlot.SlotIndex;
+            binding.UserName = approvedSlot.UserName;
+
+            if (!binding.TryGetActiveCodeVersion(out HostCodeVersion activeVersion) ||
+                activeVersion == null ||
+                string.IsNullOrWhiteSpace(activeVersion.Json))
+            {
+                binding.LastError = "active json missing";
+                _statusReporter?.SetError($"Photon code mapping failed(active json missing). user={userId}, slot={approvedSlot.SlotIndex}, seq={userLevelSeq}");
+                LogSaveTarget(shareId, userLevelSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
+                LogSaveIntegrity(shareId, userLevelSeq, preSlots, preCars);
+                UpdateSummary();
+                return;
+            }
+
+            if (binding.RuntimeRefs == null || binding.RuntimeRefs.Executor == null || binding.RuntimeRefs.Physics == null)
+            {
+                binding.LastError = "runtime refs missing";
+                _statusReporter?.SetError($"Photon runtime refs missing. user={userId}, slot={approvedSlot.SlotIndex}, seq={userLevelSeq}");
+                LogSaveTarget(shareId, userLevelSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
+                LogSaveIntegrity(shareId, userLevelSeq, preSlots, preCars);
+                UpdateSummary();
+                return;
+            }
+
+            bool loaded = _runtimeBinder.TryApplyJson(
+                binding.RuntimeRefs.Executor,
+                activeVersion.Json,
+                $"photon-code-selection:{userId}:seq={userLevelSeq}:file={fileName}",
+                out string loadError);
+            binding.RuntimeReady = loaded;
+            if (!loaded)
+            {
+                binding.LastError = loadError;
+                _statusReporter?.SetError($"Photon runtime load failed. user={userId}, seq={userLevelSeq}, error={loadError}");
+            }
+            else
+            {
+                binding.LastError = string.Empty;
+                _statusReporter?.SetInfo($"Photon code mapped. user={userId}, slot={approvedSlot.SlotIndex}, seq={userLevelSeq}");
+                LogBlue(
+                    $"Host applied Photon XML/JSON selection. user={userId}, slot={approvedSlot.SlotIndex}, userLevelSeq={userLevelSeq}, fileName={fileName}, jsonLen={activeVersion.Json.Length}");
+            }
+
+            LogSaveTarget(shareId, userLevelSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
+            LogSaveIntegrity(shareId, userLevelSeq, preSlots, preCars);
+            UpdateSummary();
+        }
+        finally
+        {
+            _inProgressSaveKeys.Remove(saveKey);
+        }
     }
 
     private async Task HandleBlockShareSaveSucceededAsync(ChatRoomBlockShareSaveInfo info, bool fromPending)
@@ -656,6 +801,27 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
         return $"{shareId}:{savedSeq}";
     }
 
+    private static string BuildPhotonShareId(string userIdRaw, int userLevelSeq, string fileNameRaw)
+    {
+        string userId = NormalizeText(userIdRaw);
+        string fileName = NormalizeText(fileNameRaw);
+        string normalizedName = string.IsNullOrWhiteSpace(fileName) ? "selection" : fileName;
+        normalizedName = Regex.Replace(normalizedName, "[^A-Za-z0-9_.-]+", "_");
+        if (normalizedName.Length > 48)
+            normalizedName = normalizedName.Substring(0, 48);
+
+        string normalizedUser = string.IsNullOrWhiteSpace(userId) ? "unknown" : Regex.Replace(userId, "[^A-Za-z0-9_.-]+", "_");
+        if (normalizedUser.Length > 32)
+            normalizedUser = normalizedUser.Substring(0, 32);
+
+        return $"photon-{normalizedUser}-{Mathf.Max(1, userLevelSeq)}-{normalizedName}";
+    }
+
+    private static string NormalizeText(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+    }
+
     private bool IsPendingDuplicateSave(string shareIdRaw, int savedSeq)
     {
         string shareId = string.IsNullOrWhiteSpace(shareIdRaw) ? string.Empty : shareIdRaw.Trim();
@@ -707,6 +873,13 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
 
     private void EnsureParticipantSlotAndCar(string userIdRaw, string userName, string source, PlayerRef ownerPlayer)
     {
+        if (_hostOnly && !IsHost())
+        {
+            if (_debugLog)
+                Log($"Skip participant slot/car on non-host. source={source}, user={userIdRaw}");
+            return;
+        }
+
         string userId = string.IsNullOrWhiteSpace(userIdRaw) ? string.Empty : userIdRaw.Trim();
         if (string.IsNullOrWhiteSpace(userId))
             return;
@@ -728,8 +901,20 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
             color);
         _bindingStore.UpsertRuntimeRefs(userId, refs, color);
 
+        if (refs == null || refs.CarObject == null)
+        {
+            _statusReporter?.SetWarning($"Car spawn skipped or failed. source={source}, user={userId}, slot={slot.SlotIndex}");
+            return;
+        }
+
         if (created)
             _statusReporter?.SetInfo($"Slot created. source={source}, user={userId}, slot={slot.SlotIndex}");
+
+        if (_debugLog)
+        {
+            string netId = refs.NetworkObject != null ? refs.NetworkObject.Id.ToString() : "-";
+            Log($"Participant ready. source={source}, user={userId}, slot={slot.SlotIndex}, car={refs.CarObject.name}, netId={netId}, player={ownerPlayer}");
+        }
     }
 
     private void RememberShareOwner(string shareIdRaw, string userIdRaw)
@@ -856,15 +1041,7 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
 
     private string ResolveTargetRoomId()
     {
-        FusionRoomSessionInfo fusionContext = FusionRoomSessionContext.Current;
-        if (fusionContext != null && !string.IsNullOrWhiteSpace(fusionContext.SessionName))
-            return fusionContext.SessionName.Trim();
-
-        RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
-        if (currentRoom != null && !string.IsNullOrWhiteSpace(currentRoom.RoomId))
-            return currentRoom.RoomId.Trim();
-
-        return string.Empty;
+        return NetworkRoomIdentity.ResolveApiRoomId();
     }
 
     private bool IsHost()
@@ -1004,7 +1181,15 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
         if (!_debugLog || string.IsNullOrWhiteSpace(message))
             return;
 
-        Debug.Log($"[HostNetworkCarCoordinator] {message}");
+        //Debug.Log($"[HostNetworkCarCoordinator] {message}");
+    }
+
+    private void LogBlue(string message)
+    {
+        if (!_debugLog || string.IsNullOrWhiteSpace(message))
+            return;
+
+        Debug.Log($"<color=#33A6FF>[HostNetworkCarCoordinator] {message}</color>");
     }
 
     private void LogMappingNeeded(string message)
@@ -1015,4 +1200,3 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
         Debug.Log($"<color=orange>[HostNetworkCarCoordinator][MAPPING] {message}</color>");
     }
 }
-

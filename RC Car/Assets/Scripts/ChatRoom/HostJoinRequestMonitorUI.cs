@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Threading.Tasks;
+using Auth;
 using Fusion;
 using RC.Network.Fusion;
 using TMPro;
@@ -53,10 +55,14 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
     private readonly List<HostJoinRequestItemUI> _spawnedItems = new List<HostJoinRequestItemUI>();
 
     private FusionConnectionManager _connectionManager;
+    private ChatRoomManager _chatRoomManager;
     private Coroutine _pollingCoroutine;
     private bool _isBound;
+    private bool _isChatRoomBound;
     private int _currentPlayerCount;
     private int _currentMaxPlayers;
+    private TaskCompletionSource<ChatRoomJoinRequestInfo[]> _joinRequestsFetchTcs;
+    private TaskCompletionSource<ChatRoomJoinRequestDecisionInfo> _joinRequestDecisionTcs;
 
     private void Awake()
     {
@@ -91,6 +97,7 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
         StopPolling();
         UnbindButtons();
         UnbindConnectionManager();
+        UnbindChatRoomManager();
     }
 
     public void StartPolling()
@@ -264,6 +271,8 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
             return;
         }
 
+        FusionPendingJoinRequestInfo photonRequest = FindPhotonRequest(requestId);
+
         bool handled = approve
             ? _connectionManager.ApproveJoinRequest(requestId)
             : _connectionManager.RejectJoinRequest(requestId);
@@ -271,6 +280,11 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
         SetStatus(handled
             ? $"Photon join request {(approve ? "accepted" : "rejected")}. requestId={requestId}"
             : $"Photon join request not found. requestId={requestId}");
+
+        if (!handled || photonRequest == null)
+            return;
+
+        _ = MirrorApiJoinDecisionAsync(photonRequest, approve);
     }
 
     private void RefreshAllUi()
@@ -412,6 +426,247 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
     private void HandleItemRejectClicked(string requestId)
     {
         TryDecideJoinRequest(requestId, false);
+    }
+
+    private async Task MirrorApiJoinDecisionAsync(FusionPendingJoinRequestInfo photonRequest, bool approve)
+    {
+        if (photonRequest == null || string.IsNullOrWhiteSpace(photonRequest.UserId))
+        {
+            Log("API join decision skipped because Photon userId is empty.");
+            return;
+        }
+
+        string apiRoomId = ResolveApiRoomId();
+        if (string.IsNullOrWhiteSpace(apiRoomId))
+        {
+            Log("API join decision skipped because apiRoomId is empty.");
+            return;
+        }
+
+        if (!TryEnsureAndBindChatRoomManager())
+        {
+            Log("API join decision skipped because ChatRoomManager is missing.");
+            return;
+        }
+
+        string accessToken = ResolveAccessTokenOverride();
+        ChatRoomJoinRequestInfo apiRequest = await FindPendingApiJoinRequestAsync(
+            apiRoomId,
+            photonRequest.UserId,
+            accessToken);
+
+        if (apiRequest == null || string.IsNullOrWhiteSpace(apiRequest.RequestId))
+        {
+            Log($"API join request not found for user={photonRequest.UserId}, apiRoomId={apiRoomId}");
+            return;
+        }
+
+        ChatRoomJoinRequestDecisionInfo decision = await DecideApiJoinRequestAsync(
+            apiRoomId,
+            apiRequest.RequestId,
+            approve,
+            accessToken);
+
+        if (decision == null)
+            return;
+
+        SetStatus($"Photon/API join request {(approve ? "accepted" : "rejected")}. user={photonRequest.UserId}");
+    }
+
+    private async Task<ChatRoomJoinRequestInfo> FindPendingApiJoinRequestAsync(
+        string apiRoomId,
+        string userId,
+        string accessToken)
+    {
+        string normalizedUserId = string.IsNullOrWhiteSpace(userId) ? string.Empty : userId.Trim();
+        if (string.IsNullOrWhiteSpace(apiRoomId) || string.IsNullOrWhiteSpace(normalizedUserId))
+            return null;
+
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            ChatRoomJoinRequestInfo[] requests = await FetchApiJoinRequestsAsync(apiRoomId, accessToken);
+            if (requests != null)
+            {
+                for (int i = 0; i < requests.Length; i++)
+                {
+                    ChatRoomJoinRequestInfo request = requests[i];
+                    if (request == null || string.IsNullOrWhiteSpace(request.RequestUserId))
+                        continue;
+
+                    if (!string.Equals(normalizedUserId, request.RequestUserId.Trim(), StringComparison.Ordinal))
+                        continue;
+
+                    if (!IsPendingJoinRequestStatus(request.Status))
+                        continue;
+
+                    return request;
+                }
+            }
+
+            await Task.Delay(300);
+        }
+
+        return null;
+    }
+
+    private async Task<ChatRoomJoinRequestInfo[]> FetchApiJoinRequestsAsync(string apiRoomId, string accessToken)
+    {
+        if (!await WaitForChatRoomManagerIdleAsync())
+            return null;
+
+        _joinRequestsFetchTcs = new TaskCompletionSource<ChatRoomJoinRequestInfo[]>();
+        _chatRoomManager.FetchJoinRequests(apiRoomId, accessToken);
+        return await _joinRequestsFetchTcs.Task;
+    }
+
+    private async Task<ChatRoomJoinRequestDecisionInfo> DecideApiJoinRequestAsync(
+        string apiRoomId,
+        string requestId,
+        bool approve,
+        string accessToken)
+    {
+        if (!await WaitForChatRoomManagerIdleAsync())
+            return null;
+
+        _joinRequestDecisionTcs = new TaskCompletionSource<ChatRoomJoinRequestDecisionInfo>();
+        _chatRoomManager.DecideJoinRequest(apiRoomId, requestId, approve, accessToken);
+        return await _joinRequestDecisionTcs.Task;
+    }
+
+    private async Task<bool> WaitForChatRoomManagerIdleAsync(int timeoutMs = 5000)
+    {
+        if (_chatRoomManager == null)
+            return false;
+
+        int waitedMs = 0;
+        while (_chatRoomManager.IsBusy && waitedMs < timeoutMs)
+        {
+            await Task.Delay(100);
+            waitedMs += 100;
+        }
+
+        return !_chatRoomManager.IsBusy;
+    }
+
+    private bool TryEnsureAndBindChatRoomManager()
+    {
+        if (_chatRoomManager == null)
+            _chatRoomManager = ChatRoomManager.Instance;
+
+        if (_chatRoomManager == null && _createChatRoomManagerIfMissing)
+        {
+            var chatManagerObject = new GameObject("ChatRoomManager (Runtime)");
+            _chatRoomManager = chatManagerObject.AddComponent<ChatRoomManager>();
+        }
+
+        if (_chatRoomManager == null)
+            return false;
+
+        if (_isChatRoomBound)
+            return true;
+
+        _chatRoomManager.OnJoinRequestsFetchSucceeded += HandleJoinRequestsFetchSucceeded;
+        _chatRoomManager.OnJoinRequestsFetchFailed += HandleJoinRequestsFetchFailed;
+        _chatRoomManager.OnJoinRequestsFetchCanceled += HandleJoinRequestsFetchCanceled;
+        _chatRoomManager.OnJoinRequestDecisionSucceeded += HandleJoinRequestDecisionSucceeded;
+        _chatRoomManager.OnJoinRequestDecisionFailed += HandleJoinRequestDecisionFailed;
+        _chatRoomManager.OnJoinRequestDecisionCanceled += HandleJoinRequestDecisionCanceled;
+        _isChatRoomBound = true;
+        return true;
+    }
+
+    private void UnbindChatRoomManager()
+    {
+        if (!_isChatRoomBound || _chatRoomManager == null)
+            return;
+
+        _chatRoomManager.OnJoinRequestsFetchSucceeded -= HandleJoinRequestsFetchSucceeded;
+        _chatRoomManager.OnJoinRequestsFetchFailed -= HandleJoinRequestsFetchFailed;
+        _chatRoomManager.OnJoinRequestsFetchCanceled -= HandleJoinRequestsFetchCanceled;
+        _chatRoomManager.OnJoinRequestDecisionSucceeded -= HandleJoinRequestDecisionSucceeded;
+        _chatRoomManager.OnJoinRequestDecisionFailed -= HandleJoinRequestDecisionFailed;
+        _chatRoomManager.OnJoinRequestDecisionCanceled -= HandleJoinRequestDecisionCanceled;
+        _chatRoomManager = null;
+        _isChatRoomBound = false;
+    }
+
+    private void HandleJoinRequestsFetchSucceeded(ChatRoomJoinRequestInfo[] requests)
+    {
+        _joinRequestsFetchTcs?.TrySetResult(requests ?? Array.Empty<ChatRoomJoinRequestInfo>());
+        _joinRequestsFetchTcs = null;
+    }
+
+    private void HandleJoinRequestsFetchFailed(string message)
+    {
+        _joinRequestsFetchTcs?.TrySetResult(Array.Empty<ChatRoomJoinRequestInfo>());
+        _joinRequestsFetchTcs = null;
+        Log($"API join request fetch failed. message={message}");
+    }
+
+    private void HandleJoinRequestsFetchCanceled()
+    {
+        _joinRequestsFetchTcs?.TrySetResult(Array.Empty<ChatRoomJoinRequestInfo>());
+        _joinRequestsFetchTcs = null;
+    }
+
+    private void HandleJoinRequestDecisionSucceeded(ChatRoomJoinRequestDecisionInfo info)
+    {
+        _joinRequestDecisionTcs?.TrySetResult(info);
+        _joinRequestDecisionTcs = null;
+    }
+
+    private void HandleJoinRequestDecisionFailed(string roomId, string requestId, bool approve, string message)
+    {
+        _joinRequestDecisionTcs?.TrySetResult(null);
+        _joinRequestDecisionTcs = null;
+        Log($"API join request decision failed. roomId={roomId}, requestId={requestId}, approve={approve}, message={message}");
+    }
+
+    private void HandleJoinRequestDecisionCanceled(string roomId, string requestId, bool approve)
+    {
+        _joinRequestDecisionTcs?.TrySetResult(null);
+        _joinRequestDecisionTcs = null;
+    }
+
+    private FusionPendingJoinRequestInfo FindPhotonRequest(string requestId)
+    {
+        string normalized = string.IsNullOrWhiteSpace(requestId) ? string.Empty : requestId.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return null;
+
+        for (int i = 0; i < _latestRequests.Count; i++)
+        {
+            FusionPendingJoinRequestInfo request = _latestRequests[i];
+            if (request == null || string.IsNullOrWhiteSpace(request.RequestId))
+                continue;
+
+            if (string.Equals(normalized, request.RequestId.Trim(), StringComparison.Ordinal))
+                return request;
+        }
+
+        return null;
+    }
+
+    private string ResolveApiRoomId()
+    {
+        return NetworkRoomIdentity.ResolveApiRoomId(_roomIdOverride);
+    }
+
+    private string ResolveAccessTokenOverride()
+    {
+        if (!string.IsNullOrWhiteSpace(_accessTokenOverride))
+            return _accessTokenOverride.Trim();
+
+        return AuthManager.Instance != null ? AuthManager.Instance.GetAccessToken() : null;
+    }
+
+    private static bool IsPendingJoinRequestStatus(string status)
+    {
+        string normalized = string.IsNullOrWhiteSpace(status) ? string.Empty : status.Trim().ToUpperInvariant();
+        return normalized == string.Empty ||
+               normalized == "REQUESTED" ||
+               normalized == "PENDING" ||
+               normalized == "WAITING";
     }
 
     private bool CanCurrentUserManageHostRequests(out string reason)

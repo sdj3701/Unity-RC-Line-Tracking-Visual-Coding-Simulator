@@ -1,10 +1,13 @@
 using System;
+using RC.Network.Fusion;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class ClientBlockShareUploadButton : MonoBehaviour
 {
+    private const string BlueLogColor = "#33A6FF";
+
     [SerializeField] private Button _uploadButton;
     [SerializeField] private TMP_InputField _userLevelSeqInput;
     [SerializeField] private TMP_InputField _messageInput;
@@ -64,7 +67,7 @@ public class ClientBlockShareUploadButton : MonoBehaviour
         string roomId = ResolveTargetRoomId();
         if (string.IsNullOrWhiteSpace(roomId))
         {
-            LogWarning("RoomId is empty. Set RoomSessionContext or room override.");
+            LogWarning("API roomId is empty. Set RoomSessionContext/Fusion ApiRoomId or room override.");
             return;
         }
 
@@ -153,7 +156,11 @@ public class ClientBlockShareUploadButton : MonoBehaviour
         UpdateButtonInteractable();
 
         if (_debugLog)
-            Debug.Log($"[ClientBlockShareUploadButton] Upload success. roomId={roomId}, userLevelSeq={userLevelSeq}, blockShareId={info?.BlockShareId}, code={info?.ResponseCode}");
+        {
+            string fileName = info != null ? info.Message : string.Empty;
+            LogBlue(
+                $"Client XML/JSON share upload succeeded. roomId={roomId}, userLevelSeq={userLevelSeq}, fileName={fileName}, blockShareId={info?.BlockShareId}, code={info?.ResponseCode}");
+        }
     }
 
     private void HandleBlockShareUploadFailed(string roomId, int userLevelSeq, string message)
@@ -199,14 +206,7 @@ public class ClientBlockShareUploadButton : MonoBehaviour
 
     private string ResolveTargetRoomId()
     {
-        if (!string.IsNullOrWhiteSpace(_roomIdOverride))
-            return _roomIdOverride.Trim();
-
-        RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
-        if (currentRoom != null && !string.IsNullOrWhiteSpace(currentRoom.RoomId))
-            return currentRoom.RoomId.Trim();
-
-        return string.Empty;
+        return NetworkRoomIdentity.ResolveApiRoomId(_roomIdOverride);
     }
 
     private bool TryResolveUserLevelSeq(out int userLevelSeq)
@@ -247,5 +247,13 @@ public class ClientBlockShareUploadButton : MonoBehaviour
             return;
 
         Debug.LogWarning($"[ClientBlockShareUploadButton] {message}");
+    }
+
+    private void LogBlue(string message)
+    {
+        if (!_debugLog || string.IsNullOrWhiteSpace(message))
+            return;
+
+        Debug.Log($"<color={BlueLogColor}>[ClientBlockShareUploadButton] {message}</color>");
     }
 }

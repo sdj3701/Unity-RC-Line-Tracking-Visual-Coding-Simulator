@@ -28,7 +28,14 @@ namespace RC.Network.Fusion
                 : (Current != null ? Current.Clone() : new FusionRoomSessionInfo());
 
             next.SessionName = Normalize(runner.SessionInfo.Name);
-            next.RoomName = string.IsNullOrWhiteSpace(next.RoomName) ? next.SessionName : Normalize(next.RoomName);
+            next.ApiRoomId = FusionLobbyService.GetStringProperty(
+                runner.SessionInfo.Properties,
+                FusionLobbyService.ApiRoomIdProperty,
+                next.ApiRoomId);
+            next.RoomName = FusionLobbyService.GetStringProperty(
+                runner.SessionInfo.Properties,
+                FusionLobbyService.RoomNameProperty,
+                string.IsNullOrWhiteSpace(next.RoomName) ? next.SessionName : next.RoomName);
             next.GameMode = runner.GameMode;
             next.IsHost = runner.IsServer;
             next.PlayerCount = FusionPlayerCountUtility.ResolveCurrentPlayerCount(runner, next.IsHost ? 1 : next.PlayerCount);
@@ -54,6 +61,7 @@ namespace RC.Network.Fusion
     public sealed class FusionRoomSessionInfo
     {
         public string SessionName { get; set; }
+        public string ApiRoomId { get; set; }
         public string RoomName { get; set; }
         public string HostUserId { get; set; }
         public string HostName { get; set; }
@@ -64,7 +72,7 @@ namespace RC.Network.Fusion
 
         public override string ToString()
         {
-            return $"session={SessionName}, room={RoomName}, mode={GameMode}, isHost={IsHost}, host={HostUserId}, players={PlayerCount}/{MaxPlayers}";
+            return $"session={SessionName}, apiRoomId={ApiRoomId}, room={RoomName}, mode={GameMode}, isHost={IsHost}, host={HostUserId}, players={PlayerCount}/{MaxPlayers}";
         }
 
         public FusionRoomSessionInfo Clone()
@@ -72,6 +80,7 @@ namespace RC.Network.Fusion
             return new FusionRoomSessionInfo
             {
                 SessionName = SessionName,
+                ApiRoomId = ApiRoomId,
                 RoomName = RoomName,
                 HostUserId = HostUserId,
                 HostName = HostName,

@@ -3,6 +3,7 @@ namespace RC.Network.Fusion
     public sealed class FusionRoomInfo
     {
         public string SessionName { get; set; }
+        public string ApiRoomId { get; set; }
         public string RoomName { get; set; }
         public string HostUserId { get; set; }
         public string HostName { get; set; }
@@ -19,7 +20,7 @@ namespace RC.Network.Fusion
 
         public override string ToString()
         {
-            return $"{DisplayName} ({PlayerCount}/{MaxPlayers}) session={SessionName}, host={HostUserId}, open={IsOpen}, visible={IsVisible}";
+            return $"{DisplayName} ({PlayerCount}/{MaxPlayers}) session={SessionName}, apiRoomId={ApiRoomId}, host={HostUserId}, open={IsOpen}, visible={IsVisible}";
         }
     }
 }

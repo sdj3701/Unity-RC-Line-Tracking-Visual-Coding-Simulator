@@ -26,6 +26,8 @@ public enum RoomCreateErrorCode
 public class RoomInfo
 {
     public string RoomId;
+    public string ApiRoomId;
+    public string PhotonSessionName;
     public string RoomName;
     public string HostUserId;
     public string TableName;

@@ -2,12 +2,15 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using Auth;
+using RC.Network.Fusion;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class HostBlockShareAutoRefreshPanel : MonoBehaviour
 {
+    private const string BlueLogColor = "#33A6FF";
+
     [Header("Main Panel")]
     [SerializeField] private GameObject _mainPanel;
 
@@ -46,6 +49,7 @@ public class HostBlockShareAutoRefreshPanel : MonoBehaviour
     private readonly List<ChatRoomBlockShareInfo> _items = new List<ChatRoomBlockShareInfo>();
     private readonly List<GameObject> _itemObjects = new List<GameObject>();
     private readonly List<Toggle> _itemToggles = new List<Toggle>();
+    private readonly HashSet<string> _knownShareIds = new HashSet<string>(StringComparer.Ordinal);
 
     private ChatRoomManager _boundManager;
     private bool _isBound;
@@ -197,7 +201,7 @@ public class HostBlockShareAutoRefreshPanel : MonoBehaviour
         string roomId = ResolveTargetRoomId();
         if (string.IsNullOrWhiteSpace(roomId))
         {
-            SetStatus("RoomId is empty.");
+            SetStatus("API roomId is empty.");
             return;
         }
 
@@ -233,7 +237,7 @@ public class HostBlockShareAutoRefreshPanel : MonoBehaviour
         string roomId = ResolveTargetRoomId();
         if (string.IsNullOrWhiteSpace(roomId))
         {
-            SetStatus("RoomId is empty.");
+            SetStatus("API roomId is empty.");
             return;
         }
 
@@ -388,6 +392,7 @@ public class HostBlockShareAutoRefreshPanel : MonoBehaviour
         ChatRoomBlockShareInfo[] incoming = info != null && info.Items != null
             ? info.Items
             : Array.Empty<ChatRoomBlockShareInfo>();
+        var newItems = new List<ChatRoomBlockShareInfo>();
 
         for (int i = 0; i < incoming.Length; i++)
         {
@@ -396,11 +401,16 @@ public class HostBlockShareAutoRefreshPanel : MonoBehaviour
                 continue;
 
             _items.Add(item);
+            string shareId = NormalizeShareId(item.BlockShareId);
+            if (!string.IsNullOrWhiteSpace(shareId) && !_knownShareIds.Contains(shareId))
+                newItems.Add(item);
         }
 
         RebuildListUi();
         RestoreSelection(previousShareId);
         SetStatus($"Block list updated. count={_items.Count}");
+        LogHostRefreshResult(roomId, _items.Count, newItems);
+        ReplaceKnownShareIds(_items);
     }
 
     private void HandleListFetchFailed(string roomId, int page, int size, string message)
@@ -675,21 +685,10 @@ public class HostBlockShareAutoRefreshPanel : MonoBehaviour
 
     private string ResolveTargetRoomId()
     {
-        if (_autoRoomFromSession)
-        {
-            RoomInfo sessionRoom = RoomSessionContext.CurrentRoom;
-            if (sessionRoom != null && !string.IsNullOrWhiteSpace(sessionRoom.RoomId))
-                return sessionRoom.RoomId.Trim();
-        }
+        if (!_autoRoomFromSession && string.IsNullOrWhiteSpace(_roomIdOverride))
+            return string.Empty;
 
-        if (!string.IsNullOrWhiteSpace(_roomIdOverride))
-            return _roomIdOverride.Trim();
-
-        RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
-        if (currentRoom != null && !string.IsNullOrWhiteSpace(currentRoom.RoomId))
-            return currentRoom.RoomId.Trim();
-
-        return string.Empty;
+        return NetworkRoomIdentity.ResolveApiRoomId(_roomIdOverride);
     }
 
     private string ResolveTokenOverride()
@@ -699,6 +698,23 @@ public class HostBlockShareAutoRefreshPanel : MonoBehaviour
 
     private bool IsHost()
     {
+        FusionRoomSessionInfo fusionContext = FusionRoomSessionContext.Current;
+        if (fusionContext != null)
+        {
+            if (fusionContext.IsHost || fusionContext.GameMode == Fusion.GameMode.Host)
+                return true;
+
+            if (!string.IsNullOrWhiteSpace(fusionContext.HostUserId) &&
+                AuthManager.Instance != null &&
+                AuthManager.Instance.CurrentUser != null)
+            {
+                string fusionHostUserId = fusionContext.HostUserId.Trim();
+                string currentFusionUserId = AuthManager.Instance.CurrentUser.userId ?? string.Empty;
+                currentFusionUserId = currentFusionUserId.Trim();
+                return string.Equals(fusionHostUserId, currentFusionUserId, StringComparison.Ordinal);
+            }
+        }
+
         RoomInfo room = RoomSessionContext.CurrentRoom;
         if (room == null || string.IsNullOrWhiteSpace(room.HostUserId))
             return false;
@@ -732,6 +748,57 @@ public class HostBlockShareAutoRefreshPanel : MonoBehaviour
         return $"{userId} / {xmlFileName}";
     }
 
+    private void LogHostRefreshResult(string roomId, int totalCount, List<ChatRoomBlockShareInfo> newItems)
+    {
+        int newCount = newItems != null ? newItems.Count : 0;
+        LogBlue($"Host block share refresh completed. roomId={roomId}, total={totalCount}, new={newCount}");
+
+        if (newItems == null || newItems.Count == 0)
+            return;
+
+        int logCount = Mathf.Min(newItems.Count, 5);
+        for (int i = 0; i < logCount; i++)
+        {
+            ChatRoomBlockShareInfo item = newItems[i];
+            if (item == null)
+                continue;
+
+            LogBlue(
+                $"New client XML/JSON share detected. roomId={roomId}, user={SafeText(item.UserId)}, userLevelSeq={item.UserLevelSeq}, fileName={SafeText(item.Message)}, shareId={SafeText(item.BlockShareId)}");
+        }
+
+        if (newItems.Count > logCount)
+            LogBlue($"Additional new shares suppressed. hidden={newItems.Count - logCount}");
+    }
+
+    private void ReplaceKnownShareIds(List<ChatRoomBlockShareInfo> items)
+    {
+        _knownShareIds.Clear();
+        if (items == null)
+            return;
+
+        for (int i = 0; i < items.Count; i++)
+        {
+            ChatRoomBlockShareInfo item = items[i];
+            if (item == null)
+                continue;
+
+            string shareId = NormalizeShareId(item.BlockShareId);
+            if (!string.IsNullOrWhiteSpace(shareId))
+                _knownShareIds.Add(shareId);
+        }
+    }
+
+    private static string NormalizeShareId(string shareId)
+    {
+        return string.IsNullOrWhiteSpace(shareId) ? string.Empty : shareId.Trim();
+    }
+
+    private static string SafeText(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "-" : value.Trim();
+    }
+
     private void SetStatus(string message)
     {
         string text = string.IsNullOrWhiteSpace(message) ? string.Empty : message;
@@ -740,5 +807,13 @@ public class HostBlockShareAutoRefreshPanel : MonoBehaviour
 
         if (_debugLog && !string.IsNullOrWhiteSpace(text))
             Debug.Log($"[HostBlockShareAutoRefreshPanel] {text}");
+    }
+
+    private void LogBlue(string message)
+    {
+        if (!_debugLog || string.IsNullOrWhiteSpace(message))
+            return;
+
+        Debug.Log($"<color={BlueLogColor}>[HostBlockShareAutoRefreshPanel] {message}</color>");
     }
 }

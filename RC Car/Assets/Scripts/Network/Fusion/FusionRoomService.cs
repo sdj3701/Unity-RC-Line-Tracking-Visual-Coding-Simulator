@@ -60,10 +60,25 @@ namespace RC.Network.Fusion
 
         public Task<bool> CreateRoomAsync(string roomName, int maxPlayers)
         {
-            return CreateRoomAsync(roomName, maxPlayers, _networkSceneName, _loadNetworkSceneOnSuccess);
+            return CreateRoomAsync(roomName, maxPlayers, null, _networkSceneName, _loadNetworkSceneOnSuccess);
         }
 
         public async Task<bool> CreateRoomAsync(string roomName, int maxPlayers, string targetSceneName, bool loadSceneOnSuccess)
+        {
+            return await CreateRoomAsync(roomName, maxPlayers, null, targetSceneName, loadSceneOnSuccess);
+        }
+
+        public Task<bool> CreateRoomAsync(string roomName, int maxPlayers, string apiRoomId)
+        {
+            return CreateRoomAsync(roomName, maxPlayers, apiRoomId, _networkSceneName, _loadNetworkSceneOnSuccess);
+        }
+
+        public async Task<bool> CreateRoomAsync(
+            string roomName,
+            int maxPlayers,
+            string apiRoomId,
+            string targetSceneName,
+            bool loadSceneOnSuccess)
         {
             if (_isBusy)
             {
@@ -104,7 +119,7 @@ namespace RC.Network.Fusion
                     PlayerCount = resolvedMaxPlayers,
                     IsOpen = _hostSessionOpen,
                     IsVisible = _hostSessionVisible,
-                    SessionProperties = BuildSessionProperties(normalizedRoomName),
+                    SessionProperties = BuildSessionProperties(normalizedRoomName, apiRoomId),
                     AuthValues = authValues,
                     SceneManager = sceneManager
                 };
@@ -120,6 +135,7 @@ namespace RC.Network.Fusion
                 FusionRoomSessionContext.Set(BuildContext(
                     GameMode.Host,
                     sessionName,
+                    apiRoomId,
                     normalizedRoomName,
                     ResolveCurrentPlayerCount(runner, fallback: 1),
                     ResolveMaxPlayers(runner, resolvedMaxPlayers)));
@@ -196,6 +212,7 @@ namespace RC.Network.Fusion
                 FusionRoomSessionContext.Set(BuildContext(
                     GameMode.Client,
                     normalizedSessionName,
+                    resolvedRoom != null ? resolvedRoom.ApiRoomId : string.Empty,
                     resolvedRoom != null ? resolvedRoom.RoomName : normalizedSessionName,
                     ResolveCurrentPlayerCount(runner, resolvedRoom != null ? resolvedRoom.PlayerCount : 1),
                     ResolveMaxPlayers(runner, resolvedRoom != null ? resolvedRoom.MaxPlayers : 0),
@@ -253,7 +270,7 @@ namespace RC.Network.Fusion
             return true;
         }
 
-        private Dictionary<string, SessionProperty> BuildSessionProperties(string roomName)
+        private Dictionary<string, SessionProperty> BuildSessionProperties(string roomName, string apiRoomId)
         {
             string userId = string.Empty;
             string hostName = string.Empty;
@@ -269,6 +286,7 @@ namespace RC.Network.Fusion
             return new Dictionary<string, SessionProperty>
             {
                 { FusionLobbyService.RoomNameProperty, roomName },
+                { FusionLobbyService.ApiRoomIdProperty, Normalize(apiRoomId) },
                 { FusionLobbyService.HostUserIdProperty, userId },
                 { FusionLobbyService.HostNameProperty, hostName },
                 { FusionLobbyService.ModeProperty, Normalize(_defaultMode) },
@@ -280,6 +298,7 @@ namespace RC.Network.Fusion
         private FusionRoomSessionInfo BuildContext(
             GameMode gameMode,
             string sessionName,
+            string apiRoomId,
             string roomName,
             int playerCount,
             int maxPlayers,
@@ -288,6 +307,9 @@ namespace RC.Network.Fusion
             return new FusionRoomSessionInfo
             {
                 SessionName = sessionName,
+                ApiRoomId = roomInfo != null && !string.IsNullOrWhiteSpace(roomInfo.ApiRoomId)
+                    ? roomInfo.ApiRoomId
+                    : Normalize(apiRoomId),
                 RoomName = roomName,
                 HostUserId = roomInfo != null ? roomInfo.HostUserId : GetCurrentUserId(),
                 HostName = roomInfo != null ? roomInfo.HostName : GetCurrentUserName(),
