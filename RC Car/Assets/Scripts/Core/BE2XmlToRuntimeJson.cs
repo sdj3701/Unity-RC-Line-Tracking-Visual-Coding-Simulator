@@ -1496,15 +1496,16 @@ public static class BE2XmlToRuntimeJson
                 
         if (opBlock != null)
         {
-            var opName = opBlock.Element("blockName")?.Value?.Trim();
+            opBlock = UnwrapConditionNotOperation(opBlock, node, out string directConditionToken);
+            var opName = opBlock?.Element("blockName")?.Value?.Trim();
 
             // Block Op And / Or (복합 조건) 처리
-            if (TryParseLogicalCondition(opBlock, node))
+            if (opBlock != null && TryParseLogicalCondition(opBlock, node))
             {
                 // logical condition recognized
             }
             // 단일 센서 조건 처리 (Block_Read / Block Op Variable)
-            else if (TryExtractConditionSensorFunction(opBlock, out string sensorFunction))
+            else if (opBlock != null && TryExtractConditionSensorFunction(opBlock, out string sensorFunction))
             {
                 // Block_Read 계열은 digitalRead(pin) 입력으로도 들어오므로,
                 // 정규 센서 함수명이 아니면 pin 참조 조건으로 처리한다.
@@ -1522,6 +1523,10 @@ public static class BE2XmlToRuntimeJson
             {
                 var pinToken = ExtractConditionPinToken(opBlock);
                 ApplyConditionPinReference(node, pinToken);
+            }
+            else if (!string.IsNullOrEmpty(directConditionToken))
+            {
+                ApplyDirectConditionToken(node, directConditionToken);
             }
         }
         
@@ -1563,6 +1568,77 @@ public static class BE2XmlToRuntimeJson
         }
         
         return node;
+    }
+
+    static XElement UnwrapConditionNotOperation(XElement opBlock, LoopBlockNode node, out string directConditionToken)
+    {
+        directConditionToken = null;
+        if (opBlock == null || node == null)
+            return opBlock;
+
+        var current = opBlock;
+        while (IsNotConditionOperation(current))
+        {
+            node.conditionNot = !node.conditionNot;
+
+            var inputs = GetBlockInputs(current);
+            if (inputs == null || inputs.Count == 0)
+            {
+                current = null;
+                break;
+            }
+
+            var firstInput = inputs[0];
+            var innerOpBlock = firstInput.Element("operation")?.Element("Block");
+            if (innerOpBlock != null)
+            {
+                current = innerOpBlock;
+                continue;
+            }
+
+            directConditionToken = firstInput.Element("value")?.Value?.Trim();
+            current = null;
+            break;
+        }
+
+        return current;
+    }
+
+    static bool IsNotConditionOperation(XElement opBlock)
+    {
+        var blockName = opBlock?.Element("blockName")?.Value?.Trim();
+        if (string.IsNullOrEmpty(blockName))
+            return false;
+
+        return blockName.IndexOf("Block Op Not", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               blockName.EndsWith("Op Not", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static List<XElement> GetBlockInputs(XElement block)
+    {
+        if (block == null)
+            return null;
+
+        var sectionInputs = block.Element("sections")?
+            .Element("Section")?
+            .Element("inputs")?
+            .Elements("Input")
+            .ToList();
+
+        if (sectionInputs != null && sectionInputs.Count > 0)
+            return sectionInputs;
+
+        return block.Element("headerInputs")?.Elements("Input").ToList();
+    }
+
+    static void ApplyDirectConditionToken(LoopBlockNode node, string rawToken)
+    {
+        if (node == null || string.IsNullOrWhiteSpace(rawToken))
+            return;
+
+        node.conditionSensorFunction = NormalizeSensorFunctionName(rawToken);
+        node.conditionVar = null;
+        node.conditionPin = -1;
     }
     
     static List<LoopBlockNode> ParseSectionBlocks(XElement section)
@@ -1612,11 +1688,7 @@ public static class BE2XmlToRuntimeJson
 
         node.conditionLogicalOp = logicalOp;
 
-        var logicalInputs = opBlock.Element("sections")?
-            .Element("Section")?
-            .Element("inputs")?
-            .Elements("Input")
-            .ToList();
+        var logicalInputs = GetBlockInputs(opBlock);
 
         if (logicalInputs == null || logicalInputs.Count == 0)
             return true;
@@ -2047,6 +2119,8 @@ public static class BE2XmlToRuntimeJson
             case "if":
             case "ifElse":
                 // logical condition (And/Or)
+                if (node.conditionNot)
+                    parts.Add("\"conditionNot\": true");
                 if (!string.IsNullOrEmpty(node.conditionLogicalOp))
                 {
                     parts.Add($"\"conditionLogicalOp\": \"{EscapeJson(node.conditionLogicalOp)}\"");
@@ -2140,6 +2214,7 @@ public static class BE2XmlToRuntimeJson
         public string conditionLogicalOp;       // "and" | "or"
         public string conditionLeftSensorFunction;
         public string conditionRightSensorFunction;
+        public bool conditionNot;
         public int conditionValue;  // Section의 inputs에서 추출한 조건 값
         public List<LoopBlockNode> body;
         public List<LoopBlockNode> elseBody;
