@@ -2,7 +2,7 @@
 
 ## 1. 목적
 
-이 문서는 [PinPlan.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/PinPlan.md:1>)의 결론을 실제 블록 설계로 내리는 문서다.
+이 문서는 [PinPlan.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/docs/plans/pin-binding/PinPlan.md:1>)의 결론을 실제 블록 설계로 내리는 문서다.
 
 핵심 목표는 아래와 같다.
 

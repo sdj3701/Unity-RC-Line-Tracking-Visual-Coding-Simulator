@@ -2,7 +2,7 @@
 
 ## 1. 목적
 
-이 문서는 [PinPlan.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/PinPlan.md:1>)과 [BindPinBlockDesign.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/BindPinBlockDesign.md:1>)를 기준으로,
+이 문서는 [PinPlan.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/docs/plans/pin-binding/PinPlan.md:1>)과 [BindPinBlockDesign.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/docs/documents/pin-binding/BindPinBlockDesign.md:1>)를 기준으로,
 `bindPin` 블록이 저장/변환/실행 과정에서 어떤 XML/JSON 구조를 가져야 하는지 초안으로 정리한다.
 
 ---

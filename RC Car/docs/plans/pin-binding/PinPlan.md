@@ -453,9 +453,9 @@
 
 이 문서를 바탕으로 다음 문서들이 이어진다.
 
-- [BindPinBlockDesign.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/BindPinBlockDesign.md:1>)
-- [BindPinSchemaDraft.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/BindPinSchemaDraft.md:1>)
-- [BindPinRuntimeImplementationPlan.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/BindPinRuntimeImplementationPlan.md:1>)
+- [BindPinBlockDesign.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/docs/documents/pin-binding/BindPinBlockDesign.md:1>)
+- [BindPinSchemaDraft.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/docs/documents/pin-binding/BindPinSchemaDraft.md:1>)
+- [BindPinRuntimeImplementationPlan.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/docs/plans/pin-binding/BindPinRuntimeImplementationPlan.md:1>)
 
 이 문서들에서는 역할 바인드 방법을 더 구체적으로 다룬다.
 

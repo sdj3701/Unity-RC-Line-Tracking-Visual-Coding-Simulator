@@ -2,7 +2,7 @@
 
 ## 1. 목적
 
-이 문서는 [PinPlan.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/PinPlan.md:1>), [BindPinBlockDesign.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/BindPinBlockDesign.md:1>), [BindPinSchemaDraft.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/BindPinSchemaDraft.md:1>)를 바탕으로,
+이 문서는 [PinPlan.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/docs/plans/pin-binding/PinPlan.md:1>), [BindPinBlockDesign.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/docs/documents/pin-binding/BindPinBlockDesign.md:1>), [BindPinSchemaDraft.md](</D:/Unity/Unity RC Line/Unity-RC-Line-Tracking-Visual-Coding-Simulator/RC Car/docs/documents/pin-binding/BindPinSchemaDraft.md:1>)를 바탕으로,
 `bindPin`을 현재 코드베이스에 어떤 순서로 붙일지 구현 계획을 정리한다.
 
 ---

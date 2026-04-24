@@ -20,17 +20,20 @@ public sealed class NetworkRCCar : NetworkBehaviour
     [Networked] private int SyncedSlotIndex { get; set; }
     [Networked] private NetworkString<_64> SyncedUserId { get; set; }
     [Networked] private bool SyncedIsRunning { get; set; }
+    [Networked] private int SyncedMapIndex { get; set; }
 
     private Rigidbody _rigidbody;
     private VirtualCarPhysics _physics;
     private BlockCodeExecutor _executor;
     private VirtualArduinoMicro _arduino;
+    private static ChangeMap _sharedChangeMap;
     private string _assignedUserId = string.Empty;
     private int _configuredSlotIndex;
     private Color _configuredColor = Color.white;
     private bool _hasPendingConfiguration;
     private int _lastAppliedPackedColor = int.MinValue;
     private string _lastAppliedUserId = string.Empty;
+    private int _lastAppliedMapIndex = int.MinValue;
 
     public string AssignedUserId
     {
@@ -47,6 +50,7 @@ public sealed class NetworkRCCar : NetworkBehaviour
     public int AssignedSlotIndex => SyncedSlotIndex > 0 ? SyncedSlotIndex : _configuredSlotIndex;
     public bool IsNetworkRunning => SyncedIsRunning;
     public bool CanSubmitCodeSelectionToHost => Object != null && Object.HasInputAuthority;
+    public bool HasLocalInputAuthority => Object != null && Object.HasInputAuthority;
 
     public void ConfigureForHost(string userId, int slotIndex, Color color)
     {
@@ -113,9 +117,11 @@ public sealed class NetworkRCCar : NetworkBehaviour
         {
             ApplyPendingConfiguration();
             CaptureTransformState();
+            CaptureSharedSceneState();
         }
         else
         {
+            ApplySharedSceneStateFromNetwork(force: true);
             ApplyTransformState(immediate: true);
             ApplyColorFromNetwork(force: true);
             ApplyUserIdFromNetwork(force: true);
@@ -140,6 +146,7 @@ public sealed class NetworkRCCar : NetworkBehaviour
         ApplyAuthorityState();
         ApplyPendingConfiguration();
         CaptureTransformState();
+        CaptureSharedSceneState();
     }
 
     public override void Render()
@@ -148,6 +155,7 @@ public sealed class NetworkRCCar : NetworkBehaviour
             return;
 
         ApplyAuthorityState();
+        ApplySharedSceneStateFromNetwork(force: false);
         ApplyTransformState(immediate: false);
         ApplyColorFromNetwork(force: false);
         ApplyUserIdFromNetwork(force: false);
@@ -222,6 +230,35 @@ public sealed class NetworkRCCar : NetworkBehaviour
         }
 
         SyncedIsRunning = _physics != null && _physics.IsRunning;
+    }
+
+    private void CaptureSharedSceneState()
+    {
+        ChangeMap changeMap = ResolveChangeMap();
+        if (changeMap == null)
+            return;
+
+        SyncedMapIndex = changeMap.CurrentMapIndex;
+    }
+
+    private void ApplySharedSceneStateFromNetwork(bool force)
+    {
+        ChangeMap changeMap = ResolveChangeMap();
+        if (changeMap == null)
+            return;
+
+        int mapIndex = SyncedMapIndex;
+        if (!force && _lastAppliedMapIndex == mapIndex)
+            return;
+
+        if (!force && changeMap.CurrentMapIndex == mapIndex)
+        {
+            _lastAppliedMapIndex = mapIndex;
+            return;
+        }
+
+        changeMap.ApplyMap(mapIndex, moveCarToSpawn: false);
+        _lastAppliedMapIndex = mapIndex;
     }
 
     private void ApplyTransformState(bool immediate)
@@ -330,5 +367,13 @@ public sealed class NetworkRCCar : NetworkBehaviour
         string text = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
         int limit = Mathf.Max(1, maxLength);
         return text.Length <= limit ? text : text.Substring(0, limit);
+    }
+
+    private static ChangeMap ResolveChangeMap()
+    {
+        if (_sharedChangeMap == null)
+            _sharedChangeMap = FindObjectOfType<ChangeMap>();
+
+        return _sharedChangeMap;
     }
 }

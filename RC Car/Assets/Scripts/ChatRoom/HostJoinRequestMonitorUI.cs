@@ -173,13 +173,6 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
     {
         RefreshHostVisibility();
 
-        if (_hostOnly && !CanCurrentUserManageHostRequests(out string reason))
-        {
-            SetStatus($"Host check failed. reason={reason}");
-            RefreshInteractableState();
-            return;
-        }
-
         if (!TryEnsureAndBindConnectionManager())
         {
             SetStatus("FusionConnectionManager is missing.");
@@ -253,7 +246,7 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
 
     private void TryDecideJoinRequest(string requestId, bool approve)
     {
-        if (_hostOnly && !CanCurrentUserManageHostRequests(out string reason))
+        if (!CanCurrentUserManageHostRequests(out string reason))
         {
             SetStatus($"Host check failed. Decision blocked. reason={reason}");
             return;
@@ -308,9 +301,10 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
         ClearRequestListUi();
         TryResolveListContent();
 
+        bool canManageHostRequests = CanCurrentUserManageHostRequests(out _);
         int pendingCount = 0;
 
-        if (_requestItemPrefab != null && _requestListContent != null)
+        if (canManageHostRequests && _requestItemPrefab != null && _requestListContent != null)
         {
             for (int i = 0; i < _latestRequests.Count; i++)
             {
@@ -326,8 +320,10 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
             }
         }
 
+        UpdateRequestListVisibility(canManageHostRequests);
+
         if (_emptyStateObject != null)
-            _emptyStateObject.SetActive(pendingCount == 0);
+            _emptyStateObject.SetActive(canManageHostRequests && pendingCount == 0);
     }
 
     private void ClearRequestListUi()
@@ -347,13 +343,15 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
         bool interactable = hostAllowed;
 
         if (_refreshButton != null)
-            _refreshButton.interactable = hostAllowed;
+            _refreshButton.interactable = true;
 
         for (int i = 0; i < _spawnedItems.Count; i++)
         {
             if (_spawnedItems[i] != null)
                 _spawnedItems[i].SetInteractable(interactable);
         }
+
+        UpdateRequestListVisibility(hostAllowed);
     }
 
     private void RefreshHostVisibility()
@@ -396,6 +394,16 @@ public sealed class HostJoinRequestMonitorUI : MonoBehaviour
 
         if (_requestScrollRect != null && _requestScrollRect.content != null)
             _requestListContent = _requestScrollRect.content;
+    }
+
+    private void UpdateRequestListVisibility(bool visible)
+    {
+        if (_requestScrollRect == null || _requestScrollRect.viewport == null)
+            return;
+
+        GameObject viewportObject = _requestScrollRect.viewport.gameObject;
+        if (viewportObject != null && viewportObject.activeSelf != visible)
+            viewportObject.SetActive(visible);
     }
 
     private bool IsPanelVisible()

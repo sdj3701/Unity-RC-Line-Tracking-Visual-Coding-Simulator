@@ -44,7 +44,7 @@
 - `Assets/Scripts/Auth/AuthApiClient.cs`
 - `Assets/Scripts/Auth/AuthManager.cs`
 - `Assets/Scripts/Auth/AuthManualTokenFallbackUI.cs` (변수명 정리 수준)
-- `Assets/Scripts/Auth/AuthFunctionGuide.md` (문서 동기화)
+- `docs/documents/auth/AuthFunctionGuide.md` (문서 동기화)
 
 ### 제외 (이번 작업 아님)
 - 토큰 refresh API 신규 구현

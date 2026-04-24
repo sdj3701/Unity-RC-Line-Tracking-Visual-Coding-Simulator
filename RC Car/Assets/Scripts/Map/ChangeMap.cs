@@ -86,7 +86,7 @@ public class ChangeMap : MonoBehaviour
         if (applyCurrentMapOnStart)
         {
             currentMapIndex = 0;
-            ApplyMap(0, true);
+            ApplyMap(0, ShouldMoveCarOnMapChange());
         }
     }
 
@@ -112,7 +112,7 @@ public class ChangeMap : MonoBehaviour
         }
 
         int nextIndex = ResolveNextIndexForCycle();
-        ApplyMap(nextIndex, true);
+        ApplyMap(nextIndex, ShouldMoveCarOnMapChange());
     }
 
     /// <summary>
@@ -248,7 +248,7 @@ public class ChangeMap : MonoBehaviour
         int globalIndex = StaticMapCount + runtimeIndex;
         if (applyImmediately)
         {
-            ApplyMap(globalIndex, true);
+            ApplyMap(globalIndex, ShouldMoveCarOnMapChange());
         }
 
         if (logRuntimeMapActions)
@@ -538,6 +538,11 @@ public class ChangeMap : MonoBehaviour
         // 런타임 없음 -> 0..(정적끝)..0
         // 런타임 있음 -> 0..(정적끝)..(런타임끝)..0
         return NormalizeIndex(currentMapIndex + 1, cycleCount);
+    }
+
+    bool ShouldMoveCarOnMapChange()
+    {
+        return carTransform != null;
     }
 
     bool HasPersistentChangeToNextMapBinding(Button button)
