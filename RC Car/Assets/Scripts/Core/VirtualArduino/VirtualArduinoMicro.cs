@@ -45,6 +45,17 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
     
     // 동적 핀 매핑: 핀 번호 → 기능 이름
     Dictionary<int, string> pinToFunction = new Dictionary<int, string>();
+    static readonly string[] knownBindingRoles =
+    {
+        "leftSensor",
+        "rightSensor",
+        "leftSensor2",
+        "rightSensor2",
+        "leftMotorF",
+        "leftMotorB",
+        "rightMotorF",
+        "rightMotorB",
+    };
     
     // 기능 → 주변장치 매핑
     Dictionary<string, IVirtualPeripheral> functionToPeripheral = new Dictionary<string, IVirtualPeripheral>();
@@ -123,10 +134,13 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
         var defaultPinToFunction = BuildDefaultPinToFunctionMap();
         
         // 맵핑된 핀 번호를 추적 (중복 방지)
-        var mappedPins = new HashSet<int>();
+        var explicitPins = new HashSet<int>();
+        bool usedExplicitBindings = TryApplyProgramPinBindings(explicitPins);
+        bool usedLegacyBindings = TryApplyLegacyVariableBindings(explicitPins);
+        var mappedPins = explicitPins;
         
         // 변수를 순회하면서 값(핀 번호)이 Default Pin과 일치하면 맵핑
-        if (blockCodeExecutor != null && blockCodeExecutor.Variables != null)
+        if (false && blockCodeExecutor != null && blockCodeExecutor.Variables != null)
         {
             foreach (var variable in blockCodeExecutor.Variables)
             {
@@ -145,7 +159,7 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
         // 매핑되지 않은 Default Pin은 기본값으로 설정 (fallback)
         foreach (var kvp in defaultPinToFunction)
         {
-            if (!pinToFunction.ContainsKey(kvp.Key))
+            if (!HasFunctionMapping(kvp.Value))
             {
                 pinToFunction[kvp.Key] = kvp.Value;
                 Debug.Log($"<color=yellow>  ⚠ [기본값 사용] Pin {kvp.Key} → {kvp.Value} (변수 없음)</color>");
@@ -154,8 +168,8 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
         
         // 6개 핀 모두가 변수에서 맵핑되었는지 확인
         int expectedMappings = defaultPinToFunction.Count;
-        bool allMapped = mappedPins.Count >= expectedMappings;
-        Debug.Log($"[VirtualArduinoMicro] Mapping matched pins: {mappedPins.Count}/{expectedMappings}");
+        bool allMapped = pinToFunction.Count >= expectedMappings;
+        Debug.Log($"[VirtualArduinoMicro] explicitBindings={usedExplicitBindings}, legacyBindings={usedLegacyBindings}, finalMappings={pinToFunction.Count}/{expectedMappings}");
         
         Debug.Log("<color=cyan>───────────────────────────────────────────────────────</color>");
         if (allMapped)
@@ -169,7 +183,7 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
         Debug.Log("<color=cyan>═══════════════════════════════════════════════════════</color>");
         
         // 이벤트 발생 (맵핑된 핀 Set 전달)
-        OnPinMappingCompleted?.Invoke(mappedPins);
+        OnPinMappingCompleted?.Invoke(new HashSet<int>(pinToFunction.Keys));
         
         return allMapped;
     }
@@ -228,6 +242,217 @@ public class VirtualArduinoMicro : MonoBehaviour//, IRuntimeIO
         }
     }
     
+    bool TryApplyProgramPinBindings(HashSet<int> explicitPins)
+    {
+        if (blockCodeExecutor == null || !blockCodeExecutor.HasProgramPinBindings)
+            return false;
+
+        bool applied = false;
+        for (int i = 0; i < knownBindingRoles.Length; i++)
+        {
+            string role = knownBindingRoles[i];
+            if (!blockCodeExecutor.TryResolvePinBinding(role, out int pin) || pin < 0)
+                continue;
+
+            AssignPinMapping(pin, role);
+            explicitPins.Add(pin);
+            applied = true;
+            Debug.Log($"<color=lime>  ??[pinBindings] Pin {pin} ??{role}</color>");
+        }
+
+        return applied;
+    }
+
+    bool TryApplyLegacyVariableBindings(HashSet<int> explicitPins)
+    {
+        if (blockCodeExecutor == null || blockCodeExecutor.Variables == null)
+            return false;
+
+        bool applied = false;
+        foreach (var variable in blockCodeExecutor.Variables)
+        {
+            if (!TryInferRoleFromVariableName(variable.Key, out string role))
+                continue;
+
+            if (IsMotorRole(role) && !blockCodeExecutor.IsOutputPinVariable(variable.Key))
+                continue;
+
+            if (IsSensorRole(role) && !blockCodeExecutor.IsInputPinVariable(variable.Key))
+                continue;
+
+            int pin = Mathf.RoundToInt(variable.Value);
+            if (pin < 0)
+                continue;
+
+            AssignPinMapping(pin, role);
+            explicitPins.Add(pin);
+            applied = true;
+            Debug.Log($"<color=lime>  ??[legacy role binding] {variable.Key} = Pin {pin} ??{role}</color>");
+        }
+
+        return applied;
+    }
+
+    void AssignPinMapping(int pin, string function)
+    {
+        if (pin < 0 || string.IsNullOrWhiteSpace(function))
+            return;
+
+        int? oldPin = null;
+        foreach (var kvp in pinToFunction)
+        {
+            if (string.Equals(kvp.Value, function, System.StringComparison.OrdinalIgnoreCase))
+            {
+                oldPin = kvp.Key;
+                break;
+            }
+        }
+
+        if (oldPin.HasValue)
+            pinToFunction.Remove(oldPin.Value);
+
+        pinToFunction[pin] = function;
+    }
+
+    bool HasFunctionMapping(string function)
+    {
+        foreach (var kvp in pinToFunction)
+        {
+            if (string.Equals(kvp.Value, function, System.StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    public bool TryGetMappedPin(string function, out int pin)
+    {
+        foreach (var kvp in pinToFunction)
+        {
+            if (string.Equals(kvp.Value, function, System.StringComparison.OrdinalIgnoreCase))
+            {
+                pin = kvp.Key;
+                return true;
+            }
+        }
+
+        pin = -1;
+        return false;
+    }
+
+    bool TryInferRoleFromVariableName(string variableName, out string role)
+    {
+        role = null;
+        if (string.IsNullOrWhiteSpace(variableName))
+            return false;
+
+        string compact = NormalizeRoleToken(variableName);
+        if (string.IsNullOrEmpty(compact))
+            return false;
+
+        string digits = ExtractRoleDigits(compact);
+        string baseName = digits.Length > 0
+            ? compact.Substring(0, compact.Length - digits.Length)
+            : compact;
+
+        if (MatchesAny(baseName, "leftsensor", "sensorleft", "leftsensorpin", "sensorleftpin"))
+        {
+            role = digits.Length > 0 ? $"leftSensor{digits}" : "leftSensor";
+            return true;
+        }
+
+        if (MatchesAny(baseName, "rightsensor", "sensorright", "rightsensorpin", "sensorrightpin"))
+        {
+            role = digits.Length > 0 ? $"rightSensor{digits}" : "rightSensor";
+            return true;
+        }
+
+        if (MatchesAny(baseName, "leftmotorf", "leftmotorforward", "pinwheelleftforward", "wheelleftforward", "lwf"))
+        {
+            role = "leftMotorF";
+            return true;
+        }
+
+        if (MatchesAny(baseName, "leftmotorb", "leftmotorback", "leftmotorbackward", "pinwheelleftback", "pinwheelleftbackward", "wheelleftback", "lwb"))
+        {
+            role = "leftMotorB";
+            return true;
+        }
+
+        if (MatchesAny(baseName, "rightmotorf", "rightmotorforward", "pinwheelrightforward", "wheelrightforward", "rwf"))
+        {
+            role = "rightMotorF";
+            return true;
+        }
+
+        if (MatchesAny(baseName, "rightmotorb", "rightmotorback", "rightmotorbackward", "pinwheelrightback", "pinwheelrightbackward", "wheelrightback", "rwb"))
+        {
+            role = "rightMotorB";
+            return true;
+        }
+
+        return false;
+    }
+
+    bool IsSensorRole(string role)
+    {
+        if (string.IsNullOrWhiteSpace(role))
+            return false;
+
+        return role.StartsWith("leftSensor", System.StringComparison.OrdinalIgnoreCase) ||
+               role.StartsWith("rightSensor", System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    bool IsMotorRole(string role)
+    {
+        if (string.IsNullOrWhiteSpace(role))
+            return false;
+
+        return role.Equals("leftMotorF", System.StringComparison.OrdinalIgnoreCase) ||
+               role.Equals("leftMotorB", System.StringComparison.OrdinalIgnoreCase) ||
+               role.Equals("rightMotorF", System.StringComparison.OrdinalIgnoreCase) ||
+               role.Equals("rightMotorB", System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    bool MatchesAny(string value, params string[] candidates)
+    {
+        for (int i = 0; i < candidates.Length; i++)
+        {
+            if (string.Equals(value, candidates[i], System.StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    string NormalizeRoleToken(string text)
+    {
+        var chars = new System.Text.StringBuilder(text.Length);
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (char.IsLetterOrDigit(c))
+                chars.Append(char.ToLowerInvariant(c));
+        }
+
+        return chars.ToString();
+    }
+
+    string ExtractRoleDigits(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+
+        int end = text.Length - 1;
+        while (end >= 0 && char.IsDigit(text[end]))
+            end--;
+
+        if (end == text.Length - 1)
+            return string.Empty;
+
+        return text.Substring(end + 1);
+    }
+
     // ============================================================
     // 동적 핀 설정 API
     // ============================================================

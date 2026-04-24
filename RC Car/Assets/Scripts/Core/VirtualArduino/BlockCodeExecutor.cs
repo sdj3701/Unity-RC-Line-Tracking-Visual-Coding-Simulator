@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using UnityEngine;
 using MG_BlocksEngine2.UI;
@@ -30,6 +31,8 @@ public class BlockCodeExecutor : MonoBehaviour
     
     // 런타임 변수 저장소 (변수 이름 → 값)
     Dictionary<string, float> variables = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+    HashSet<string> inputPinVariables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    HashSet<string> outputPinVariables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     
     // 프로그램 데이터
     BlockProgram program;
@@ -44,6 +47,8 @@ public class BlockCodeExecutor : MonoBehaviour
     /// 현재 변수 목록 (읽기 전용)
     /// </summary>
     public IReadOnlyDictionary<string, float> Variables => variables;
+
+    public bool HasProgramPinBindings => program?.pinBindings != null && program.pinBindings.Count > 0;
     
     // ============================================================
     // Unity 이벤트
@@ -144,6 +149,8 @@ public class BlockCodeExecutor : MonoBehaviour
         loopExecutionIndex = 0;
         program = null;
         ClearVariables();
+        inputPinVariables.Clear();
+        outputPinVariables.Clear();
 
         try
         {
@@ -154,6 +161,8 @@ public class BlockCodeExecutor : MonoBehaviour
                 Debug.LogWarning("[BlockCodeExecutor] LoadProgramFromJson failed: parsed program is null.");
                 return false;
             }
+
+            CollectPinVariableUsages();
 
             // 초기화 블록에서 변수 수집
             CollectVariablesFromInit();
@@ -172,6 +181,9 @@ public class BlockCodeExecutor : MonoBehaviour
                     Debug.LogWarning("[BlockCodeExecutor] Arduino resolved via global lookup. Check per-car wiring.");
             }
 
+            if (arduino != null)
+                arduino.UpdatePinMappingFromVariables();
+
             isLoaded = true;
             string source = string.IsNullOrWhiteSpace(sourceTag) ? "runtime-json" : sourceTag.Trim();
             LogDebug($"Program loaded from {source}. Variables: {variables.Count}, Loop blocks: {program?.loop?.Count ?? 0}");
@@ -183,6 +195,41 @@ public class BlockCodeExecutor : MonoBehaviour
             Debug.LogError($"[BlockCodeExecutor] Failed to load runtime json: {ex.Message}");
             return false;
         }
+    }
+
+    public bool IsInputPinVariable(string variableName)
+    {
+        return !string.IsNullOrWhiteSpace(variableName) && inputPinVariables.Contains(variableName);
+    }
+
+    public bool IsOutputPinVariable(string variableName)
+    {
+        return !string.IsNullOrWhiteSpace(variableName) && outputPinVariables.Contains(variableName);
+    }
+
+    public bool TryResolvePinBinding(string role, out int pin)
+    {
+        pin = -1;
+        if (program?.pinBindings == null || string.IsNullOrWhiteSpace(role))
+            return false;
+
+        for (int i = 0; i < program.pinBindings.Count; i++)
+        {
+            var binding = program.pinBindings[i];
+            if (binding == null || !string.Equals(binding.role, role, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!string.IsNullOrWhiteSpace(binding.pinVar))
+            {
+                pin = Mathf.RoundToInt(GetVariable(binding.pinVar, binding.pin));
+                return pin >= 0;
+            }
+
+            pin = binding.pin;
+            return pin >= 0;
+        }
+
+        return false;
     }
     
     /// <summary>
@@ -458,44 +505,68 @@ public class BlockCodeExecutor : MonoBehaviour
         bool condition;
         bool conditionResolved = true;
 
-        // conditionLogicalOp가 있으면 And/Or 복합 조건을 먼저 평가
-        if (!string.IsNullOrEmpty(node.conditionLogicalOp))
+        // conditionCompareOp가 있으면 좌/우 피연산자를 실제 값으로 비교한다.
+        if (!string.IsNullOrEmpty(node.conditionCompareOp))
         {
-            if (arduino == null)
+            bool leftOk = TryReadConditionOperandValue(node.conditionLeftSensorFunction, out float leftValue);
+            bool rightOk = TryReadConditionOperandValue(node.conditionRightSensorFunction, out float rightValue);
+
+            bool comparisonResult = false;
+            string comparisonOp = node.conditionCompareOp.ToLowerInvariant();
+            if (comparisonOp == "eq")
             {
-                Debug.LogWarning("<color=red>[3] ExecuteIfBlock: arduino is NULL for logical condition!</color>");
-                condition = false;
-                conditionResolved = false;
+                comparisonResult = AreConditionValuesEqual(leftValue, rightValue);
+            }
+            else if (comparisonOp == "gt")
+            {
+                comparisonResult = leftValue > rightValue;
             }
             else
             {
-                bool leftOk = TryReadSensorAsInt(node.conditionLeftSensorFunction, out int leftValue);
-                bool rightOk = TryReadSensorAsInt(node.conditionRightSensorFunction, out int rightValue);
-
-                bool logicalResult = false;
-                string logicalOp = node.conditionLogicalOp.ToLowerInvariant();
-                if (logicalOp == "and")
-                {
-                    logicalResult = leftValue == 1 && rightValue == 1;
-                }
-                else if (logicalOp == "or")
-                {
-                    logicalResult = leftValue == 1 || rightValue == 1;
-                }
-                else
-                {
-                    Debug.LogWarning($"<color=red>[3] ExecuteIfBlock: Unknown logical op '{node.conditionLogicalOp}'</color>");
-                    conditionResolved = false;
-                }
-
-                // 논리 연산(and/or)은 자체 결과를 if 조건으로 사용한다.
-                // 기존 conditionValue(0/1) 비교는 센서 단일 비교용 legacy 동작이어서
-                // 논리식에서는 무시해야 사용자가 기대한 "AND/OR 본연의 의미"와 일치한다.
-                condition = leftOk && rightOk && logicalResult;
-                conditionResolved = conditionResolved && leftOk && rightOk;
-
-                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} logical={logicalOp}, left={leftValue}, right={rightValue}, logicalResult={logicalResult}, condition={condition}</color>");
+                Debug.LogWarning($"<color=red>[3] ExecuteIfBlock: Unknown comparison op '{node.conditionCompareOp}'</color>");
+                conditionResolved = false;
             }
+
+            condition = leftOk && rightOk && comparisonResult;
+            conditionResolved = conditionResolved && leftOk && rightOk;
+
+            Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} compare={comparisonOp}, left={leftValue}, right={rightValue}, comparisonResult={comparisonResult}, condition={condition}</color>");
+        }
+        // conditionLogicalOp가 있으면 And/Or 복합 조건을 먼저 평가
+        else if (!string.IsNullOrEmpty(node.conditionLogicalOp))
+        {
+            bool leftOk = TryReadConditionOperandValue(node.conditionLeftSensorFunction, out float leftValue);
+            bool rightOk = TryReadConditionOperandValue(node.conditionRightSensorFunction, out float rightValue);
+
+            bool logicalResult = false;
+            bool usedLegacyEqualityFallback = false;
+            string logicalOp = node.conditionLogicalOp.ToLowerInvariant();
+            if (logicalOp == "and" && ShouldTreatLogicalAndAsLegacyEquality(node))
+            {
+                logicalResult = AreConditionValuesEqual(leftValue, rightValue);
+                usedLegacyEqualityFallback = true;
+            }
+            else if (logicalOp == "and")
+            {
+                logicalResult = ConvertToBoolean(leftValue) && ConvertToBoolean(rightValue);
+            }
+            else if (logicalOp == "or")
+            {
+                logicalResult = ConvertToBoolean(leftValue) || ConvertToBoolean(rightValue);
+            }
+            else
+            {
+                Debug.LogWarning($"<color=red>[3] ExecuteIfBlock: Unknown logical op '{node.conditionLogicalOp}'</color>");
+                conditionResolved = false;
+            }
+
+            // 논리 연산(and/or)은 자체 결과를 if 조건으로 사용한다.
+            // 기존 conditionValue(0/1) 비교는 센서 단일 비교용 legacy 동작이어서
+            // 논리식에서는 무시해야 사용자가 기대한 "AND/OR 본연의 의미"와 일치한다.
+            condition = leftOk && rightOk && logicalResult;
+            conditionResolved = conditionResolved && leftOk && rightOk;
+
+            Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} logical={logicalOp}, left={leftValue}, right={rightValue}, logicalResult={logicalResult}, legacyEqualityFallback={usedLegacyEqualityFallback}, condition={condition}</color>");
         }
         // conditionVar/conditionPin이 있으면 digitalRead(pin) 조건으로 판단
         else if (!string.IsNullOrEmpty(node.conditionVar) || node.conditionPin >= 0)
@@ -521,34 +592,21 @@ public class BlockCodeExecutor : MonoBehaviour
                 Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} pin={conditionPin}, pinValue={pinAsInt}, conditionValue={node.conditionValue}, condition={condition}</color>");
             }
         }
-        // conditionSensorFunction이 있으면 센서 값을 읽어서 조건 판단
+        // conditionSensorFunction이 있으면 센서/변수/리터럴 값을 읽어서 조건 판단
         else if (!string.IsNullOrEmpty(node.conditionSensorFunction))
         {
-            if (arduino == null)
+            bool readOk = TryReadConditionOperandValue(node.conditionSensorFunction, out float operandValue);
+            if (!readOk)
             {
-                Debug.LogWarning("<color=red>[3] ExecuteIfBlock: arduino is NULL for sensor condition!</color>");
                 condition = false;
                 conditionResolved = false;
+                Debug.LogWarning("<color=red>[3] ExecuteIfBlock: failed to read condition operand.</color>");
             }
             else
             {
-                // 센서 값 읽기 (swap 없이 그대로 사용)
-                bool readOk = TryReadSensorAsInt(node.conditionSensorFunction, out int sensorAsInt);
-                if (!readOk)
-                {
-                    condition = false;
-                    conditionResolved = false;
-                    Debug.LogWarning("<color=red>[3] ExecuteIfBlock: failed to read sensor condition.</color>");
-                }
-                else
-                {
-                    // conditionValue와 비교하여 조건 판단
-                    // sensorValue: true = 흰색, false = 검은색
-                    // conditionValue: 0 = 검은색 감지 시 실행, 1 = 흰색 감지 시 실행
-                    condition = (sensorAsInt == (int)node.conditionValue);
-                        
-                    Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} sensor={node.conditionSensorFunction}, sensorValue={sensorAsInt}, conditionValue={node.conditionValue}, condition={condition}</color>");
-                }
+                condition = AreConditionValuesEqual(operandValue, node.conditionValue);
+
+                Debug.Log($"<color=magenta>[3] ExecuteIfBlock: {node.type} operand={node.conditionSensorFunction}, operandValue={operandValue}, conditionValue={node.conditionValue}, condition={condition}</color>");
             }
         }
         else
@@ -610,47 +668,48 @@ public class BlockCodeExecutor : MonoBehaviour
         }
     }
 
-    bool TryReadSensorAsInt(string sensorFunction, out int sensorAsInt)
+    bool TryReadConditionOperandValue(string operandToken, out float operandValue)
     {
-        sensorAsInt = 0;
+        operandValue = 0f;
 
-        if (string.IsNullOrEmpty(sensorFunction))
+        if (string.IsNullOrEmpty(operandToken))
             return false;
 
         // 1) literal bool/string 처리
-        if (sensorFunction.Equals("true", StringComparison.OrdinalIgnoreCase))
+        if (operandToken.Equals("true", StringComparison.OrdinalIgnoreCase))
         {
-            sensorAsInt = 1;
+            operandValue = 1f;
             return true;
         }
-        if (sensorFunction.Equals("false", StringComparison.OrdinalIgnoreCase))
+        if (operandToken.Equals("false", StringComparison.OrdinalIgnoreCase))
         {
-            sensorAsInt = 0;
+            operandValue = 0f;
             return true;
         }
 
         // 2) literal numeric 처리
-        if (float.TryParse(sensorFunction, out float literalValue))
+        if (float.TryParse(operandToken, NumberStyles.Float, CultureInfo.InvariantCulture, out float literalValue) ||
+            float.TryParse(operandToken, out literalValue))
         {
-            sensorAsInt = literalValue > 0f ? 1 : 0;
+            operandValue = literalValue;
             return true;
         }
 
         // 3) 예약 센서 함수명은 변수보다 우선해서 실제 센서로 해석
-        if (IsCanonicalSensorFunction(sensorFunction))
+        if (IsCanonicalSensorFunction(operandToken))
         {
             if (arduino == null)
                 return false;
 
-            bool canonicalSensorValue = arduino.FunctionDigitalRead(sensorFunction);
-            sensorAsInt = canonicalSensorValue ? 1 : 0;
+            bool canonicalSensorValue = arduino.FunctionDigitalRead(operandToken);
+            operandValue = canonicalSensorValue ? 1f : 0f;
             return true;
         }
 
         // 4) 런타임 변수 처리 (예: flag 변수)
-        if (variables.TryGetValue(sensorFunction, out float variableValue))
+        if (variables.TryGetValue(operandToken, out float variableValue))
         {
-            sensorAsInt = variableValue > 0f ? 1 : 0;
+            operandValue = variableValue;
             return true;
         }
 
@@ -658,9 +717,61 @@ public class BlockCodeExecutor : MonoBehaviour
         if (arduino == null)
             return false;
 
-        bool sensorValue = arduino.FunctionDigitalRead(sensorFunction);
-        sensorAsInt = sensorValue ? 1 : 0;
+        bool sensorValue = arduino.FunctionDigitalRead(operandToken);
+        operandValue = sensorValue ? 1f : 0f;
         return true;
+    }
+
+    bool AreConditionValuesEqual(float leftValue, float rightValue)
+    {
+        return Mathf.Abs(leftValue - rightValue) <= 0.0001f;
+    }
+
+    bool ShouldTreatLogicalAndAsLegacyEquality(BlockNode node)
+    {
+        if (node == null || !string.Equals(node.conditionLogicalOp, "and", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return IsLegacyEqualityOperandPair(node.conditionLeftSensorFunction, node.conditionRightSensorFunction) ||
+               IsLegacyEqualityOperandPair(node.conditionRightSensorFunction, node.conditionLeftSensorFunction);
+    }
+
+    bool IsLegacyEqualityOperandPair(string numericOperandToken, string otherOperandToken)
+    {
+        if (!TryParseNonBooleanNumericLiteral(numericOperandToken, out _))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(otherOperandToken))
+            return false;
+
+        if (IsCanonicalSensorFunction(otherOperandToken))
+            return false;
+
+        if (otherOperandToken.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            otherOperandToken.Equals("false", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (TryParseNonBooleanNumericLiteral(otherOperandToken, out _))
+            return false;
+
+        return true;
+    }
+
+    bool TryParseNonBooleanNumericLiteral(string token, out float value)
+    {
+        value = 0f;
+        if (string.IsNullOrWhiteSpace(token))
+            return false;
+
+        if (!(float.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out value) ||
+              float.TryParse(token, out value)))
+        {
+            return false;
+        }
+
+        return !AreConditionValuesEqual(value, 0f) && !AreConditionValuesEqual(value, 1f);
     }
 
     bool IsCanonicalSensorFunction(string sensorFunction)
@@ -708,15 +819,23 @@ public class BlockCodeExecutor : MonoBehaviour
 
         float stopSpeed = GetVariable("stop", 0f);
 
-        int pinRightForward = (int)GetVariable("pin_wheel_right_forward", 6);
-        int pinLeftForward = (int)GetVariable("pin_wheel_left_forward", 9);
-        int pinRightBack = (int)GetVariable("pin_wheel_right_back", 10);
-        int pinLeftBack = (int)GetVariable("pin_wheel_left_back", 11);
+        int pinRightForward = ResolveMotorPin("rightMotorF", "pin_wheel_right_forward", 6);
+        int pinLeftForward = ResolveMotorPin("leftMotorF", "pin_wheel_left_forward", 9);
+        int pinRightBack = ResolveMotorPin("rightMotorB", "pin_wheel_right_back", 10);
+        int pinLeftBack = ResolveMotorPin("leftMotorB", "pin_wheel_left_back", 11);
 
         arduino.AnalogWrite(pinRightForward, stopSpeed);
         arduino.AnalogWrite(pinLeftForward, stopSpeed);
         arduino.AnalogWrite(pinRightBack, stopSpeed);
         arduino.AnalogWrite(pinLeftBack, stopSpeed);
+    }
+
+    int ResolveMotorPin(string role, string legacyVariableName, int fallbackPin)
+    {
+        if (arduino != null && arduino.TryGetMappedPin(role, out int mappedPin))
+            return mappedPin;
+
+        return (int)GetVariable(legacyVariableName, fallbackPin);
     }
 
     bool ShouldSkipByBothSensorAlternation(BlockNode node)
@@ -942,6 +1061,14 @@ public class BlockCodeExecutor : MonoBehaviour
     BlockProgram ParseJsonProgram(string json)
     {
         var prog = new BlockProgram();
+
+        int pinBindingsIdx = json.IndexOf("\"pinBindings\"");
+        if (pinBindingsIdx != -1)
+        {
+            pinBindingsIdx = json.IndexOf('[', pinBindingsIdx);
+            if (pinBindingsIdx != -1)
+                prog.pinBindings = ParsePinBindingArray(json, ref pinBindingsIdx);
+        }
         
         // init 배열 파싱
         int initIdx = json.IndexOf("\"init\"");
@@ -971,6 +1098,58 @@ public class BlockCodeExecutor : MonoBehaviour
         }
         
         return prog;
+    }
+
+    List<PinBindingNode> ParsePinBindingArray(string json, ref int idx)
+    {
+        var list = new List<PinBindingNode>();
+        idx++; // skip '['
+
+        while (idx < json.Length)
+        {
+            char c = json[idx];
+            if (c == ']') { idx++; break; }
+            if (c == '{') list.Add(ParsePinBinding(json, ref idx));
+            else idx++;
+        }
+
+        return list;
+    }
+
+    PinBindingNode ParsePinBinding(string json, ref int idx)
+    {
+        var binding = new PinBindingNode();
+        idx++; // skip '{'
+
+        while (idx < json.Length)
+        {
+            char c = json[idx];
+            if (c == '}') { idx++; break; }
+            if (c == '"')
+            {
+                string key = ParseString(json, ref idx);
+
+                while (idx < json.Length && json[idx] != ':') idx++;
+                if (idx >= json.Length) break;
+                idx++;
+
+                while (idx < json.Length && char.IsWhiteSpace(json[idx])) idx++;
+                if (idx >= json.Length) break;
+
+                switch (key)
+                {
+                    case "role": binding.role = ParseString(json, ref idx); break;
+                    case "pin": binding.pin = (int)ParseFloat(json, ref idx); break;
+                    case "pinVar": binding.pinVar = ParseString(json, ref idx); break;
+                    default:
+                        SkipValue(json, ref idx);
+                        break;
+                }
+            }
+            else idx++;
+        }
+
+        return binding;
     }
     
     List<BlockNode> ParseNodeArray(string json, ref int idx)
@@ -1025,6 +1204,7 @@ public class BlockCodeExecutor : MonoBehaviour
                     case "conditionPin": node.conditionPin = (int)ParseFloat(json, ref idx); break;
                     case "conditionValue": node.conditionValue = ParseFloat(json, ref idx); break;
                     case "conditionSensorFunction": node.conditionSensorFunction = ParseString(json, ref idx); break;
+                    case "conditionCompareOp": node.conditionCompareOp = ParseString(json, ref idx); break;
                     case "conditionLogicalOp": node.conditionLogicalOp = ParseString(json, ref idx); break;
                     case "conditionLeftSensorFunction": node.conditionLeftSensorFunction = ParseString(json, ref idx); break;
                     case "conditionRightSensorFunction": node.conditionRightSensorFunction = ParseString(json, ref idx); break;
@@ -1221,6 +1401,56 @@ public class BlockCodeExecutor : MonoBehaviour
     // ============================================================
     // 변수 수집
     // ============================================================
+
+    void CollectPinVariableUsages()
+    {
+        inputPinVariables.Clear();
+        outputPinVariables.Clear();
+
+        CollectPinVariablesFromNodes(program?.init);
+        CollectPinVariablesFromNodes(program?.loop);
+        CollectPinVariablesFromNodes(program?.functions);
+    }
+
+    void CollectPinVariablesFromNodes(List<BlockNode> nodes)
+    {
+        if (nodes == null)
+            return;
+
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            CollectPinVariablesFromNode(nodes[i]);
+        }
+    }
+
+    void CollectPinVariablesFromNode(BlockNode node)
+    {
+        if (node == null)
+            return;
+
+        if (string.Equals(node.type, "analogWrite", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(node.pinVar))
+        {
+            outputPinVariables.Add(node.pinVar);
+        }
+
+        if (!string.IsNullOrWhiteSpace(node.conditionVar))
+        {
+            inputPinVariables.Add(node.conditionVar);
+        }
+
+        if (node.body != null)
+        {
+            for (int i = 0; i < node.body.Count; i++)
+                CollectPinVariablesFromNode(node.body[i]);
+        }
+
+        if (node.elseBody != null)
+        {
+            for (int i = 0; i < node.elseBody.Count; i++)
+                CollectPinVariablesFromNode(node.elseBody[i]);
+        }
+    }
     
     void CollectVariablesFromInit()
     {
@@ -1270,9 +1500,18 @@ public class BlockCodeExecutor : MonoBehaviour
     [Serializable]
     class BlockProgram
     {
+        public List<PinBindingNode> pinBindings;
         public List<BlockNode> functions;
         public List<BlockNode> init;
         public List<BlockNode> loop;
+    }
+
+    [Serializable]
+    class PinBindingNode
+    {
+        public string role;
+        public int pin = -1;
+        public string pinVar;
     }
     
     [Serializable]
@@ -1291,10 +1530,11 @@ public class BlockCodeExecutor : MonoBehaviour
         public List<string> argVars;  // 변수명 인자들 (null이면 해당 인덱스는 args 값 사용)
         public string conditionVar;
         public int conditionPin = -1; // if/ifElse용 조건 핀
-        public string conditionSensorFunction; // if/ifElse용 센서 기반 조건 (예: "leftSensor")
+        public string conditionSensorFunction; // if/ifElse용 단일 조건 피연산자 (센서/변수/리터럴)
+        public string conditionCompareOp; // if/ifElse용 비교 연산 ("eq" | "gt")
         public string conditionLogicalOp; // if/ifElse용 논리 조건 ("and" | "or")
-        public string conditionLeftSensorFunction;  // 논리 조건 좌항 센서
-        public string conditionRightSensorFunction; // 논리 조건 우항 센서
+        public string conditionLeftSensorFunction;  // 비교/논리 조건 좌항 피연산자
+        public string conditionRightSensorFunction; // 비교/논리 조건 우항 피연산자
         public bool conditionNot; // 최종 조건 결과 반전 여부
         public float conditionValue;  // if/ifElse용 조건 값 (숫자)
         public string sensorFunction; // analogRead용 센서 기능 이름

@@ -20,6 +20,22 @@ public static class BE2XmlToRuntimeJson
     
     // 실제로 호출된 함수 이름들
     private static HashSet<string> calledFunctionNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    // 핀 슬롯에 실제로 사용된 변수들
+    private static HashSet<string> outputPinVariablesUsed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    private static HashSet<string> inputPinVariablesUsed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly string[] knownPinBindingRoles =
+    {
+        "leftSensor",
+        "rightSensor",
+        "leftSensor2",
+        "rightSensor2",
+        "leftMotorF",
+        "leftMotorB",
+        "rightMotorF",
+        "rightMotorB",
+    };
     
     // ============================================================
     // 블록 파서 등록 Dictionary (확장 용이)
@@ -71,6 +87,8 @@ public static class BE2XmlToRuntimeJson
         variables.Clear();
         functionDefinitions.Clear();
         calledFunctionNames.Clear();
+        outputPinVariablesUsed.Clear();
+        inputPinVariablesUsed.Clear();
                 
         var chunks = xmlText.Split(new[] { "#" }, StringSplitOptions.RemoveEmptyEntries);
         Debug.Log($"[DEBUG FLOW] ExportToString - {chunks.Length}개 청크 발견");
@@ -211,6 +229,8 @@ public static class BE2XmlToRuntimeJson
         variables.Clear();
         functionDefinitions.Clear();
         calledFunctionNames.Clear();
+        outputPinVariablesUsed.Clear();
+        inputPinVariablesUsed.Clear();
         Debug.Log("[DEBUG FLOW] 1. 변수/함수 딕셔너리 초기화 완료");
                 
         var chunks = xmlText.Split(new[] { "#" }, StringSplitOptions.RemoveEmptyEntries);
@@ -1346,6 +1366,7 @@ public static class BE2XmlToRuntimeJson
                 {
                     // pinVar로 처리 (변수 참조)
                     node.pinVar = pinVarName;
+                    RegisterOutputPinVariable(pinVarName);
                     Debug.Log($"[ParsePwmBlock] Found pinVar: {pinVarName}");
                 }
             }
@@ -1358,6 +1379,7 @@ public static class BE2XmlToRuntimeJson
                 {
                     // 변수 이름으로 핀 참조 (예: pin_wheel_left_forward)
                     node.pinVar = pinVarName;
+                    RegisterOutputPinVariable(pinVarName);
                     Debug.Log($"[ParsePwmBlock] Found pinVar (from descendants): {pinVarName}");
                 }
                 else
@@ -1499,8 +1521,13 @@ public static class BE2XmlToRuntimeJson
             opBlock = UnwrapConditionNotOperation(opBlock, node, out string directConditionToken);
             var opName = opBlock?.Element("blockName")?.Value?.Trim();
 
+            // Block Op Equal / BiggerThan (비교 조건) 처리
+            if (opBlock != null && TryParseComparisonCondition(opBlock, node))
+            {
+                // comparison condition recognized
+            }
             // Block Op And / Or (복합 조건) 처리
-            if (opBlock != null && TryParseLogicalCondition(opBlock, node))
+            else if (opBlock != null && TryParseLogicalCondition(opBlock, node))
             {
                 // logical condition recognized
             }
@@ -1543,9 +1570,9 @@ public static class BE2XmlToRuntimeJson
                 node.body = ParseSectionBlocks(firstSection);
                 
                 // inputs에서 conditionValue 추출 (childBlocks 이후에 있는 값)
-                // 단, logical(and/or) 조건은 conditionValue 비교를 사용하지 않으므로
+                // 단, comparison/logical 조건은 conditionValue 비교를 사용하지 않으므로
                 // 기본값(1)을 유지한다.
-                if (string.IsNullOrEmpty(node.conditionLogicalOp))
+                if (string.IsNullOrEmpty(node.conditionCompareOp) && string.IsNullOrEmpty(node.conditionLogicalOp))
                 {
                     var sectionInputs = firstSection.Element("inputs")?.Elements("Input").ToList();
                     if (sectionInputs != null && sectionInputs.Count > 0)
@@ -1693,41 +1720,83 @@ public static class BE2XmlToRuntimeJson
         if (logicalInputs == null || logicalInputs.Count == 0)
             return true;
 
-        if (logicalInputs.Count > 0)
-        {
-            var leftOperand = logicalInputs[0].Element("operation")?.Element("Block");
-            if (TryExtractConditionSensorFunction(leftOperand, out string leftSensor))
-            {
-                node.conditionLeftSensorFunction = leftSensor;
-            }
-            else
-            {
-                var leftToken = logicalInputs[0].Element("value")?.Value?.Trim();
-                if (!string.IsNullOrEmpty(leftToken))
-                {
-                    node.conditionLeftSensorFunction = NormalizeSensorFunctionName(leftToken);
-                }
-            }
-        }
+        if (logicalInputs.Count > 0 && TryExtractConditionOperandToken(logicalInputs[0], out string leftToken))
+            node.conditionLeftSensorFunction = leftToken;
 
-        if (logicalInputs.Count > 1)
-        {
-            var rightOperand = logicalInputs[1].Element("operation")?.Element("Block");
-            if (TryExtractConditionSensorFunction(rightOperand, out string rightSensor))
-            {
-                node.conditionRightSensorFunction = rightSensor;
-            }
-            else
-            {
-                var rightToken = logicalInputs[1].Element("value")?.Value?.Trim();
-                if (!string.IsNullOrEmpty(rightToken))
-                {
-                    node.conditionRightSensorFunction = NormalizeSensorFunctionName(rightToken);
-                }
-            }
-        }
+        if (logicalInputs.Count > 1 && TryExtractConditionOperandToken(logicalInputs[1], out string rightToken))
+            node.conditionRightSensorFunction = rightToken;
 
         return true;
+    }
+
+    static bool TryParseComparisonCondition(XElement opBlock, LoopBlockNode node)
+    {
+        if (opBlock == null || node == null)
+            return false;
+
+        var opName = opBlock.Element("blockName")?.Value?.Trim();
+        if (string.IsNullOrEmpty(opName))
+            return false;
+
+        string comparisonOp = null;
+        if (opName.IndexOf("Block Op Equal", StringComparison.OrdinalIgnoreCase) >= 0)
+            comparisonOp = "eq";
+        else if (opName.IndexOf("Block Op BiggerThan", StringComparison.OrdinalIgnoreCase) >= 0)
+            comparisonOp = "gt";
+
+        if (comparisonOp == null)
+            return false;
+
+        node.conditionCompareOp = comparisonOp;
+
+        var comparisonInputs = GetBlockInputs(opBlock);
+        if (comparisonInputs == null || comparisonInputs.Count == 0)
+            return true;
+
+        if (comparisonInputs.Count > 0 && TryExtractConditionOperandToken(comparisonInputs[0], out string leftToken))
+            node.conditionLeftSensorFunction = leftToken;
+
+        if (comparisonInputs.Count > 1 && TryExtractConditionOperandToken(comparisonInputs[1], out string rightToken))
+            node.conditionRightSensorFunction = rightToken;
+
+        return true;
+    }
+
+    static bool TryExtractConditionOperandToken(XElement inputElement, out string operandToken)
+    {
+        operandToken = null;
+        if (inputElement == null)
+            return false;
+
+        var operandBlock = inputElement.Element("operation")?.Element("Block");
+        if (TryExtractConditionSensorFunction(operandBlock, out string extractedOperand))
+        {
+            operandToken = extractedOperand;
+            return true;
+        }
+
+        var nestedVarName = operandBlock?.Element("varName")?.Value?.Trim();
+        if (!string.IsNullOrEmpty(nestedVarName))
+        {
+            operandToken = NormalizeSensorFunctionName(nestedVarName);
+            return true;
+        }
+
+        var nestedValue = operandBlock?.Element("value")?.Value?.Trim();
+        if (!string.IsNullOrEmpty(nestedValue))
+        {
+            operandToken = NormalizeSensorFunctionName(nestedValue);
+            return true;
+        }
+
+        var directValue = inputElement.Element("value")?.Value?.Trim();
+        if (!string.IsNullOrEmpty(directValue))
+        {
+            operandToken = NormalizeSensorFunctionName(directValue);
+            return true;
+        }
+
+        return false;
     }
 
     static bool TryExtractConditionSensorFunction(XElement conditionBlock, out string sensorFunction)
@@ -1897,7 +1966,20 @@ public static class BE2XmlToRuntimeJson
         }
 
         node.conditionVar = token;
+        RegisterInputPinVariable(token);
         node.conditionPin = ResolveInt(token); // init 시점 값으로 fallback
+    }
+
+    static void RegisterOutputPinVariable(string variableName)
+    {
+        if (!string.IsNullOrWhiteSpace(variableName))
+            outputPinVariablesUsed.Add(variableName.Trim());
+    }
+
+    static void RegisterInputPinVariable(string variableName)
+    {
+        if (!string.IsNullOrWhiteSpace(variableName))
+            inputPinVariablesUsed.Add(variableName.Trim());
     }
 
     static string NormalizeSensorFunctionName(string rawName)
@@ -1965,6 +2047,16 @@ public static class BE2XmlToRuntimeJson
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("{");
+        var pinBindings = BuildPinBindings(variables);
+        sb.AppendLine("  \"pinBindings\": [");
+        for (int i = 0; i < pinBindings.Count; i++)
+        {
+            sb.Append("    ");
+            sb.Append(PinBindingNodeToJson(pinBindings[i]));
+            if (i < pinBindings.Count - 1) sb.Append(",");
+            sb.AppendLine();
+        }
+        sb.AppendLine("  ],");
         
         // init 배열 (변수 설정)
         sb.AppendLine("  \"init\": [");
@@ -2042,6 +2134,172 @@ public static class BE2XmlToRuntimeJson
         return sb.ToString();
     }
     
+    static List<PinBindingNode> BuildPinBindings(List<VariableNode> variables)
+    {
+        var bindingsByRole = new Dictionary<string, PinBindingNode>(StringComparer.OrdinalIgnoreCase);
+
+        if (variables == null)
+            return new List<PinBindingNode>();
+
+        for (int i = 0; i < variables.Count; i++)
+        {
+            var variable = variables[i];
+            if (variable == null || string.IsNullOrWhiteSpace(variable.name))
+                continue;
+
+            if (!TryInferPinBindingRole(variable.name, out string role))
+                continue;
+
+            if (IsPinBindingMotorRole(role) && !outputPinVariablesUsed.Contains(variable.name))
+                continue;
+
+            if (IsPinBindingSensorRole(role) && !inputPinVariablesUsed.Contains(variable.name))
+                continue;
+
+            bindingsByRole[role] = new PinBindingNode
+            {
+                role = role,
+                pinVar = variable.name,
+                pin = Mathf.RoundToInt(variable.value)
+            };
+        }
+
+        var result = new List<PinBindingNode>();
+        foreach (var role in knownPinBindingRoles)
+        {
+            if (bindingsByRole.TryGetValue(role, out var binding))
+                result.Add(binding);
+        }
+
+        return result;
+    }
+
+    static string PinBindingNodeToJson(PinBindingNode node)
+    {
+        var parts = new List<string>();
+        parts.Add($"\"role\": \"{EscapeJson(node.role)}\"");
+
+        if (!string.IsNullOrEmpty(node.pinVar))
+            parts.Add($"\"pinVar\": \"{EscapeJson(node.pinVar)}\"");
+        else
+            parts.Add($"\"pin\": {node.pin}");
+
+        return $"{{ {string.Join(", ", parts)} }}";
+    }
+
+    static bool TryInferPinBindingRole(string variableName, out string role)
+    {
+        role = null;
+        if (string.IsNullOrWhiteSpace(variableName))
+            return false;
+
+        string compact = NormalizePinBindingToken(variableName);
+        if (string.IsNullOrEmpty(compact))
+            return false;
+
+        string digits = ExtractPinBindingDigits(compact);
+        string baseName = digits.Length > 0
+            ? compact.Substring(0, compact.Length - digits.Length)
+            : compact;
+
+        if (MatchesPinBindingAny(baseName, "leftsensor", "sensorleft", "leftsensorpin", "sensorleftpin"))
+        {
+            role = digits.Length > 0 ? $"leftSensor{digits}" : "leftSensor";
+            return true;
+        }
+
+        if (MatchesPinBindingAny(baseName, "rightsensor", "sensorright", "rightsensorpin", "sensorrightpin"))
+        {
+            role = digits.Length > 0 ? $"rightSensor{digits}" : "rightSensor";
+            return true;
+        }
+
+        if (MatchesPinBindingAny(baseName, "leftmotorf", "leftmotorforward", "pinwheelleftforward", "wheelleftforward", "lwf"))
+        {
+            role = "leftMotorF";
+            return true;
+        }
+
+        if (MatchesPinBindingAny(baseName, "leftmotorb", "leftmotorback", "leftmotorbackward", "pinwheelleftback", "pinwheelleftbackward", "wheelleftback", "lwb"))
+        {
+            role = "leftMotorB";
+            return true;
+        }
+
+        if (MatchesPinBindingAny(baseName, "rightmotorf", "rightmotorforward", "pinwheelrightforward", "wheelrightforward", "rwf"))
+        {
+            role = "rightMotorF";
+            return true;
+        }
+
+        if (MatchesPinBindingAny(baseName, "rightmotorb", "rightmotorback", "rightmotorbackward", "pinwheelrightback", "pinwheelrightbackward", "wheelrightback", "rwb"))
+        {
+            role = "rightMotorB";
+            return true;
+        }
+
+        return false;
+    }
+
+    static bool IsPinBindingSensorRole(string role)
+    {
+        if (string.IsNullOrWhiteSpace(role))
+            return false;
+
+        return role.StartsWith("leftSensor", StringComparison.OrdinalIgnoreCase) ||
+               role.StartsWith("rightSensor", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool IsPinBindingMotorRole(string role)
+    {
+        if (string.IsNullOrWhiteSpace(role))
+            return false;
+
+        return role.Equals("leftMotorF", StringComparison.OrdinalIgnoreCase) ||
+               role.Equals("leftMotorB", StringComparison.OrdinalIgnoreCase) ||
+               role.Equals("rightMotorF", StringComparison.OrdinalIgnoreCase) ||
+               role.Equals("rightMotorB", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool MatchesPinBindingAny(string value, params string[] candidates)
+    {
+        for (int i = 0; i < candidates.Length; i++)
+        {
+            if (string.Equals(value, candidates[i], StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    static string NormalizePinBindingToken(string text)
+    {
+        var chars = new System.Text.StringBuilder(text.Length);
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (char.IsLetterOrDigit(c))
+                chars.Append(char.ToLowerInvariant(c));
+        }
+
+        return chars.ToString();
+    }
+
+    static string ExtractPinBindingDigits(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+
+        int end = text.Length - 1;
+        while (end >= 0 && char.IsDigit(text[end]))
+            end--;
+
+        if (end == text.Length - 1)
+            return string.Empty;
+
+        return text.Substring(end + 1);
+    }
+
     static string FunctionNodeToJson(FunctionNode func)
     {
         var parts = new List<string>();
@@ -2118,10 +2376,18 @@ public static class BE2XmlToRuntimeJson
                 
             case "if":
             case "ifElse":
-                // logical condition (And/Or)
+                // comparison/logical condition
                 if (node.conditionNot)
                     parts.Add("\"conditionNot\": true");
-                if (!string.IsNullOrEmpty(node.conditionLogicalOp))
+                if (!string.IsNullOrEmpty(node.conditionCompareOp))
+                {
+                    parts.Add($"\"conditionCompareOp\": \"{EscapeJson(node.conditionCompareOp)}\"");
+                    if (!string.IsNullOrEmpty(node.conditionLeftSensorFunction))
+                        parts.Add($"\"conditionLeftSensorFunction\": \"{EscapeJson(node.conditionLeftSensorFunction)}\"");
+                    if (!string.IsNullOrEmpty(node.conditionRightSensorFunction))
+                        parts.Add($"\"conditionRightSensorFunction\": \"{EscapeJson(node.conditionRightSensorFunction)}\"");
+                }
+                else if (!string.IsNullOrEmpty(node.conditionLogicalOp))
                 {
                     parts.Add($"\"conditionLogicalOp\": \"{EscapeJson(node.conditionLogicalOp)}\"");
                     if (!string.IsNullOrEmpty(node.conditionLeftSensorFunction))
@@ -2189,6 +2455,13 @@ public static class BE2XmlToRuntimeJson
         public string name;
         public float value;
     }
+
+    class PinBindingNode
+    {
+        public string role;
+        public int pin = -1;
+        public string pinVar;
+    }
     
     class LoopBlockNode
     {
@@ -2210,7 +2483,8 @@ public static class BE2XmlToRuntimeJson
         // For if/ifElse
         public int conditionPin;
         public string conditionVar;
-        public string conditionSensorFunction;  // 센서 기반 조건 (예: "leftSensor", "rightSensor")
+        public string conditionSensorFunction;  // 단일 조건 피연산자 (예: "leftSensor", "dir", "4")
+        public string conditionCompareOp;       // "eq" | "gt"
         public string conditionLogicalOp;       // "and" | "or"
         public string conditionLeftSensorFunction;
         public string conditionRightSensorFunction;
