@@ -650,6 +650,7 @@ GameObject:
   - component: {fileID: 164267789}
   - component: {fileID: 164267788}
   - component: {fileID: 164267787}
+  - component: {fileID: 852359483}
   m_Layer: 5
   m_Name: But_Load
   m_TagString: Untagged
@@ -2727,8 +2728,8 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 852359482}
-        m_TargetAssemblyTypeName: ClientBlockShareListPanel, Assembly-CSharp
-        m_MethodName: ToggleGuiVisibility
+        m_TargetAssemblyTypeName: LocalBlockCodeListPanel, Assembly-CSharp
+        m_MethodName: TogglePanel
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -3429,13 +3430,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _sourcePanel: {fileID: 852359481}
   _saveButton: {fileID: 1351331702}
-  _refreshVerifyButton: {fileID: 671228116}
-  _statusText: {fileID: 0}
-  _resultBoolText: {fileID: 0}
   _tokenOverride: 
   _disableButtonWhileSaving: 1
   _refreshListAfterSave: 1
   _debugLog: 1
+  _enforceDedicatedButtonOwnership: 1
 --- !u!1 &838771584
 GameObject:
   m_ObjectHideFlags: 0
@@ -3688,8 +3687,7 @@ GameObject:
   m_Component:
   - component: {fileID: 852359480}
   - component: {fileID: 852359481}
-  - component: {fileID: 852359482}
-  - component: {fileID: 852359483}
+  - component: {fileID: 852359486}
   m_Layer: 5
   m_Name: UserBlockCodeDBList
   m_TagString: Untagged
@@ -3742,17 +3740,6 @@ MonoBehaviour:
   _refreshNowButton: {fileID: 0}
   _statusText: {fileID: 0}
   _selectedText: {fileID: 0}
-  _detailText: {fileID: 0}
-  _pollOnEnable: 1
-  _pollIntervalSeconds: 5
-  _defaultPage: 1
-  _defaultSize: 20
-  _hostOnly: 1
-  _fetchDetailWhenSelected: 1
-  _refreshDetailAfterListUpdate: 0
-  _roomIdOverride: 
-  _tokenOverride: 
-  _autoRoomFromSession: 1
   _debugLog: 1
 --- !u!114 &852359482
 MonoBehaviour:
@@ -3760,7 +3747,7 @@ MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 852359479}
+  m_GameObject: {fileID: 1653133372}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 06ffb53b9dd530d4b9816c3cc8d8917a, type: 3}
@@ -3770,21 +3757,64 @@ MonoBehaviour:
   _listContent: {fileID: 314418009}
   _itemTemplate: {fileID: 8049103239486230645, guid: e57dbec1933effb408c7250e53d1b86a,
     type: 3}
-  _emptyStateObject: {fileID: 0}
   _openButton: {fileID: 607308466}
-  _loadButton: {fileID: 164267787}
-  _cancelButton: {fileID: 1180744377}
+  _closeButton: {fileID: 1180744377}
   _refreshButton: {fileID: 671228116}
-  _statusText: {fileID: 0}
-  _selectedText: {fileID: 0}
-  _uploadButtonTarget: {fileID: 852359483}
-  _roomIdOverride: 
-  _autoRoomFromSession: 1
-  _fallbackUserLevelSeq: 1
-  _allowFallbackSeqUpload: 0
-  _closeOnLoad: 1
+  _uploadButtonView: {fileID: 852359483}
   _debugLog: 1
 --- !u!114 &852359483
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 164267785}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a2d8ea5d32095cd4585b56ed306ee7e3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _uploadButton: {fileID: 164267787}
+  _bindOnEnable: 1
+  _disableButtonWhileBusy: 1
+  _debugLog: 1
+--- !u!114 &852359484
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1653133372}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9c39f56530fc419caf6344030a7e7eed, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _panel: {fileID: 852359482}
+  _fallbackUserLevelSeq: 1
+  _refreshOnEnable: 0
+  _debugLog: 1
+--- !u!114 &852359485
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1653133372}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a58404cf28d34af784a67de75784faf6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _localListPanel: {fileID: 852359482}
+  _localListController: {fileID: 852359484}
+  _uploadButton: {fileID: 852359483}
+  _remoteListController: {fileID: 852359486}
+  _roomIdOverride: 
+  _autoRoomFromSession: 1
+  _closePanelOnUploadSuccess: 1
+  _debugLog: 1
+--- !u!114 &852359486
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -3793,18 +3823,18 @@ MonoBehaviour:
   m_GameObject: {fileID: 852359479}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a2d8ea5d32095cd4585b56ed306ee7e3, type: 3}
+  m_Script: {fileID: 11500000, guid: c8153543b43c4ad39f54c3b7c9e502a5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _uploadButton: {fileID: 0}
-  _userLevelSeqInput: {fileID: 0}
-  _messageInput: {fileID: 0}
-  _tokenOverrideInput: {fileID: 0}
+  _panel: {fileID: 852359481}
   _roomIdOverride: 
-  _defaultUserLevelSeq: 1
-  _defaultMessage: "\uC774 \uBE14\uB85D\uCF54\uB4DC\uB85C \uC9C4\uD589\uD574\uBD10"
-  _bindOnEnable: 0
-  _disableButtonWhileUploading: 1
+  _tokenOverride: 
+  _autoRoomFromSession: 1
+  _refreshOnEnable: 1
+  _pollOnEnable: 1
+  _pollIntervalSeconds: 5
+  _defaultPage: 1
+  _defaultSize: 20
   _debugLog: 1
 --- !u!1 &859630006
 GameObject:
@@ -4174,7 +4204,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 979852356}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cca3fed3b40d3cd459ef472b26578152, type: 3}
   m_Name: 
@@ -4185,7 +4215,7 @@ MonoBehaviour:
   _createChatRoomManagerIfMissing: 1
   _roomIdOverride: 
   _accessTokenOverride: 
-  _showGui: 1
+  _showGui: 0
   _maxVisibleRows: 8
   _windowPosition: {x: 0, y: 600}
   _windowSize: {x: 600, y: 500}
@@ -5157,7 +5187,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_RaycastTarget: 1
+  m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
@@ -5309,7 +5339,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0.7607843, g: 0.7607843, b: 0.7607843, a: 1}
-  m_RaycastTarget: 1
+  m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
@@ -6201,6 +6231,9 @@ GameObject:
   - component: {fileID: 1653133373}
   - component: {fileID: 1653133375}
   - component: {fileID: 1653133374}
+  - component: {fileID: 852359482}
+  - component: {fileID: 852359484}
+  - component: {fileID: 852359485}
   m_Layer: 5
   m_Name: Client DB UI
   m_TagString: Untagged
@@ -6894,7 +6927,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2006917444}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: dc42784cf147c0c48a680349fa168899, type: 3}
   m_Name: 

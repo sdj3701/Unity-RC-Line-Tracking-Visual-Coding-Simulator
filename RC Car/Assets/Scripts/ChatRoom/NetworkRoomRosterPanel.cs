@@ -24,7 +24,8 @@ public sealed class NetworkRoomRosterPanel : MonoBehaviour
     [SerializeField] private float _apiFetchIntervalSeconds = 5f;
 
     [Header("Fallback GUI")]
-    [SerializeField] private bool _showFallbackGuiWhenTextMissing = true;
+    // Unused: IMGUI fallback is no longer used.
+    // [SerializeField] private bool _showFallbackGuiWhenTextMissing = true;
     [SerializeField] private Rect _fallbackGuiRect = new Rect(24f, 24f, 420f, 320f);
     [SerializeField] private int _fallbackFontSize = 16;
 
@@ -394,6 +395,8 @@ public sealed class NetworkRoomRosterPanel : MonoBehaviour
 
     private void OnGUI()
     {
+        // IMGUI fallback is no longer used.
+        /*
         if (!_showFallbackGuiWhenTextMissing)
             return;
 
@@ -407,6 +410,7 @@ public sealed class NetworkRoomRosterPanel : MonoBehaviour
             DrawFallbackWindow,
             "Room Roster",
             _fallbackWindowStyle);
+        */
     }
 
     private void DrawFallbackWindow(int id)
@@ -445,6 +449,8 @@ public sealed class NetworkRoomRosterPanel : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void BootstrapForNetworkCarScene()
     {
+        // IMGUI fallback panel bootstrap is no longer used.
+        /*
         Scene activeScene = SceneManager.GetActiveScene();
         if (!string.Equals(activeScene.name, NetworkCarSceneName, StringComparison.Ordinal))
             return;
@@ -454,5 +460,6 @@ public sealed class NetworkRoomRosterPanel : MonoBehaviour
 
         GameObject obj = new GameObject("NetworkRoomRosterPanel");
         obj.AddComponent<NetworkRoomRosterPanel>();
+        */
     }
 }

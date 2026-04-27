@@ -43,8 +43,6 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
         new Dictionary<string, string>(StringComparer.Ordinal);
     private readonly Dictionary<string, ChatRoomBlockShareSaveInfo> _pendingSaveByShareId =
         new Dictionary<string, ChatRoomBlockShareSaveInfo>(StringComparer.Ordinal);
-    private readonly HashSet<string> _completedSaveKeys =
-        new HashSet<string>(StringComparer.Ordinal);
     private readonly HashSet<string> _inProgressSaveKeys =
         new HashSet<string>(StringComparer.Ordinal);
 
@@ -538,6 +536,13 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
         if (info == null)
             return;
 
+        if (_hostOnly && !IsHost())
+        {
+            if (_debugLog)
+                Log("Ignore save success on non-host coordinator.");
+            return;
+        }
+
         string shareId = string.IsNullOrWhiteSpace(info.ShareId) ? string.Empty : info.ShareId.Trim();
         if (string.IsNullOrWhiteSpace(shareId))
         {
@@ -547,13 +552,6 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
 
         int savedSeq = info.SavedUserLevelSeq;
         string saveKey = BuildSaveDedupeKey(shareId, savedSeq);
-        if (_completedSaveKeys.Contains(saveKey))
-        {
-            if (_debugLog)
-                Log($"Skip duplicated save event. shareId={shareId}, savedSeq={savedSeq}");
-            return;
-        }
-
         if (_inProgressSaveKeys.Contains(saveKey))
         {
             if (_debugLog)
@@ -577,23 +575,18 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
             int preSlots = _slotRegistry.MaxCount;
             int preCars = _bindingStore.CountRuntimeCars();
 
-            string userId = ResolveUserIdFromShare(shareId, info.OwnerUserId, info.ResponseBody);
+            string userId = ResolveCurrentHostUserId();
             if (string.IsNullOrWhiteSpace(userId))
             {
-                _pendingSaveByShareId[shareId] = info;
-                RequestShareOwnerResolve(shareId);
-                LogMappingNeeded($"Owner unresolved. shareId={shareId}, ownerUserId={info.OwnerUserId}, savedSeq={savedSeq}");
-                _statusReporter?.SetWarning($"Save success but userId unresolved. shareId={shareId}, savedSeq={savedSeq}");
+                _statusReporter?.SetWarning($"Save success but current host userId unresolved. shareId={shareId}, savedSeq={savedSeq}");
                 return;
             }
 
-            _pendingSaveByShareId.Remove(shareId);
-
+            EnsureParticipantSlotAndCar(userId, userName: userId, source: "save-current-host", ownerPlayer: ResolveCurrentHostPlayer());
             if (!_slotRegistry.TryGetSlotByUserId(userId, out HostParticipantSlot approvedSlot) || approvedSlot == null)
             {
-                _completedSaveKeys.Add(saveKey);
-                LogMappingNeeded($"Resolved user is not approved. shareId={shareId}, resolvedUser={userId}, savedSeq={savedSeq}");
-                _statusReporter?.SetWarning($"save ignored: user not approved. shareId={shareId}, user={userId}, savedSeq={savedSeq}");
+                LogMappingNeeded($"Current host slot unresolved. shareId={shareId}, targetUser={userId}, savedSeq={savedSeq}");
+                _statusReporter?.SetWarning($"save ignored: current host slot unresolved. shareId={shareId}, user={userId}, savedSeq={savedSeq}");
                 LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
                 return;
             }
@@ -613,34 +606,50 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
                     existingBinding.UserName = approvedSlot.UserName;
                 }
 
-                _completedSaveKeys.Add(saveKey);
                 LogMappingNeeded(
-                    $"Reapply skipped. reason=duplicate-key, shareId={shareId}, savedSeq={savedSeq}, user={userId}");
+                    $"Reapply existing host version. shareId={shareId}, savedSeq={savedSeq}, user={userId}");
 
-                if (existingBinding != null &&
-                    existingBinding.RuntimeRefs != null &&
-                    existingBinding.RuntimeRefs.Executor != null &&
-                    existingBinding.RuntimeRefs.Physics != null &&
-                    !existingBinding.RuntimeReady &&
-                    existingVersion != null &&
-                    !string.IsNullOrWhiteSpace(existingVersion.Json))
+                if (existingBinding == null ||
+                    existingBinding.RuntimeRefs == null ||
+                    existingBinding.RuntimeRefs.Executor == null ||
+                    existingBinding.RuntimeRefs.Physics == null)
                 {
-                    bool reloaded = _runtimeBinder.TryApplyJson(
-                        existingBinding.RuntimeRefs.Executor,
-                        existingVersion.Json,
-                        $"save-duplicate:{shareId}:{userId}:version={existingVersion.VersionKey}",
-                        out string duplicateLoadError);
-                    existingBinding.RuntimeReady = reloaded;
-                    if (!reloaded)
-                    {
-                        existingBinding.LastError = duplicateLoadError;
-                        _statusReporter?.SetError(
-                            $"Runtime load failed(duplicate). user={userId}, shareId={shareId}, error={duplicateLoadError}");
-                    }
+                    _statusReporter?.SetError($"Runtime refs missing(existing version). user={userId}, shareId={shareId}");
+                    LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, existingBinding != null ? existingBinding.RuntimeRefs : null);
+                    LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                    UpdateSummary();
+                    return;
+                }
+
+                if (existingVersion == null || string.IsNullOrWhiteSpace(existingVersion.Json))
+                {
+                    existingBinding.LastError = "existing json missing";
+                    _statusReporter?.SetError($"Runtime load failed(existing json missing). user={userId}, shareId={shareId}");
+                    LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, existingBinding.RuntimeRefs);
+                    LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                    UpdateSummary();
+                    return;
+                }
+
+                bool reloaded = _runtimeBinder.TryApplyJson(
+                    existingBinding.RuntimeRefs.Executor,
+                    existingVersion.Json,
+                    $"save-duplicate:{shareId}:{userId}:version={existingVersion.VersionKey}",
+                    out string duplicateLoadError);
+                existingBinding.RuntimeReady = reloaded;
+                if (!reloaded)
+                {
+                    existingBinding.LastError = duplicateLoadError;
+                    _statusReporter?.SetError(
+                        $"Runtime load failed(duplicate). user={userId}, shareId={shareId}, error={duplicateLoadError}");
+                }
+                else
+                {
+                    existingBinding.LastError = string.Empty;
                 }
 
                 _statusReporter?.SetInfo(
-                    $"Code already mapped. user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}");
+                    $"Host code applied(existing version). user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}");
                 LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, existingBinding != null ? existingBinding.RuntimeRefs : null);
                 LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
                 UpdateSummary();
@@ -656,7 +665,6 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
 
             if (payload == null || !payload.IsSuccess)
             {
-                _completedSaveKeys.Add(saveKey);
                 string error = payload != null ? payload.Error : "payload is null";
                 if (_bindingStore.TryGetBinding(userId, out HostCarBinding failedBinding) && failedBinding != null)
                     failedBinding.LastError = error;
@@ -671,7 +679,6 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
             HostCarBinding binding = _bindingStore.UpsertCode(payload);
             if (binding == null)
             {
-                _completedSaveKeys.Add(saveKey);
                 _statusReporter?.SetError($"Code mapping failed. user={userId}, shareId={shareId}, savedSeq={savedSeq}");
                 LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, null);
                 LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
@@ -686,7 +693,6 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
                 activeVersion == null ||
                 string.IsNullOrWhiteSpace(activeVersion.Json))
             {
-                _completedSaveKeys.Add(saveKey);
                 binding.LastError = "active json missing";
                 _statusReporter?.SetError(
                     $"Code mapping failed(active json missing). user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}");
@@ -698,7 +704,6 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
 
             if (binding.RuntimeRefs == null || binding.RuntimeRefs.Executor == null || binding.RuntimeRefs.Physics == null)
             {
-                _completedSaveKeys.Add(saveKey);
                 binding.LastError = "runtime refs missing";
                 _statusReporter?.SetError($"Runtime refs missing. user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}");
                 LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
@@ -723,9 +728,8 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
                 binding.LastError = string.Empty;
             }
 
-            _completedSaveKeys.Add(saveKey);
             _statusReporter?.SetInfo(
-                $"Code mapped. user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}");
+                $"Host code applied. user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}");
             LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
             LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
             UpdateSummary();
@@ -1042,6 +1046,41 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
     private string ResolveTargetRoomId()
     {
         return NetworkRoomIdentity.ResolveApiRoomId();
+    }
+
+    private string ResolveCurrentHostUserId()
+    {
+        if (AuthManager.Instance != null &&
+            AuthManager.Instance.CurrentUser != null &&
+            !string.IsNullOrWhiteSpace(AuthManager.Instance.CurrentUser.userId))
+        {
+            return AuthManager.Instance.CurrentUser.userId.Trim();
+        }
+
+        if (_boundRunner != null && _boundRunner.IsRunning && !_boundRunner.IsShutdown)
+        {
+            string runnerUserId = ResolveFusionUserId(_boundRunner, _boundRunner.LocalPlayer);
+            if (!string.IsNullOrWhiteSpace(runnerUserId))
+                return runnerUserId.Trim();
+        }
+
+        FusionRoomSessionInfo context = FusionRoomSessionContext.Current;
+        if (context != null && !string.IsNullOrWhiteSpace(context.HostUserId))
+            return context.HostUserId.Trim();
+
+        RoomInfo currentRoom = RoomSessionContext.CurrentRoom;
+        if (currentRoom != null && !string.IsNullOrWhiteSpace(currentRoom.HostUserId))
+            return currentRoom.HostUserId.Trim();
+
+        return string.Empty;
+    }
+
+    private PlayerRef ResolveCurrentHostPlayer()
+    {
+        if (_boundRunner != null && _boundRunner.IsRunning && !_boundRunner.IsShutdown)
+            return _boundRunner.LocalPlayer;
+
+        return default;
     }
 
     private bool IsHost()

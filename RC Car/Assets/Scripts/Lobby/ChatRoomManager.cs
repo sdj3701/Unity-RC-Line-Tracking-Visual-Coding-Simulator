@@ -963,6 +963,7 @@ public class ChatRoomManager : MonoBehaviour
                         response != null ? response.blockShareId : null,
                         response != null ? response.block_share_id : null,
                         response != null ? response.id : null,
+                        ExtractJsonScalarAsString(body, "shareId"),
                         ExtractJsonScalarAsString(body, "blockShareId"),
                         ExtractJsonScalarAsString(body, "block_share_id"),
                         ExtractJsonScalarAsString(body, "id"),
@@ -1151,6 +1152,7 @@ public class ChatRoomManager : MonoBehaviour
                 }
 
                 string body = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+                LogBlockShareSavePayloadData(body);
                 BasicServiceResponse response = TryParseJson<BasicServiceResponse>(body);
                 bool httpSuccess = request.responseCode >= 200 && request.responseCode < 300;
 
@@ -1203,8 +1205,19 @@ public class ChatRoomManager : MonoBehaviour
                         ExtractJsonScalarAsString(body, "user_id"),
                         string.Empty),
                     SavedUserLevelSeq = FirstPositive(
+                        ParseJsonInt(body, "savedUserLevelSeq"),
+                        ParseJsonInt(body, "saved_user_level_seq"),
+                        ParseJsonInt(body, "targetUserLevelSeq"),
+                        ParseJsonInt(body, "target_user_level_seq"),
+                        ParseJsonInt(body, "myUserLevelSeq"),
+                        ParseJsonInt(body, "my_user_level_seq"),
                         ParseJsonInt(body, "userLevelSeq"),
+                        ParseJsonInt(body, "user_level_seq"),
+                        ParseJsonInt(body, "savedSeq"),
+                        ParseJsonInt(body, "saved_seq"),
                         ParseJsonInt(body, "seq"),
+                        ParseJsonInt(body, "sourceUserLevelSeq"),
+                        ParseJsonInt(body, "source_user_level_seq"),
                         ParseJsonInt(body, "level"),
                         0),
                     Message = FirstNonEmpty(
@@ -1214,6 +1227,12 @@ public class ChatRoomManager : MonoBehaviour
                     ResponseCode = request.responseCode,
                     ResponseBody = body
                 };
+
+                if (result.SavedUserLevelSeq <= 0)
+                {
+                    Debug.LogWarning(
+                        $"[ChatRoomManager] Block share save response is missing a positive savedSeq. shareId={result.ShareId}, code={result.ResponseCode}, body={body}");
+                }
 
                 OnBlockShareSaveSucceeded?.Invoke(result);
                 Log($"Block share saved to my level. shareId={result.ShareId}, savedSeq={result.SavedUserLevelSeq}, code={result.ResponseCode}");
@@ -2485,7 +2504,8 @@ public class ChatRoomManager : MonoBehaviour
         string xmlData = TryExtractBlockShareDetailXml(responseBody);
 
         LogGreen($"Block share save JSON data:\n{FormatPayloadLog(jsonData)}");
-        LogGreen($"Block share save XML data:\n{FormatPayloadLog(xmlData)}");
+        LogGreen(
+            $"Block share save XML data:\n{(string.IsNullOrWhiteSpace(xmlData) ? "(not included in response)" : FormatPayloadLog(xmlData))}");
     }
 
     private static string TryExtractBlockShareDetailJson(string responseBody)

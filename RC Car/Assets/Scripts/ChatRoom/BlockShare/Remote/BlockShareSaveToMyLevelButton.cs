@@ -5,21 +5,23 @@ using System.Threading.Tasks;
 using Auth;
 using MG_BlocksEngine2.Storage;
 using RC.Network.Fusion;
-using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.Networking;
 using UnityEngine.UI;
 
-public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
+public class BlockShareSaveToMyLevelButton : MonoBehaviour
 {
     private const string BlueLogColor = "#33A6FF";
+    private const string DiagnosticLogColor = "#FF4D4D";
+    private const string SaveToMyLevelEndpointRoute = "POST /api/chat/block-shares/{shareId}/save-to-my-level";
+    private const string OverlayCanvasName = "Canvas Car Renders";
+    private const string OverlayRenderName = "RCCarRender";
+    private const string UpdateButtonName = "But_Update";
 
     [Header("Target")]
-    [SerializeField] private HostBlockShareAutoRefreshPanel _sourcePanel;
+    [SerializeField] private BlockShareRemoteListPanel _sourcePanel;
     [SerializeField] private Button _saveButton;
-    [SerializeField] private Button _refreshVerifyButton;
-    [SerializeField] private TMP_Text _statusText;
-    [SerializeField] private TMP_Text _resultBoolText;
 
     [Header("Option")]
     [SerializeField] private string _tokenOverride = string.Empty;
@@ -27,25 +29,25 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
     [SerializeField] private bool _refreshListAfterSave = true;
     [SerializeField] private bool _debugLog = true;
 
+    [Header("Ownership Guard")]
+    [SerializeField] private bool _enforceDedicatedButtonOwnership = true;
+
     private ChatRoomManager _boundManager;
     private bool _isSaving;
-    private bool _isRefreshingVerify;
     private string _activeShareId = string.Empty;
-    private string _activeVerifyShareId = string.Empty;
     private string _activeFileNameHint = string.Empty;
     private int _activeUserLevelSeqHint;
     private TaskCompletionSource<SaveAwaitResult> _saveAwaitTcs;
-    private TaskCompletionSource<DetailAwaitResult> _detailAwaitTcs;
-    private int _batchTotal;
-    private int _batchCurrent;
-
-    public bool HasSaveResult { get; private set; }
-    public bool LastSaveResult { get; private set; }
-    public bool HasVerifyResult { get; private set; }
-    public bool LastVerifyResult { get; private set; }
+    private bool _saveButtonBlockedByOwnership;
+    private bool _lastInteractableState;
+    private bool _hasLoggedInteractableState;
+    private string _lastInteractableReason = string.Empty;
+    private bool _overlayRaycastBlockerSanitized;
+    private bool _buttonChildRaycastSanitized;
+    private BlockShareSaveButtonClickProxy _saveButtonProxy;
+    private string _lastRaycastProbeSummary = string.Empty;
 
     private const float SaveAwaitTimeoutSeconds = 20f;
-    private const float DetailAwaitTimeoutSeconds = 15f;
     private const float BusyWaitTimeoutSeconds = 10f;
 
     private sealed class SaveAwaitResult
@@ -55,110 +57,69 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         public ChatRoomBlockShareSaveInfo Info;
     }
 
-    private sealed class DetailAwaitResult
-    {
-        public bool Success;
-        public string Message;
-        public ChatRoomBlockShareInfo Info;
-    }
-
     private void OnEnable()
     {
         if (_saveButton == null)
             _saveButton = GetComponent<Button>();
 
-        if (_saveButton != null)
-        {
-            _saveButton.onClick.RemoveListener(OnClickSaveToMyLevel);
-            _saveButton.onClick.AddListener(OnClickSaveToMyLevel);
-        }
+        TraceSaveEvent("OnEnable");
+        TryDisableOverlayRaycastBlockers();
+        TryDisableConflictingButtonChildRaycasts();
+        ResolveButtonOwnership();
+        BindButtons();
+        TryBindManagerEvents();
+        UpdateButtonInteractable();
+    }
 
-        if (_refreshVerifyButton != null)
-        {
-            _refreshVerifyButton.onClick.RemoveListener(OnClickRefreshVerify);
-            _refreshVerifyButton.onClick.AddListener(OnClickRefreshVerify);
-        }
+    private void Update()
+    {
+        if (!_overlayRaycastBlockerSanitized)
+            TryDisableOverlayRaycastBlockers();
+        if (!_buttonChildRaycastSanitized)
+            TryDisableConflictingButtonChildRaycasts();
 
         TryBindManagerEvents();
-        UpdateResultBoolText();
         UpdateButtonInteractable();
     }
 
     private void OnDisable()
     {
-        if (_saveButton != null)
-            _saveButton.onClick.RemoveListener(OnClickSaveToMyLevel);
-
-        if (_refreshVerifyButton != null)
-            _refreshVerifyButton.onClick.RemoveListener(OnClickRefreshVerify);
-
+        TraceSaveEvent("OnDisable");
+        UnbindButtons();
         UnbindManagerEvents();
         _isSaving = false;
-        _isRefreshingVerify = false;
         _activeShareId = string.Empty;
-        _activeVerifyShareId = string.Empty;
         _activeFileNameHint = string.Empty;
         _activeUserLevelSeqHint = 0;
         _saveAwaitTcs = null;
-        _detailAwaitTcs = null;
-        _batchTotal = 0;
-        _batchCurrent = 0;
-        HasSaveResult = false;
-        LastSaveResult = false;
-        HasVerifyResult = false;
-        LastVerifyResult = false;
-        UpdateResultBoolText();
+        _saveButtonBlockedByOwnership = false;
+        _hasLoggedInteractableState = false;
+        _lastInteractableReason = string.Empty;
+        _overlayRaycastBlockerSanitized = false;
+        _buttonChildRaycastSanitized = false;
+        _lastRaycastProbeSummary = string.Empty;
         UpdateButtonInteractable();
     }
 
-    public void OnClickSaveToMyLevel()
+    private void HandleSaveButtonClick()
     {
-        if (_isRefreshingVerify)
+        TraceSaveEvent("HandleSaveButtonClick");
+
+        if (_saveButtonBlockedByOwnership)
         {
-            SetStatus("Refresh verify is already running.");
+            SetStatus("Save is blocked: button ownership conflict.");
+            return;
+        }
+
+        if (!IsCurrentUserHost())
+        {
+            SetStatus("Save is host-only.");
             return;
         }
 
         if (_isSaving)
         {
             SetStatus("Save is already running.");
-            return;
-        }
-
-        TryBindManagerEvents();
-        if (_boundManager == null)
-        {
-            SetStatus("ChatRoomManager is null.");
-            return;
-        }
-
-        if (_sourcePanel == null)
-        {
-            SetStatus("Source panel is not assigned.");
-            return;
-        }
-
-        List<string> shareIds = CollectTargetShareIds();
-        if (shareIds.Count <= 0)
-        {
-            SetStatus("Select one or more block shares first.");
-            return;
-        }
-
-        _ = SaveSelectedSharesAsync(shareIds);
-    }
-
-    public void OnClickRefreshVerify()
-    {
-        if (_isSaving)
-        {
-            SetStatus("Save is already running.");
-            return;
-        }
-
-        if (_isRefreshingVerify)
-        {
-            SetStatus("Refresh verify is already running.");
             return;
         }
 
@@ -182,7 +143,118 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
             return;
         }
 
-        _ = RefreshSelectedShareVerificationAsync(shareId);
+        LogDiagnostic(
+            $"Save request accepted. shareId={shareId}, selectedObject={DescribeCurrentSelectedObject()}, saveButton={DescribeButton(_saveButton)}, sourcePanel={DescribeGameObject(_sourcePanel != null ? _sourcePanel.gameObject : null)}");
+        _ = SaveSelectedShareAsync(shareId);
+    }
+
+    private void BindButtons()
+    {
+        TraceSaveEvent("BindButtons");
+
+        if (_saveButton == null)
+        {
+            LogDiagnostic("BindButtons skipped. saveButton=(null)");
+            return;
+        }
+
+        _saveButton.onClick.RemoveListener(HandleSaveButtonClick);
+
+        if (_saveButtonBlockedByOwnership)
+        {
+            _saveButton.interactable = false;
+            LogDiagnostic(
+                $"BindButtons skipped AddListener due to ownership conflict. saveButton={DescribeButton(_saveButton)}, persistentCount={_saveButton.onClick.GetPersistentEventCount()}");
+            return;
+        }
+
+        EnsureSaveButtonProxy();
+        _saveButton.onClick.AddListener(HandleSaveButtonClick);
+        LogDiagnostic(
+            $"BindButtons attached HandleSaveButtonClick. saveButton={DescribeButton(_saveButton)}, persistentCount={_saveButton.onClick.GetPersistentEventCount()}");
+    }
+
+    private void UnbindButtons()
+    {
+        TraceSaveEvent("UnbindButtons");
+
+        if (_saveButton != null)
+            _saveButton.onClick.RemoveListener(HandleSaveButtonClick);
+
+        if (_saveButtonProxy != null)
+            _saveButtonProxy.Configure(null);
+    }
+
+    private void ResolveButtonOwnership()
+    {
+        _saveButtonBlockedByOwnership = false;
+
+        if (!_enforceDedicatedButtonOwnership)
+            return;
+
+        if (_saveButton != null && IsUsedByClientPanel(_saveButton, out string saveOwnerName))
+        {
+            _saveButtonBlockedByOwnership = true;
+            Debug.LogWarning($"[BlockShareSaveToMyLevelButton] Save button ownership conflict. owner={saveOwnerName}, button={_saveButton.name}");
+        }
+    }
+
+    private bool IsUsedByClientPanel(Button button, out string ownerName)
+    {
+        ownerName = string.Empty;
+        if (button == null)
+            return false;
+
+        LocalBlockCodeListPanel[] panels = FindObjectsOfType<LocalBlockCodeListPanel>(true);
+        if (panels == null || panels.Length == 0)
+            return false;
+
+        for (int i = 0; i < panels.Length; i++)
+        {
+            LocalBlockCodeListPanel panel = panels[i];
+            if (panel == null)
+                continue;
+
+            if (!panel.IsOwnedActionButton(button))
+                continue;
+
+            ownerName = panel.gameObject.name;
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool IsCurrentUserHost()
+    {
+        FusionRoomSessionInfo fusionContext = FusionRoomSessionContext.Current;
+        if (fusionContext != null)
+        {
+            if (fusionContext.IsHost || fusionContext.GameMode == Fusion.GameMode.Host)
+                return true;
+
+            if (!string.IsNullOrWhiteSpace(fusionContext.HostUserId) &&
+                AuthManager.Instance != null &&
+                AuthManager.Instance.CurrentUser != null)
+            {
+                string fusionHostUserId = fusionContext.HostUserId.Trim();
+                string currentFusionUserId = AuthManager.Instance.CurrentUser.userId ?? string.Empty;
+                currentFusionUserId = currentFusionUserId.Trim();
+                return string.Equals(fusionHostUserId, currentFusionUserId, StringComparison.Ordinal);
+            }
+        }
+
+        RoomInfo room = RoomSessionContext.CurrentRoom;
+        if (room == null || string.IsNullOrWhiteSpace(room.HostUserId))
+            return false;
+
+        if (AuthManager.Instance == null || AuthManager.Instance.CurrentUser == null)
+            return false;
+
+        string hostUserId = room.HostUserId.Trim();
+        string currentUserId = AuthManager.Instance.CurrentUser.userId ?? string.Empty;
+        currentUserId = currentUserId.Trim();
+        return string.Equals(hostUserId, currentUserId, StringComparison.Ordinal);
     }
 
     private void TryBindManagerEvents()
@@ -199,9 +271,6 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         _boundManager.OnBlockShareSaveSucceeded += HandleSaveSucceeded;
         _boundManager.OnBlockShareSaveFailed += HandleSaveFailed;
         _boundManager.OnBlockShareSaveCanceled += HandleSaveCanceled;
-        _boundManager.OnBlockShareDetailFetchSucceeded += HandleDetailFetchSucceeded;
-        _boundManager.OnBlockShareDetailFetchFailed += HandleDetailFetchFailed;
-        _boundManager.OnBlockShareDetailFetchCanceled += HandleDetailFetchCanceled;
     }
 
     private void UnbindManagerEvents()
@@ -212,9 +281,6 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         _boundManager.OnBlockShareSaveSucceeded -= HandleSaveSucceeded;
         _boundManager.OnBlockShareSaveFailed -= HandleSaveFailed;
         _boundManager.OnBlockShareSaveCanceled -= HandleSaveCanceled;
-        _boundManager.OnBlockShareDetailFetchSucceeded -= HandleDetailFetchSucceeded;
-        _boundManager.OnBlockShareDetailFetchFailed -= HandleDetailFetchFailed;
-        _boundManager.OnBlockShareDetailFetchCanceled -= HandleDetailFetchCanceled;
         _boundManager = null;
     }
 
@@ -267,96 +333,11 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         });
     }
 
-    private void HandleDetailFetchSucceeded(ChatRoomBlockShareInfo info)
-    {
-        if (!_isRefreshingVerify)
-            return;
-
-        string shareId = info != null ? info.BlockShareId : string.Empty;
-        if (!IsActiveVerifyShare(shareId))
-            return;
-
-        CompleteCurrentDetail(new DetailAwaitResult
-        {
-            Success = true,
-            Message = string.Empty,
-            Info = info
-        });
-    }
-
-    private void HandleDetailFetchFailed(string roomId, string shareId, string message)
-    {
-        if (!_isRefreshingVerify)
-            return;
-
-        if (!IsActiveVerifyShare(shareId))
-            return;
-
-        CompleteCurrentDetail(new DetailAwaitResult
-        {
-            Success = false,
-            Message = string.IsNullOrWhiteSpace(message) ? "detail fetch failed" : message,
-            Info = null
-        });
-    }
-
-    private void HandleDetailFetchCanceled(string roomId, string shareId)
-    {
-        if (!_isRefreshingVerify)
-            return;
-
-        if (!IsActiveVerifyShare(shareId))
-            return;
-
-        CompleteCurrentDetail(new DetailAwaitResult
-        {
-            Success = false,
-            Message = "detail fetch canceled",
-            Info = null
-        });
-    }
-
     private bool IsActiveShare(string shareId)
     {
         string current = string.IsNullOrWhiteSpace(_activeShareId) ? string.Empty : _activeShareId.Trim();
         string incoming = string.IsNullOrWhiteSpace(shareId) ? string.Empty : shareId.Trim();
         return string.Equals(current, incoming, StringComparison.Ordinal);
-    }
-
-    private bool IsActiveVerifyShare(string shareId)
-    {
-        string current = string.IsNullOrWhiteSpace(_activeVerifyShareId) ? string.Empty : _activeVerifyShareId.Trim();
-        string incoming = string.IsNullOrWhiteSpace(shareId) ? string.Empty : shareId.Trim();
-        return string.Equals(current, incoming, StringComparison.Ordinal);
-    }
-
-    private List<string> CollectTargetShareIds()
-    {
-        var result = new List<string>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        if (_sourcePanel != null && _sourcePanel.TryGetCheckedShareIds(out List<string> checkedIds))
-        {
-            for (int i = 0; i < checkedIds.Count; i++)
-            {
-                string shareId = string.IsNullOrWhiteSpace(checkedIds[i]) ? string.Empty : checkedIds[i].Trim();
-                if (string.IsNullOrWhiteSpace(shareId))
-                    continue;
-
-                if (seen.Add(shareId))
-                    result.Add(shareId);
-            }
-        }
-
-        if (result.Count <= 0)
-        {
-            string fallbackShareId = _sourcePanel != null ? _sourcePanel.SelectedShareId : string.Empty;
-            fallbackShareId = string.IsNullOrWhiteSpace(fallbackShareId) ? string.Empty : fallbackShareId.Trim();
-            if (!string.IsNullOrWhiteSpace(fallbackShareId) && seen.Add(fallbackShareId))
-                result.Add(fallbackShareId);
-        }
-
-        return result;
     }
 
     private string ResolveSelectedShareId()
@@ -368,206 +349,61 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         return string.IsNullOrWhiteSpace(shareId) ? string.Empty : shareId.Trim();
     }
 
-    private async Task SaveSelectedSharesAsync(List<string> shareIds)
+    private async Task SaveSelectedShareAsync(string shareIdRaw)
     {
-        if (shareIds == null || shareIds.Count <= 0)
+        string shareId = string.IsNullOrWhiteSpace(shareIdRaw) ? string.Empty : shareIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(shareId))
             return;
 
         _isSaving = true;
-        _batchTotal = shareIds.Count;
-        _batchCurrent = 0;
         UpdateButtonInteractable();
-
-        int successCount = 0;
-        int failCount = 0;
 
         try
         {
-            for (int i = 0; i < shareIds.Count; i++)
+            if (_boundManager == null)
             {
-                string shareId = string.IsNullOrWhiteSpace(shareIds[i]) ? string.Empty : shareIds[i].Trim();
-                if (string.IsNullOrWhiteSpace(shareId))
-                {
-                    failCount++;
-                    continue;
-                }
-
-                _batchCurrent = i + 1;
-
-                if (_boundManager == null)
-                {
-                    failCount++;
-                    SetSaveResult(false);
-                    SetStatus($"Save stopped(manager-null). ({_batchCurrent}/{_batchTotal}) shareId={shareId}");
-                    break;
-                }
-
-                bool isIdle = await WaitUntilManagerIdleAsync(BusyWaitTimeoutSeconds);
-                if (!isIdle)
-                {
-                    failCount++;
-                    SetSaveResult(false);
-                    SetStatus($"Save skipped(busy-timeout). ({_batchCurrent}/{_batchTotal}) shareId={shareId}");
-                    continue;
-                }
-
-                _activeShareId = shareId;
-                CaptureActiveSelectionHints(_activeShareId);
-                _saveAwaitTcs = new TaskCompletionSource<SaveAwaitResult>();
-
-                _boundManager.SaveBlockShareToMyLevel(_activeShareId, ResolveTokenOverride());
-                SetStatus($"Save requested ({_batchCurrent}/{_batchTotal}). shareId={_activeShareId}");
-
-                SaveAwaitResult result = await AwaitCurrentSaveAsync(SaveAwaitTimeoutSeconds);
-                if (result != null && result.Success)
-                {
-                    successCount++;
-                    SetSaveResult(true);
-
-                    ChatRoomBlockShareSaveInfo info = result.Info;
-                    SetStatus($"Save success ({_batchCurrent}/{_batchTotal}). shareId={_activeShareId}, savedSeq={info?.SavedUserLevelSeq}");
-                    _ = DebugLogSavedBlockCodeDataAsync(info);
-                }
-                else
-                {
-                    failCount++;
-                    SetSaveResult(false);
-                    string message = result != null && !string.IsNullOrWhiteSpace(result.Message)
-                        ? result.Message
-                        : "save failed";
-                    SetStatus($"Save failed ({_batchCurrent}/{_batchTotal}). shareId={_activeShareId}, message={message}");
-                }
-
-                if (_refreshListAfterSave && _sourcePanel != null)
-                    _sourcePanel.RequestListNow();
+                SetStatus("Save stopped(manager-null).");
+                return;
             }
+
+            bool isIdle = await WaitUntilManagerIdleAsync(BusyWaitTimeoutSeconds);
+            if (!isIdle)
+            {
+                SetStatus($"Save skipped(busy-timeout). shareId={shareId}");
+                return;
+            }
+
+            _activeShareId = shareId;
+            CaptureActiveSelectionHints(_activeShareId);
+            _saveAwaitTcs = new TaskCompletionSource<SaveAwaitResult>();
+
+            LogBlue($"Endpoint intent=save-to-my-level, route={SaveToMyLevelEndpointRoute}, shareId={_activeShareId}");
+            _boundManager.SaveBlockShareToMyLevel(_activeShareId, ResolveTokenOverride());
+            SetStatus($"Apply-to-host requested. shareId={_activeShareId}");
+
+            SaveAwaitResult result = await AwaitCurrentSaveAsync(SaveAwaitTimeoutSeconds);
+            if (result != null && result.Success)
+            {
+                ChatRoomBlockShareSaveInfo info = result.Info;
+                SetStatus($"Apply-to-host success. shareId={_activeShareId}, savedSeq={info?.SavedUserLevelSeq}");
+                _ = DebugLogSavedBlockCodeDataAsync(info);
+            }
+            else
+            {
+                string message = result != null && !string.IsNullOrWhiteSpace(result.Message)
+                    ? result.Message
+                    : "save failed";
+                SetStatus($"Apply-to-host failed. shareId={_activeShareId}, message={message}");
+            }
+
+            if (_refreshListAfterSave && _sourcePanel != null)
+                _sourcePanel.RequestRefresh();
         }
         finally
         {
             _isSaving = false;
             _activeShareId = string.Empty;
             _saveAwaitTcs = null;
-            UpdateButtonInteractable();
-
-            int total = _batchTotal;
-            _batchTotal = 0;
-            _batchCurrent = 0;
-            SetStatus($"Batch save finished. total={total}, success={successCount}, failed={failCount}");
-        }
-    }
-
-    private async Task RefreshSelectedShareVerificationAsync(string shareId)
-    {
-        string normalizedShareId = string.IsNullOrWhiteSpace(shareId) ? string.Empty : shareId.Trim();
-        if (string.IsNullOrWhiteSpace(normalizedShareId))
-            return;
-
-        _isRefreshingVerify = true;
-        _activeVerifyShareId = normalizedShareId;
-        CaptureActiveSelectionHints(_activeVerifyShareId);
-        UpdateButtonInteractable();
-
-        try
-        {
-            if (_refreshListAfterSave && _sourcePanel != null)
-                _sourcePanel.RequestListNow();
-
-            bool isIdle = await WaitUntilManagerIdleAsync(BusyWaitTimeoutSeconds);
-            if (!isIdle)
-            {
-                SetVerifyResult(false);
-                SetStatus($"Verify skipped(busy-timeout). shareId={_activeVerifyShareId}");
-                LogBlue($"Verify skipped: manager busy timeout. shareId={_activeVerifyShareId}");
-                return;
-            }
-
-            string roomId = ResolveTargetRoomId(_activeVerifyShareId);
-            if (string.IsNullOrWhiteSpace(roomId))
-            {
-                SetVerifyResult(false);
-                SetStatus($"Verify failed(room-missing). shareId={_activeVerifyShareId}");
-                LogBlue($"Verify failed: apiRoomId is empty. shareId={_activeVerifyShareId}");
-                return;
-            }
-
-            _detailAwaitTcs = new TaskCompletionSource<DetailAwaitResult>();
-            _boundManager.FetchBlockShareDetail(roomId, _activeVerifyShareId, ResolveTokenOverride());
-            SetStatus($"Verify refresh requested. shareId={_activeVerifyShareId}");
-            LogBlue($"Verify refresh requested. roomId={roomId}, shareId={_activeVerifyShareId}");
-
-            DetailAwaitResult detailResult = await AwaitCurrentDetailAsync(DetailAwaitTimeoutSeconds);
-            if (detailResult == null || !detailResult.Success || detailResult.Info == null)
-            {
-                string message = detailResult != null && !string.IsNullOrWhiteSpace(detailResult.Message)
-                    ? detailResult.Message
-                    : "detail fetch failed";
-                SetVerifyResult(false);
-                SetStatus($"Verify failed(detail). shareId={_activeVerifyShareId}, message={message}");
-                LogBlue($"Verify detail failed. shareId={_activeVerifyShareId}, message={message}");
-                return;
-            }
-
-            ChatRoomBlockShareInfo detail = detailResult.Info;
-            CaptureActiveSelectionHints(_activeVerifyShareId);
-            LogBlue(
-                $"Verify detail refreshed. shareId={detail.BlockShareId}, roomId={detail.RoomId}, userId={detail.UserId}, userLevelSeq={detail.UserLevelSeq}, fileName={detail.Message}");
-
-            if (detail.UserLevelSeq <= 0)
-            {
-                SetVerifyResult(false);
-                SetStatus($"Verify result: no userLevelSeq. shareId={_activeVerifyShareId}");
-                LogBlue($"Verify result: userLevelSeq is empty or invalid. shareId={_activeVerifyShareId}");
-                return;
-            }
-
-            string accessToken = ResolveAccessToken();
-            if (string.IsNullOrWhiteSpace(accessToken))
-            {
-                SetVerifyResult(false);
-                SetStatus($"Verify failed(token-missing). shareId={_activeVerifyShareId}, seq={detail.UserLevelSeq}");
-                LogBlue($"Verify failed: accessToken is empty. shareId={_activeVerifyShareId}, seq={detail.UserLevelSeq}");
-                return;
-            }
-
-            ChatUserLevelDebugResult verifyResult = await ChatUserLevelDebugApi.FetchBySeqAsync(detail.UserLevelSeq, accessToken);
-            if (verifyResult == null || !verifyResult.IsSuccess)
-            {
-                string error = "verify fetch returned null";
-                if (verifyResult != null)
-                {
-                    if (!string.IsNullOrWhiteSpace(verifyResult.ErrorMessage))
-                        error = verifyResult.ErrorMessage.Trim();
-                    else if (verifyResult.ResponseCode > 0)
-                        error = $"HTTP {verifyResult.ResponseCode}";
-                    else
-                        error = "verify fetch failed";
-                }
-                SetVerifyResult(false);
-                SetStatus($"Verify failed(db-fetch). shareId={_activeVerifyShareId}, seq={detail.UserLevelSeq}, message={error}");
-                LogBlue(
-                    $"Verify DB fetch failed. shareId={_activeVerifyShareId}, seq={detail.UserLevelSeq}, code={verifyResult?.ResponseCode}, error={error}, body={TruncateForDebug(verifyResult?.ResponseBody)}");
-                return;
-            }
-
-            string xml = verifyResult.Xml ?? string.Empty;
-            string json = verifyResult.Json ?? string.Empty;
-            int xmlLen = xml.Length;
-            int jsonLen = json.Length;
-            bool hasData = xmlLen > 0 || jsonLen > 0;
-
-            SetVerifyResult(hasData);
-            SetStatus(
-                $"Verify result: {(hasData ? "data-exists" : "data-empty")}. shareId={_activeVerifyShareId}, seq={detail.UserLevelSeq}, xmlLen={xmlLen}, jsonLen={jsonLen}");
-            LogBlue(
-                $"Verify payload checked. shareId={_activeVerifyShareId}, seq={detail.UserLevelSeq}, xmlLen={xmlLen}, jsonLen={jsonLen}, hasData={hasData}, code={verifyResult.ResponseCode}");
-            LogBlue($"Verify XML:\n{TruncateForDebug(xml)}");
-            LogBlue($"Verify JSON:\n{TruncateForDebug(json)}");
-        }
-        finally
-        {
-            _isRefreshingVerify = false;
-            _activeVerifyShareId = string.Empty;
-            _detailAwaitTcs = null;
             UpdateButtonInteractable();
         }
     }
@@ -630,45 +466,6 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         };
     }
 
-    private async Task<DetailAwaitResult> AwaitCurrentDetailAsync(float timeoutSeconds)
-    {
-        if (_detailAwaitTcs == null)
-        {
-            return new DetailAwaitResult
-            {
-                Success = false,
-                Message = "internal detail waiter is null",
-                Info = null
-            };
-        }
-
-        float timeout = Mathf.Max(1f, timeoutSeconds);
-        float deadline = Time.realtimeSinceStartup + timeout;
-        Task<DetailAwaitResult> waitTask = _detailAwaitTcs.Task;
-
-        while (!waitTask.IsCompleted)
-        {
-            if (Time.realtimeSinceStartup >= deadline)
-            {
-                return new DetailAwaitResult
-                {
-                    Success = false,
-                    Message = "detail timeout",
-                    Info = null
-                };
-            }
-
-            await Task.Yield();
-        }
-
-        return waitTask.Result ?? new DetailAwaitResult
-        {
-            Success = false,
-            Message = "empty detail result",
-            Info = null
-        };
-    }
-
     private void CompleteCurrentSave(SaveAwaitResult result)
     {
         if (_saveAwaitTcs == null)
@@ -678,17 +475,6 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
             return;
 
         _saveAwaitTcs.TrySetResult(result);
-    }
-
-    private void CompleteCurrentDetail(DetailAwaitResult result)
-    {
-        if (_detailAwaitTcs == null)
-            return;
-
-        if (_detailAwaitTcs.Task.IsCompleted)
-            return;
-
-        _detailAwaitTcs.TrySetResult(result);
     }
 
     private void CaptureActiveSelectionHints(string shareId)
@@ -707,7 +493,7 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
                 _activeFileNameHint = detail.Message.Trim();
 
             if (_debugLog)
-                Debug.Log($"[HostBlockShareSaveToMyLevelButton] Selection linked(detail). shareId={shareId}, userLevelSeqHint={_activeUserLevelSeqHint}, fileNameHint={_activeFileNameHint}");
+                Debug.Log($"[BlockShareSaveToMyLevelButton] Selection linked(detail). shareId={shareId}, userLevelSeqHint={_activeUserLevelSeqHint}, fileNameHint={_activeFileNameHint}");
             return;
         }
 
@@ -723,7 +509,7 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
             if (_debugLog)
             {
                 Debug.Log(
-                    $"[HostBlockShareSaveToMyLevelButton] Selection linked(shareId). shareId={shareId}, userLevelSeqHint={_activeUserLevelSeqHint}, fileNameHint={_activeFileNameHint}");
+                    $"[BlockShareSaveToMyLevelButton] Selection linked(shareId). shareId={shareId}, userLevelSeqHint={_activeUserLevelSeqHint}, fileNameHint={_activeFileNameHint}");
             }
             return;
         }
@@ -735,7 +521,7 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
                 _activeFileNameHint = listMessage.Trim();
 
             if (_debugLog)
-                Debug.Log($"[HostBlockShareSaveToMyLevelButton] Selection linked(list). shareId={shareId}, userLevelSeqHint={_activeUserLevelSeqHint}, fileNameHint={_activeFileNameHint}");
+                Debug.Log($"[BlockShareSaveToMyLevelButton] Selection linked(list). shareId={shareId}, userLevelSeqHint={_activeUserLevelSeqHint}, fileNameHint={_activeFileNameHint}");
         }
     }
 
@@ -771,14 +557,14 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         BE2_CodeStorageManager storage = BE2_CodeStorageManager.Instance;
         if (storage == null)
         {
-            Debug.LogWarning("[HostBlockShareSaveToMyLevelButton] BE2_CodeStorageManager is null. skip XML/JSON debug load.");
+            Debug.LogWarning("[BlockShareSaveToMyLevelButton] BE2_CodeStorageManager is null. skip XML/JSON debug load.");
             return;
         }
 
         string fileName = ResolveSavedFileName(info);
         if (string.IsNullOrWhiteSpace(fileName))
         {
-            Debug.LogWarning("[HostBlockShareSaveToMyLevelButton] Saved file name hint is empty. skip XML/JSON debug load.");
+            Debug.LogWarning("[BlockShareSaveToMyLevelButton] Saved file name hint is empty. skip XML/JSON debug load.");
             return;
         }
 
@@ -794,7 +580,7 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[HostBlockShareSaveToMyLevelButton] Save payload debug load failed. fileName={fileName}, error={ex.Message}");
+            Debug.LogWarning($"[BlockShareSaveToMyLevelButton] Save payload debug load failed. fileName={fileName}, error={ex.Message}");
         }
     }
 
@@ -837,7 +623,7 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
     private static void LogGreen(string message)
     {
         string text = string.IsNullOrWhiteSpace(message) ? string.Empty : message;
-        Debug.Log($"<color=#00FF66>[HostBlockShareSaveToMyLevelButton] {text}</color>");
+        Debug.Log($"<color=#00FF66>[BlockShareSaveToMyLevelButton] {text}</color>");
     }
 
     private void LogBlue(string message)
@@ -845,7 +631,46 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         if (!_debugLog || string.IsNullOrWhiteSpace(message))
             return;
 
-        Debug.Log($"<color={BlueLogColor}>[HostBlockShareSaveToMyLevelButton] {message}</color>");
+        Debug.Log($"<color={BlueLogColor}>[BlockShareSaveToMyLevelButton] {message}</color>");
+    }
+
+    private void TraceSaveEvent(string eventName)
+    {
+        if (!_debugLog || string.IsNullOrWhiteSpace(eventName))
+            return;
+
+        LogDiagnostic(
+            $"{eventName}. selectedObject={DescribeCurrentSelectedObject()}, saveButton={DescribeButton(_saveButton)}, sourcePanel={DescribeGameObject(_sourcePanel != null ? _sourcePanel.gameObject : null)}, saveBlocked={_saveButtonBlockedByOwnership}, isSaving={_isSaving}\n{StackTraceUtility.ExtractStackTrace()}");
+    }
+
+    private void LogDiagnostic(string message)
+    {
+        if (!_debugLog || string.IsNullOrWhiteSpace(message))
+            return;
+
+        Debug.Log($"<color={DiagnosticLogColor}>[BlockShareSaveToMyLevelButton]</color> {message}");
+    }
+
+    private static string DescribeCurrentSelectedObject()
+    {
+        GameObject selected = EventSystem.current != null ? EventSystem.current.currentSelectedGameObject : null;
+        return DescribeGameObject(selected);
+    }
+
+    private static string DescribeButton(Button button)
+    {
+        if (button == null)
+            return "(null)";
+
+        return $"{button.name}(activeSelf={button.gameObject.activeSelf}, activeInHierarchy={button.gameObject.activeInHierarchy})";
+    }
+
+    private static string DescribeGameObject(GameObject gameObject)
+    {
+        if (gameObject == null)
+            return "(null)";
+
+        return $"{gameObject.name}(activeSelf={gameObject.activeSelf}, activeInHierarchy={gameObject.activeInHierarchy})";
     }
 
     private void LogMappingNeeded(string message)
@@ -853,21 +678,265 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         if (!_debugLog || string.IsNullOrWhiteSpace(message))
             return;
 
-        Debug.Log($"<color=orange>[HostBlockShareSaveToMyLevelButton][MAPPING] {message}</color>");
+        Debug.Log($"<color=orange>[BlockShareSaveToMyLevelButton][MAPPING] {message}</color>");
+    }
+
+    private void EnsureSaveButtonProxy()
+    {
+        if (_saveButton == null)
+            return;
+
+        if (_saveButtonProxy == null)
+            _saveButtonProxy = _saveButton.GetComponent<BlockShareSaveButtonClickProxy>();
+
+        if (_saveButtonProxy == null)
+            _saveButtonProxy = _saveButton.gameObject.AddComponent<BlockShareSaveButtonClickProxy>();
+
+        _saveButtonProxy.Configure(this);
+    }
+
+    public void NotifyProxyPointerDown(PointerEventData eventData)
+    {
+        if (!_debugLog)
+            return;
+
+        LogDiagnostic(
+            $"Save pointer down. selectedObject={DescribeCurrentSelectedObject()}, pointerPress={DescribeGameObject(eventData != null ? eventData.pointerPress : null)}, pointerEnter={DescribeGameObject(eventData != null ? eventData.pointerEnter : null)}");
+    }
+
+    public void NotifyProxyPointerUp(PointerEventData eventData)
+    {
+        if (!_debugLog)
+            return;
+
+        LogDiagnostic(
+            $"Save pointer up. selectedObject={DescribeCurrentSelectedObject()}, pointerPress={DescribeGameObject(eventData != null ? eventData.pointerPress : null)}, pointerEnter={DescribeGameObject(eventData != null ? eventData.pointerEnter : null)}");
+    }
+
+    public void NotifyProxyPointerClick(PointerEventData eventData)
+    {
+        if (_debugLog)
+        {
+            LogDiagnostic(
+                $"Save pointer click. selectedObject={DescribeCurrentSelectedObject()}, pointerPress={DescribeGameObject(eventData != null ? eventData.pointerPress : null)}, pointerClick={DescribeGameObject(eventData != null ? eventData.pointerClick : null)}, pointerEnter={DescribeGameObject(eventData != null ? eventData.pointerEnter : null)}");
+        }
+
+        _ = TryHandleProxyClickFallbackAsync("pointer-click");
+    }
+
+    public void NotifyProxySubmit(BaseEventData eventData)
+    {
+        if (_debugLog)
+        {
+            LogDiagnostic(
+                $"Save submit. selectedObject={DescribeCurrentSelectedObject()}, currentInputModule={DescribeInputModule(eventData)}");
+        }
+
+        _ = TryHandleProxyClickFallbackAsync("submit");
+    }
+
+    private async Task TryHandleProxyClickFallbackAsync(string source)
+    {
+        await Task.Yield();
+
+        if (_saveButton == null)
+            return;
+
+        if (!_saveButton.isActiveAndEnabled || !_saveButton.interactable)
+            return;
+
+        if (_saveButtonBlockedByOwnership || _isSaving)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(ResolveSelectedShareId()) && IsCurrentUserHost())
+        {
+            LogDiagnostic($"Save proxy fallback invoked. source={source}, selectedShareId={ResolveSelectedShareId()}");
+            HandleSaveButtonClick();
+        }
+    }
+
+    private void TryDisableOverlayRaycastBlockers()
+    {
+        Canvas[] canvases = FindObjectsOfType<Canvas>(true);
+        if (canvases == null || canvases.Length == 0)
+            return;
+
+        bool foundCandidate = false;
+        bool changedAny = false;
+
+        for (int i = 0; i < canvases.Length; i++)
+        {
+            Canvas canvas = canvases[i];
+            if (canvas == null)
+                continue;
+
+            if (!string.Equals(canvas.gameObject.name, OverlayCanvasName, StringComparison.Ordinal))
+                continue;
+
+            foundCandidate = true;
+
+            GraphicRaycaster raycaster = canvas.GetComponent<GraphicRaycaster>();
+            if (raycaster != null && raycaster.enabled)
+            {
+                raycaster.enabled = false;
+                changedAny = true;
+            }
+
+            Graphic[] graphics = canvas.GetComponentsInChildren<Graphic>(true);
+            for (int j = 0; j < graphics.Length; j++)
+            {
+                Graphic graphic = graphics[j];
+                if (graphic == null || !graphic.raycastTarget)
+                    continue;
+
+                bool isRenderTarget = string.Equals(graphic.gameObject.name, OverlayRenderName, StringComparison.Ordinal);
+                bool isCanvasChild = graphic.transform.IsChildOf(canvas.transform);
+                if (!isRenderTarget && !isCanvasChild)
+                    continue;
+
+                graphic.raycastTarget = false;
+                changedAny = true;
+            }
+        }
+
+        if (!foundCandidate)
+            return;
+
+        _overlayRaycastBlockerSanitized = true;
+
+        if (changedAny)
+        {
+            LogDiagnostic(
+                $"Disabled overlay raycast blockers. canvas={OverlayCanvasName}, render={OverlayRenderName}");
+        }
+    }
+
+    private void TryDisableConflictingButtonChildRaycasts()
+    {
+        Button[] buttons = FindObjectsOfType<Button>(true);
+        if (buttons == null || buttons.Length == 0)
+            return;
+
+        bool foundCandidate = false;
+        bool changedAny = false;
+
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            Button button = buttons[i];
+            if (button == null)
+                continue;
+
+            if (!string.Equals(button.gameObject.name, UpdateButtonName, StringComparison.Ordinal))
+                continue;
+
+            foundCandidate = true;
+            Graphic targetGraphic = button.targetGraphic;
+            Graphic[] graphics = button.GetComponentsInChildren<Graphic>(true);
+            for (int j = 0; j < graphics.Length; j++)
+            {
+                Graphic graphic = graphics[j];
+                if (graphic == null || !graphic.raycastTarget)
+                    continue;
+
+                if (ReferenceEquals(graphic, targetGraphic))
+                    continue;
+
+                graphic.raycastTarget = false;
+                changedAny = true;
+            }
+        }
+
+        if (!foundCandidate)
+            return;
+
+        _buttonChildRaycastSanitized = true;
+
+        if (changedAny)
+            LogDiagnostic($"Disabled conflicting child raycasts. button={UpdateButtonName}");
     }
 
     private void UpdateButtonInteractable()
     {
-        bool interactable = true;
-
-        if (_disableButtonWhileSaving && (_isSaving || _isRefreshingVerify))
-            interactable = false;
+        bool interactable = ComputeButtonInteractable(out string reason);
 
         if (_saveButton != null)
             _saveButton.interactable = interactable;
 
-        if (_refreshVerifyButton != null)
-            _refreshVerifyButton.interactable = interactable;
+        if (!_debugLog)
+            return;
+
+        string normalizedReason = string.IsNullOrWhiteSpace(reason) ? "ready" : reason;
+        if (_hasLoggedInteractableState &&
+            _lastInteractableState == interactable &&
+            string.Equals(_lastInteractableReason, normalizedReason, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _hasLoggedInteractableState = true;
+        _lastInteractableState = interactable;
+        _lastInteractableReason = normalizedReason;
+        LogDiagnostic(
+            $"Save interactable={interactable}, reason={normalizedReason}, selectedShareId={ResolveSelectedShareId()}, isHost={IsCurrentUserHost()}, managerBound={_boundManager != null}");
+
+        if (interactable)
+            ProbeUiRaycastPath();
+        else
+            _lastRaycastProbeSummary = string.Empty;
+    }
+
+    private bool ComputeButtonInteractable(out string reason)
+    {
+        if (_saveButton == null)
+        {
+            reason = "save-button-null";
+            return false;
+        }
+
+        if (_saveButtonBlockedByOwnership)
+        {
+            reason = "ownership-conflict";
+            return false;
+        }
+
+        if (_disableButtonWhileSaving && _isSaving)
+        {
+            reason = "save-in-progress";
+            return false;
+        }
+
+        if (_sourcePanel == null)
+        {
+            reason = "source-panel-null";
+            return false;
+        }
+
+        if (!_sourcePanel.isActiveAndEnabled || !_sourcePanel.gameObject.activeInHierarchy)
+        {
+            reason = "source-panel-inactive";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(ResolveSelectedShareId()))
+        {
+            reason = "no-selected-share";
+            return false;
+        }
+
+        if (!IsCurrentUserHost())
+        {
+            reason = "not-host";
+            return false;
+        }
+
+        if (_boundManager == null && ChatRoomManager.Instance == null)
+        {
+            reason = "manager-null";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
     }
 
     private string ResolveTokenOverride()
@@ -875,70 +944,125 @@ public class HostBlockShareSaveToMyLevelButton : MonoBehaviour
         return string.IsNullOrWhiteSpace(_tokenOverride) ? null : _tokenOverride.Trim();
     }
 
-    private string ResolveAccessToken()
-    {
-        string overrideToken = ResolveTokenOverride();
-        if (!string.IsNullOrWhiteSpace(overrideToken))
-            return overrideToken;
-
-        return AuthManager.Instance != null ? AuthManager.Instance.GetAccessToken() : string.Empty;
-    }
-
-    private string ResolveTargetRoomId(string shareId)
-    {
-        ChatRoomBlockShareInfo selectedDetail = _sourcePanel != null ? _sourcePanel.SelectedDetailInfo : null;
-        if (selectedDetail != null &&
-            string.Equals(shareId, selectedDetail.BlockShareId ?? string.Empty, StringComparison.Ordinal) &&
-            !string.IsNullOrWhiteSpace(selectedDetail.RoomId))
-        {
-            return selectedDetail.RoomId.Trim();
-        }
-
-        FusionRoomSessionInfo fusionContext = FusionRoomSessionContext.Current;
-        if (fusionContext != null && !string.IsNullOrWhiteSpace(fusionContext.ApiRoomId))
-            return fusionContext.ApiRoomId.Trim();
-
-        return NetworkRoomIdentity.ResolveApiRoomId();
-    }
-
     private void SetStatus(string message)
     {
         string text = string.IsNullOrWhiteSpace(message) ? string.Empty : message;
 
-        if (_statusText != null)
-            _statusText.text = text;
-
         if (_debugLog && !string.IsNullOrWhiteSpace(text))
-            Debug.Log($"[HostBlockShareSaveToMyLevelButton] {text}");
+            Debug.Log($"[BlockShareSaveToMyLevelButton] {text}");
     }
 
-    private void SetSaveResult(bool success)
+    private void ProbeUiRaycastPath()
     {
-        HasSaveResult = true;
-        LastSaveResult = success;
-        UpdateResultBoolText();
-    }
-
-    private void SetVerifyResult(bool success)
-    {
-        HasVerifyResult = true;
-        LastVerifyResult = success;
-        UpdateResultBoolText();
-    }
-
-    private void UpdateResultBoolText()
-    {
-        if (_resultBoolText == null)
+        if (!_debugLog || _saveButton == null || EventSystem.current == null)
             return;
 
-        string saveValue = HasSaveResult
-            ? (LastSaveResult ? "True" : "False")
-            : "-";
-        string verifyValue = HasVerifyResult
-            ? (LastVerifyResult ? "True" : "False")
-            : "-";
+        RectTransform buttonRect = _saveButton.transform as RectTransform;
+        if (buttonRect == null)
+            return;
 
-        _resultBoolText.text = $"Save Result: {saveValue}\nVerify Result: {verifyValue}";
+        Canvas canvas = _saveButton.GetComponentInParent<Canvas>();
+        Camera eventCamera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay
+            ? canvas.worldCamera
+            : null;
+        Vector3 worldCenter = buttonRect.TransformPoint(buttonRect.rect.center);
+        Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(eventCamera, worldCenter);
+
+        var pointer = new PointerEventData(EventSystem.current)
+        {
+            position = screenPoint
+        };
+        var results = new List<RaycastResult>();
+        EventSystem.current.RaycastAll(pointer, results);
+
+        string summary = BuildRaycastProbeSummary(results, screenPoint);
+        if (string.Equals(_lastRaycastProbeSummary, summary, StringComparison.Ordinal))
+            return;
+
+        _lastRaycastProbeSummary = summary;
+        LogDiagnostic(summary);
+    }
+
+    private string BuildRaycastProbeSummary(List<RaycastResult> results, Vector2 screenPoint)
+    {
+        if (results == null || results.Count == 0)
+            return $"Save raycast probe: no hits. screen=({screenPoint.x:0.0}, {screenPoint.y:0.0})";
+
+        bool saveReachable = IsResultWithinSaveButton(results[0]);
+        int previewCount = Mathf.Min(results.Count, 6);
+        string[] preview = new string[previewCount];
+        for (int i = 0; i < previewCount; i++)
+            preview[i] = BuildTransformPath(results[i].gameObject != null ? results[i].gameObject.transform : null);
+
+        return
+            $"Save raycast probe: reachable={saveReachable}, screen=({screenPoint.x:0.0}, {screenPoint.y:0.0}), top={preview[0]}, hits={results.Count}, path={string.Join(" -> ", preview)}";
+    }
+
+    private bool IsResultWithinSaveButton(RaycastResult result)
+    {
+        if (_saveButton == null || result.gameObject == null)
+            return false;
+
+        Transform hit = result.gameObject.transform;
+        Transform buttonTransform = _saveButton.transform;
+        return hit == buttonTransform || hit.IsChildOf(buttonTransform);
+    }
+
+    private static string BuildTransformPath(Transform transform)
+    {
+        if (transform == null)
+            return "(null)";
+
+        string path = transform.name;
+        Transform current = transform.parent;
+        while (current != null)
+        {
+            path = $"{current.name}/{path}";
+            current = current.parent;
+        }
+
+        return path;
+    }
+
+    private static string DescribeInputModule(BaseEventData eventData)
+    {
+        BaseInputModule module = eventData != null ? eventData.currentInputModule : null;
+        return module != null ? module.GetType().Name : "(null)";
+    }
+}
+
+public sealed class BlockShareSaveButtonClickProxy :
+    MonoBehaviour,
+    IPointerDownHandler,
+    IPointerUpHandler,
+    IPointerClickHandler,
+    ISubmitHandler
+{
+    private BlockShareSaveToMyLevelButton _owner;
+
+    public void Configure(BlockShareSaveToMyLevelButton owner)
+    {
+        _owner = owner;
+    }
+
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        _owner?.NotifyProxyPointerDown(eventData);
+    }
+
+    public void OnPointerUp(PointerEventData eventData)
+    {
+        _owner?.NotifyProxyPointerUp(eventData);
+    }
+
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        _owner?.NotifyProxyPointerClick(eventData);
+    }
+
+    public void OnSubmit(BaseEventData eventData)
+    {
+        _owner?.NotifyProxySubmit(eventData);
     }
 }
 
