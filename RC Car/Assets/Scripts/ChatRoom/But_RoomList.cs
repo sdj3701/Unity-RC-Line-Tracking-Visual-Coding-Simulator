@@ -9,6 +9,8 @@ using UnityEngine.UI;
 
 public class But_RoomList : MonoBehaviour
 {
+    private static readonly Dictionary<int, But_RoomList> SharedControllerByPanelKey = new Dictionary<int, But_RoomList>();
+
     [SerializeField] private Button _button;
     [SerializeField] private Button _but_Cancel;
     [SerializeField] private Button _but_Confirm;
@@ -40,6 +42,9 @@ public class But_RoomList : MonoBehaviour
     private float _nextJoinApprovalPollTime;
     private TaskCompletionSource<PhotonApiJoinRequestResult> _photonApiJoinRequestTcs;
     private string _pendingPhotonApiRoomId = string.Empty;
+    private int _sharedPanelKey;
+    private bool _isSharedControllerOwner;
+    private bool _sharedHandlersBound;
 
     public string SelectedRoomId { get; private set; }
 
@@ -61,23 +66,8 @@ public class But_RoomList : MonoBehaviour
             _button.onClick.AddListener(OnClickFetchRoomList);
         }
 
-        if (_but_Cancel != null)
-        {
-            _but_Cancel.onClick.RemoveListener(OnClickCancel);
-            _but_Cancel.onClick.AddListener(OnClickCancel);
-        }
-
-        if (_but_Confirm != null)
-        {
-            _but_Confirm.onClick.RemoveListener(OnClickConfirm);
-            _but_Confirm.onClick.AddListener(OnClickConfirm);
-        }
-
-        if (_usePhotonRooms)
-            BindPhotonLobbyService();
-
-        TryBindManagerEvents();
         TryResolveContentRoot();
+        RefreshSharedControllerOwnership();
     }
 
     private void OnDisable()
@@ -85,16 +75,7 @@ public class But_RoomList : MonoBehaviour
         if (_bindOnEnable && _button != null)
             _button.onClick.RemoveListener(OnClickFetchRoomList);
 
-        if (_but_Cancel != null)
-            _but_Cancel.onClick.RemoveListener(OnClickCancel);
-
-        if (_but_Confirm != null)
-            _but_Confirm.onClick.RemoveListener(OnClickConfirm);
-
-        if (_usePhotonRooms)
-            UnbindPhotonLobbyService();
-
-        UnbindManagerEvents();
+        ReleaseSharedControllerOwnership();
         StopJoinApprovalPolling();
         CompletePendingPhotonApiJoinRequest(false, "canceled");
     }
@@ -108,6 +89,45 @@ public class But_RoomList : MonoBehaviour
     }
 
     public void OnClickFetchRoomList()
+    {
+        But_RoomList controller = ResolveSharedController();
+        if (!ReferenceEquals(controller, this))
+        {
+            controller.ExecuteFetchRoomList();
+            return;
+        }
+
+        RefreshSharedControllerOwnership();
+        ExecuteFetchRoomList();
+    }
+
+    public void OnClickCancel()
+    {
+        But_RoomList controller = ResolveSharedController();
+        if (!ReferenceEquals(controller, this))
+        {
+            controller.ExecuteCancel();
+            return;
+        }
+
+        RefreshSharedControllerOwnership();
+        ExecuteCancel();
+    }
+
+    public void OnClickConfirm()
+    {
+        But_RoomList controller = ResolveSharedController();
+        if (!ReferenceEquals(controller, this))
+        {
+            controller.ExecuteConfirm();
+            return;
+        }
+
+        RefreshSharedControllerOwnership();
+        ExecuteConfirm();
+    }
+
+    private void ExecuteFetchRoomList()
     {
         if (_usePhotonRooms)
         {
@@ -127,13 +147,13 @@ public class But_RoomList : MonoBehaviour
         _boundManager.FetchRoomList();
     }
 
-    public void OnClickCancel()
+    private void ExecuteCancel()
     {
         if (_roomListPanel != null)
             _roomListPanel.SetActive(false);
     }
 
-    public void OnClickConfirm()
+    private void ExecuteConfirm()
     {
         if (string.IsNullOrWhiteSpace(SelectedRoomId))
         {
@@ -259,6 +279,111 @@ public class But_RoomList : MonoBehaviour
             SceneManager.LoadScene(_targetSceneName);
     }
 
+    private But_RoomList ResolveSharedController()
+    {
+        int panelKey = ResolveSharedPanelKey();
+        if (panelKey == 0)
+            return this;
+
+        if (!SharedControllerByPanelKey.TryGetValue(panelKey, out But_RoomList controller) ||
+            controller == null ||
+            !controller.isActiveAndEnabled)
+        {
+            SharedControllerByPanelKey[panelKey] = this;
+            return this;
+        }
+
+        return controller;
+    }
+
+    private void RefreshSharedControllerOwnership()
+    {
+        But_RoomList controller = ResolveSharedController();
+        bool shouldOwn = ReferenceEquals(controller, this);
+
+        if (shouldOwn)
+        {
+            _sharedPanelKey = ResolveSharedPanelKey();
+            _isSharedControllerOwner = true;
+            BindSharedHandlers();
+            return;
+        }
+
+        _isSharedControllerOwner = false;
+        UnbindSharedHandlers();
+    }
+
+    private void ReleaseSharedControllerOwnership()
+    {
+        UnbindSharedHandlers();
+
+        int panelKey = _sharedPanelKey != 0 ? _sharedPanelKey : ResolveSharedPanelKey();
+        if (panelKey != 0 &&
+            SharedControllerByPanelKey.TryGetValue(panelKey, out But_RoomList controller) &&
+            ReferenceEquals(controller, this))
+        {
+            SharedControllerByPanelKey.Remove(panelKey);
+        }
+
+        _sharedPanelKey = 0;
+        _isSharedControllerOwner = false;
+    }
+
+    private void BindSharedHandlers()
+    {
+        if (_sharedHandlersBound)
+            return;
+
+        if (_but_Cancel != null)
+        {
+            _but_Cancel.onClick.RemoveListener(OnClickCancel);
+            _but_Cancel.onClick.AddListener(OnClickCancel);
+        }
+
+        if (_but_Confirm != null)
+        {
+            _but_Confirm.onClick.RemoveListener(OnClickConfirm);
+            _but_Confirm.onClick.AddListener(OnClickConfirm);
+        }
+
+        if (_usePhotonRooms)
+            BindPhotonLobbyService();
+
+        TryBindManagerEvents();
+        _sharedHandlersBound = true;
+    }
+
+    private void UnbindSharedHandlers()
+    {
+        if (!_sharedHandlersBound)
+            return;
+
+        if (_but_Cancel != null)
+            _but_Cancel.onClick.RemoveListener(OnClickCancel);
+
+        if (_but_Confirm != null)
+            _but_Confirm.onClick.RemoveListener(OnClickConfirm);
+
+        if (_usePhotonRooms)
+            UnbindPhotonLobbyService();
+
+        UnbindManagerEvents();
+        _sharedHandlersBound = false;
+    }
+
+    private int ResolveSharedPanelKey()
+    {
+        TryResolveContentRoot();
+
+        if (_roomListPanel != null)
+            return _roomListPanel.GetInstanceID();
+
+        if (_roomListContentRoot != null)
+            return _roomListContentRoot.GetInstanceID();
+
+        return 0;
+    }
+
     private void HandlePhotonRoomListSucceeded(IReadOnlyList<FusionRoomInfo> rooms)
     {
         if (rooms == null || rooms.Count == 0)
@@ -342,6 +467,10 @@ public class But_RoomList : MonoBehaviour
     private void HandlePhotonRoomsUpdated(IReadOnlyList<FusionRoomInfo> rooms)
     {
         if (!_usePhotonRooms)
+            return;
+
+        RefreshSharedControllerOwnership();
+        if (!_isSharedControllerOwner)
             return;
 
         if (_roomListPanel != null && !_roomListPanel.activeInHierarchy)
