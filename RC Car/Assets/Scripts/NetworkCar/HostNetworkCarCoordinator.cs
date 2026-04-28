@@ -392,13 +392,65 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
 
     public async Task<string> ApplyRemoteBlockShareToCurrentHostAsync(ChatRoomBlockShareInfo detailInfo)
     {
+        string currentHostUserId = ResolveCurrentHostUserId();
+        if (string.IsNullOrWhiteSpace(currentHostUserId))
+            return "current host userId unresolved";
+
+        return await ApplyRemoteBlockShareDetailToTargetAsync(
+            detailInfo,
+            currentHostUserId,
+            ResolveCurrentHostPlayer(),
+            "detail-current-host");
+    }
+
+    public async Task<string> ApplyRemoteBlockShareToOwnerAsync(ChatRoomBlockShareInfo detailInfo)
+    {
+        if (detailInfo == null)
+            return "detail info is null";
+
+        string ownerUserId = NormalizeText(detailInfo.UserId);
+        if (string.IsNullOrWhiteSpace(ownerUserId))
+            return "detail userId is empty";
+
+        return await ApplyRemoteBlockShareDetailToTargetAsync(
+            detailInfo,
+            ownerUserId,
+            ResolveOwnerPlayerByUserId(ownerUserId),
+            "detail-owner");
+    }
+
+    public void RestartExecutionAfterSaveBatch()
+    {
+        if (_executionScheduler == null)
+        {
+            _statusReporter?.SetError("ExecutionScheduler is missing.");
+            return;
+        }
+
+        _executionScheduler.StopExecution();
+        _executionScheduler.StartExecution();
+        _statusReporter?.SetInfo("Execution restarted after save batch.");
+        UpdateSummary();
+    }
+
+    public bool TryGetSlotIndexForUser(string userIdRaw, out int slotIndex)
+    {
+        return _slotRegistry.TryGetSlotIndexByUserId(userIdRaw, out slotIndex);
+    }
+
+    private async Task<string> ApplyRemoteBlockShareDetailToTargetAsync(
+        ChatRoomBlockShareInfo detailInfo,
+        string targetUserIdRaw,
+        PlayerRef ownerPlayer,
+        string sourceTag)
+    {
         if (detailInfo == null)
             return "detail info is null";
 
         if (_hostOnly && !IsHost())
         {
             if (_debugLog)
-                Log("Ignore direct detail apply on non-host coordinator.");
+                Log($"Ignore detail apply on non-host coordinator. source={sourceTag}");
 
             return "current user is not host";
         }
@@ -411,36 +463,51 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
         if (savedSeq <= 0)
             return "userLevelSeq is invalid";
 
+        string userId = NormalizeText(targetUserIdRaw);
+        if (string.IsNullOrWhiteSpace(userId))
+            return "target userId is empty";
+
         string saveKey = BuildSaveDedupeKey(shareId, savedSeq);
         if (!_inProgressSaveKeys.Add(saveKey))
         {
             if (_debugLog)
-                Log($"Skip duplicate direct detail apply. shareId={shareId}, savedSeq={savedSeq}");
+                Log($"Skip duplicate detail apply. source={sourceTag}, shareId={shareId}, savedSeq={savedSeq}, user={userId}");
 
             return "apply already in progress";
         }
 
         try
         {
-            LogMappingNeeded($"Mapping trigger. source=detail-direct, shareId={shareId}, savedSeq={savedSeq}");
+            LogMappingNeeded(
+                $"Mapping trigger. source={sourceTag}, shareId={shareId}, savedSeq={savedSeq}, targetUser={userId}");
 
             int preSlots = _slotRegistry.MaxCount;
             int preCars = _bindingStore.CountRuntimeCars();
+            string currentHostUserId = ResolveCurrentHostUserId();
+            bool isCurrentHostUser = !string.IsNullOrWhiteSpace(currentHostUserId) &&
+                                     string.Equals(currentHostUserId, userId, StringComparison.Ordinal);
 
-            string userId = ResolveCurrentHostUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            if (ownerPlayer == default && isCurrentHostUser)
+                ownerPlayer = ResolveCurrentHostPlayer();
+
+            bool hasExistingSlot = _slotRegistry.TryGetSlotByUserId(userId, out HostParticipantSlot approvedSlot) &&
+                                   approvedSlot != null;
+            if (!hasExistingSlot && ownerPlayer == default && !isCurrentHostUser)
             {
-                _statusReporter?.SetWarning($"Direct apply but current host userId unresolved. shareId={shareId}, savedSeq={savedSeq}");
-                return "current host userId unresolved";
+                _statusReporter?.SetWarning(
+                    $"Detail apply ignored: owner player unresolved. source={sourceTag}, user={userId}, shareId={shareId}, savedSeq={savedSeq}");
+                return "owner player unresolved";
             }
 
-            EnsureParticipantSlotAndCar(userId, userName: userId, source: "detail-current-host", ownerPlayer: ResolveCurrentHostPlayer());
-            if (!_slotRegistry.TryGetSlotByUserId(userId, out HostParticipantSlot approvedSlot) || approvedSlot == null)
+            EnsureParticipantSlotAndCar(userId, userName: userId, source: sourceTag, ownerPlayer: ownerPlayer);
+            if (!_slotRegistry.TryGetSlotByUserId(userId, out approvedSlot) || approvedSlot == null)
             {
-                LogMappingNeeded($"Current host slot unresolved(detail). shareId={shareId}, targetUser={userId}, savedSeq={savedSeq}");
-                _statusReporter?.SetWarning($"direct apply ignored: current host slot unresolved. shareId={shareId}, user={userId}, savedSeq={savedSeq}");
+                LogMappingNeeded(
+                    $"Target slot unresolved. source={sourceTag}, shareId={shareId}, targetUser={userId}, savedSeq={savedSeq}");
+                _statusReporter?.SetWarning(
+                    $"detail apply ignored: target slot unresolved. shareId={shareId}, user={userId}, savedSeq={savedSeq}");
                 LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
-                return "current host slot unresolved";
+                return "target slot unresolved";
             }
 
             _bindingStore.UpsertParticipant(approvedSlot);
@@ -458,7 +525,8 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
                     existingBinding.UserName = approvedSlot.UserName;
                 }
 
-                LogMappingNeeded($"Reapply existing host version(detail). shareId={shareId}, savedSeq={savedSeq}, user={userId}");
+                LogMappingNeeded(
+                    $"Reapply existing version. source={sourceTag}, shareId={shareId}, savedSeq={savedSeq}, user={userId}");
 
                 if (existingBinding == null ||
                     existingBinding.RuntimeRefs == null ||
@@ -485,7 +553,7 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
                 bool reloaded = _runtimeBinder.TryApplyJson(
                     existingBinding.RuntimeRefs.Executor,
                     existingVersion.Json,
-                    $"detail-duplicate:{shareId}:{userId}:version={existingVersion.VersionKey}",
+                    $"{sourceTag}-duplicate:{shareId}:{userId}:version={existingVersion.VersionKey}",
                     out string duplicateLoadError);
                 existingBinding.RuntimeReady = reloaded;
                 if (!reloaded)
@@ -501,7 +569,7 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
 
                 existingBinding.LastError = string.Empty;
                 _statusReporter?.SetInfo(
-                    $"Host code applied(existing detail version). user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}");
+                    $"Code applied(existing detail version). user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}");
                 LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, existingBinding.RuntimeRefs);
                 LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
                 UpdateSummary();
@@ -561,7 +629,7 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
             bool loaded = _runtimeBinder.TryApplyJson(
                 binding.RuntimeRefs.Executor,
                 activeVersion.Json,
-                $"detail:{shareId}:{userId}:version={activeVersion.VersionKey}",
+                $"{sourceTag}:{shareId}:{userId}:version={activeVersion.VersionKey}",
                 out string loadError);
             binding.RuntimeReady = loaded;
             if (!loaded)
@@ -576,9 +644,9 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
 
             binding.LastError = string.Empty;
             _statusReporter?.SetInfo(
-                $"Host code applied(detail). user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}");
+                $"Code applied(detail). user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}");
             LogBlue(
-                $"Host applied remote block share detail directly. user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}, jsonLen={activeVersion.Json.Length}");
+                $"Applied remote block share detail. source={sourceTag}, user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}, jsonLen={activeVersion.Json.Length}");
             LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
             LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
             UpdateSummary();
@@ -1279,6 +1347,41 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
     {
         if (_boundRunner != null && _boundRunner.IsRunning && !_boundRunner.IsShutdown)
             return _boundRunner.LocalPlayer;
+
+        return default;
+    }
+
+    private PlayerRef ResolveOwnerPlayerByUserId(string userIdRaw)
+    {
+        string userId = NormalizeText(userIdRaw);
+        if (string.IsNullOrWhiteSpace(userId))
+            return default;
+
+        string currentHostUserId = ResolveCurrentHostUserId();
+        if (!string.IsNullOrWhiteSpace(currentHostUserId) &&
+            string.Equals(currentHostUserId, userId, StringComparison.Ordinal))
+        {
+            return ResolveCurrentHostPlayer();
+        }
+
+        foreach (KeyValuePair<PlayerRef, string> pair in _userIdByPlayer)
+        {
+            if (string.Equals(NormalizeText(pair.Value), userId, StringComparison.Ordinal))
+                return pair.Key;
+        }
+
+        if (_boundRunner == null || !_boundRunner.IsRunning || _boundRunner.IsShutdown)
+            return default;
+
+        foreach (PlayerRef player in _boundRunner.ActivePlayers)
+        {
+            string resolvedUserId = ResolveFusionUserId(_boundRunner, player);
+            if (!string.Equals(NormalizeText(resolvedUserId), userId, StringComparison.Ordinal))
+                continue;
+
+            _userIdByPlayer[player] = userId;
+            return player;
+        }
 
         return default;
     }

@@ -34,6 +34,7 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
 
     private ChatRoomManager _boundManager;
     private HostNetworkCarCoordinator _hostCoordinator;
+    private IBlockShareListService _listService;
     private bool _isSaving;
     private string _activeShareId = string.Empty;
     private string _activeFileNameHint = string.Empty;
@@ -50,6 +51,8 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
 
     private const float DetailAwaitTimeoutSeconds = 20f;
     private const float BusyWaitTimeoutSeconds = 10f;
+    private const int RoomSnapshotPage = 1;
+    private const int RoomSnapshotSize = 200;
 
     private sealed class DetailAwaitResult
     {
@@ -137,16 +140,9 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
             return;
         }
 
-        string shareId = ResolveSelectedShareId();
-        if (string.IsNullOrWhiteSpace(shareId))
-        {
-            SetStatus("Select one block share first.");
-            return;
-        }
-
         LogDiagnostic(
-            $"Apply request accepted. shareId={shareId}, selectedObject={DescribeCurrentSelectedObject()}, saveButton={DescribeButton(_saveButton)}, sourcePanel={DescribeGameObject(_sourcePanel != null ? _sourcePanel.gameObject : null)}");
-        _ = FetchDetailAndApplySelectedShareAsync(shareId);
+            $"Save batch request accepted. selectedObject={DescribeCurrentSelectedObject()}, saveButton={DescribeButton(_saveButton)}, sourcePanel={DescribeGameObject(_sourcePanel != null ? _sourcePanel.gameObject : null)}");
+        _ = SaveLatestRoomSharesAndRunAsync();
     }
 
     private void BindButtons()
@@ -348,6 +344,341 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
 
         string shareId = _sourcePanel.SelectedShareId;
         return string.IsNullOrWhiteSpace(shareId) ? string.Empty : shareId.Trim();
+    }
+
+    private async Task SaveLatestRoomSharesAndRunAsync()
+    {
+        _isSaving = true;
+        UpdateButtonInteractable();
+
+        try
+        {
+            if (_boundManager == null)
+            {
+                SetStatus("Save batch stopped(manager-null).");
+                return;
+            }
+
+            string roomId = ResolveSelectedRoomId();
+            if (string.IsNullOrWhiteSpace(roomId))
+            {
+                SetStatus("Save batch stopped(roomId-null).");
+                return;
+            }
+
+            HostNetworkCarCoordinator hostCoordinator = ResolveHostCoordinator();
+            if (hostCoordinator == null)
+            {
+                SetStatus("HostNetworkCarCoordinator is null.");
+                return;
+            }
+
+            bool isIdle = await WaitUntilManagerIdleAsync(BusyWaitTimeoutSeconds);
+            if (!isIdle)
+            {
+                SetStatus("Save batch skipped(busy-timeout).");
+                return;
+            }
+
+            SetStatus($"Save batch requested. roomId={roomId}");
+            IReadOnlyList<BlockShareListItemViewModel> snapshot = await FetchLatestRoomShareSnapshotAsync(roomId);
+            List<BlockShareListItemViewModel> latestShares = SelectLatestSharePerUser(snapshot);
+            if (latestShares.Count <= 0)
+            {
+                SetStatus("Save batch stopped(no remote shares).");
+                return;
+            }
+
+            int appliedCount = 0;
+            int failedCount = 0;
+            string firstFailure = string.Empty;
+
+            for (int i = 0; i < latestShares.Count; i++)
+            {
+                BlockShareListItemViewModel item = latestShares[i];
+                if (item == null)
+                    continue;
+
+                string userId = Normalize(item.UserId);
+                string shareId = Normalize(item.ShareId);
+                SetStatus($"Save batch applying {i + 1}/{latestShares.Count}. user={userId}, shareId={shareId}");
+
+                DetailAwaitResult detailResult = await FetchDetailAsync(roomId, shareId);
+                if (detailResult == null || !detailResult.Success)
+                {
+                    failedCount++;
+                    string detailMessage = detailResult != null && !string.IsNullOrWhiteSpace(detailResult.Message)
+                        ? detailResult.Message
+                        : "detail fetch failed";
+                    if (string.IsNullOrWhiteSpace(firstFailure))
+                        firstFailure = $"user={userId}, shareId={shareId}, message={detailMessage}";
+
+                    continue;
+                }
+
+                if (detailResult.Info == null)
+                {
+                    failedCount++;
+                    if (string.IsNullOrWhiteSpace(firstFailure))
+                        firstFailure = $"user={userId}, shareId={shareId}, message=empty detail result";
+                    continue;
+                }
+
+                BackfillDetailInfo(detailResult.Info, item);
+                string applyError = await hostCoordinator.ApplyRemoteBlockShareToOwnerAsync(detailResult.Info);
+                if (string.IsNullOrWhiteSpace(applyError))
+                {
+                    appliedCount++;
+                    continue;
+                }
+
+                failedCount++;
+                if (string.IsNullOrWhiteSpace(firstFailure))
+                    firstFailure = $"user={userId}, shareId={shareId}, message={applyError}";
+            }
+
+            if (appliedCount > 0)
+            {
+                if (failedCount > 0 && !string.IsNullOrWhiteSpace(firstFailure))
+                {
+                    SetStatus(
+                        $"Save batch complete. applied={appliedCount}, failed={failedCount}, run=manual, firstFailure={firstFailure}");
+                }
+                else
+                {
+                    SetStatus($"Save batch complete. applied={appliedCount}, failed={failedCount}, run=manual");
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(firstFailure))
+            {
+                SetStatus($"Save batch failed. applied=0, failed={failedCount}, firstFailure={firstFailure}");
+            }
+            else
+            {
+                SetStatus("Save batch failed. applied=0");
+            }
+
+            if (_refreshListAfterSave && _sourcePanel != null)
+                _sourcePanel.RequestRefresh();
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus("Save batch canceled.");
+        }
+        catch (Exception e)
+        {
+            SetStatus($"Save batch failed. ({e.Message})");
+        }
+        finally
+        {
+            _isSaving = false;
+            _activeShareId = string.Empty;
+            _detailAwaitTcs = null;
+            UpdateButtonInteractable();
+        }
+    }
+
+    private async Task<IReadOnlyList<BlockShareListItemViewModel>> FetchLatestRoomShareSnapshotAsync(string roomId)
+    {
+        if (_listService == null)
+            _listService = new ChatRoomBlockShareListService();
+
+        string targetRoomId = Normalize(roomId);
+        if (string.IsNullOrWhiteSpace(targetRoomId))
+            return Array.Empty<BlockShareListItemViewModel>();
+
+        IReadOnlyList<BlockShareListItemViewModel> items = await _listService.FetchListAsync(
+            targetRoomId,
+            RoomSnapshotPage,
+            RoomSnapshotSize,
+            ResolveTokenOverride());
+
+        return items ?? Array.Empty<BlockShareListItemViewModel>();
+    }
+
+    private List<BlockShareListItemViewModel> SelectLatestSharePerUser(IReadOnlyList<BlockShareListItemViewModel> snapshot)
+    {
+        var bestByUser = new Dictionary<string, BlockShareListItemViewModel>(StringComparer.Ordinal);
+        var indexByUser = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        if (snapshot != null)
+        {
+            for (int i = 0; i < snapshot.Count; i++)
+            {
+                BlockShareListItemViewModel candidate = snapshot[i];
+                if (candidate == null)
+                    continue;
+
+                string userId = Normalize(candidate.UserId);
+                string shareId = Normalize(candidate.ShareId);
+                if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(shareId))
+                    continue;
+
+                if (!bestByUser.TryGetValue(userId, out BlockShareListItemViewModel currentBest))
+                {
+                    bestByUser[userId] = candidate;
+                    indexByUser[userId] = i;
+                    continue;
+                }
+
+                int currentIndex = indexByUser.TryGetValue(userId, out int storedIndex) ? storedIndex : -1;
+                if (!IsCandidateNewer(candidate, i, currentBest, currentIndex))
+                    continue;
+
+                bestByUser[userId] = candidate;
+                indexByUser[userId] = i;
+            }
+        }
+
+        var results = new List<BlockShareListItemViewModel>(bestByUser.Count);
+        foreach (KeyValuePair<string, BlockShareListItemViewModel> pair in bestByUser)
+        {
+            if (pair.Value != null)
+                results.Add(pair.Value);
+        }
+
+        results.Sort((left, right) =>
+        {
+            int leftSlot = ResolveUserSlotIndex(left != null ? left.UserId : null);
+            int rightSlot = ResolveUserSlotIndex(right != null ? right.UserId : null);
+            return leftSlot.CompareTo(rightSlot);
+        });
+
+        return results;
+    }
+
+    private bool IsCandidateNewer(
+        BlockShareListItemViewModel candidate,
+        int candidateIndex,
+        BlockShareListItemViewModel currentBest,
+        int currentIndex)
+    {
+        bool hasCandidateTime = TryParseCreatedAtUtc(candidate != null ? candidate.CreatedAtUtc : null, out DateTime candidateTime);
+        bool hasCurrentTime = TryParseCreatedAtUtc(currentBest != null ? currentBest.CreatedAtUtc : null, out DateTime currentTime);
+
+        if (hasCandidateTime && hasCurrentTime)
+        {
+            int compare = DateTime.Compare(candidateTime, currentTime);
+            if (compare != 0)
+                return compare > 0;
+        }
+        else if (hasCandidateTime)
+        {
+            return true;
+        }
+        else if (hasCurrentTime)
+        {
+            return false;
+        }
+
+        return candidateIndex >= currentIndex;
+    }
+
+    private bool TryParseCreatedAtUtc(string raw, out DateTime value)
+    {
+        value = default;
+        string createdAt = Normalize(raw);
+        if (string.IsNullOrWhiteSpace(createdAt))
+            return false;
+
+        if (DateTimeOffset.TryParse(createdAt, out DateTimeOffset parsedOffset))
+        {
+            value = parsedOffset.UtcDateTime;
+            return true;
+        }
+
+        if (DateTime.TryParse(createdAt, out DateTime parsedDateTime))
+        {
+            value = parsedDateTime.ToUniversalTime();
+            return true;
+        }
+
+        return false;
+    }
+
+    private int ResolveUserSlotIndex(string userIdRaw)
+    {
+        HostNetworkCarCoordinator hostCoordinator = ResolveHostCoordinator();
+        if (hostCoordinator == null)
+            return int.MaxValue;
+
+        string userId = Normalize(userIdRaw);
+        if (string.IsNullOrWhiteSpace(userId))
+            return int.MaxValue;
+
+        return hostCoordinator.TryGetSlotIndexForUser(userId, out int slotIndex)
+            ? slotIndex
+            : int.MaxValue;
+    }
+
+    private async Task<DetailAwaitResult> FetchDetailAsync(string roomIdRaw, string shareIdRaw)
+    {
+        string roomId = Normalize(roomIdRaw);
+        string shareId = Normalize(shareIdRaw);
+        if (string.IsNullOrWhiteSpace(roomId) || string.IsNullOrWhiteSpace(shareId))
+        {
+            return new DetailAwaitResult
+            {
+                Success = false,
+                Message = "roomId/shareId is empty",
+                Info = null
+            };
+        }
+
+        if (_boundManager == null)
+        {
+            return new DetailAwaitResult
+            {
+                Success = false,
+                Message = "manager is null",
+                Info = null
+            };
+        }
+
+        bool isIdle = await WaitUntilManagerIdleAsync(BusyWaitTimeoutSeconds);
+        if (!isIdle)
+        {
+            return new DetailAwaitResult
+            {
+                Success = false,
+                Message = "busy-timeout",
+                Info = null
+            };
+        }
+
+        _activeShareId = shareId;
+        _detailAwaitTcs = new TaskCompletionSource<DetailAwaitResult>();
+
+        try
+        {
+            LogBlue($"Endpoint intent=detail-fetch-batch, route={BlockShareDetailEndpointRoute}, roomId={roomId}, shareId={shareId}");
+            _boundManager.FetchBlockShareDetail(roomId, shareId, ResolveTokenOverride());
+            return await AwaitCurrentDetailAsync(DetailAwaitTimeoutSeconds);
+        }
+        finally
+        {
+            _activeShareId = string.Empty;
+            _detailAwaitTcs = null;
+        }
+    }
+
+    private void BackfillDetailInfo(ChatRoomBlockShareInfo detailInfo, BlockShareListItemViewModel item)
+    {
+        if (detailInfo == null || item == null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(detailInfo.BlockShareId))
+            detailInfo.BlockShareId = Normalize(item.ShareId);
+        if (string.IsNullOrWhiteSpace(detailInfo.RoomId))
+            detailInfo.RoomId = Normalize(item.RoomId);
+        if (string.IsNullOrWhiteSpace(detailInfo.UserId))
+            detailInfo.UserId = Normalize(item.UserId);
+        if (detailInfo.UserLevelSeq <= 0)
+            detailInfo.UserLevelSeq = item.UserLevelSeq;
+        if (string.IsNullOrWhiteSpace(detailInfo.Message))
+            detailInfo.Message = Normalize(item.FileName);
+        if (string.IsNullOrWhiteSpace(detailInfo.CreatedAtUtc))
+            detailInfo.CreatedAtUtc = Normalize(item.CreatedAtUtc);
     }
 
     private async Task FetchDetailAndApplySelectedShareAsync(string shareIdRaw)
@@ -804,7 +1135,7 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
         if (_saveButtonBlockedByOwnership || _isSaving)
             return;
 
-        if (!string.IsNullOrWhiteSpace(ResolveSelectedShareId()) && IsCurrentUserHost())
+        if (IsCurrentUserHost())
         {
             LogDiagnostic($"Save proxy fallback invoked. source={source}, selectedShareId={ResolveSelectedShareId()}");
             HandleSaveButtonClick();
@@ -973,12 +1304,6 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(ResolveSelectedShareId()))
-        {
-            reason = "no-selected-share";
-            return false;
-        }
-
         if (!IsCurrentUserHost())
         {
             reason = "not-host";
@@ -1081,6 +1406,11 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
         }
 
         return path;
+    }
+
+    private static string Normalize(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
     }
 
     private static string DescribeInputModule(BaseEventData eventData)
