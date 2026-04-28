@@ -390,6 +390,206 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
         _ = HandleBlockShareSaveSucceededAsync(info, fromPending: false);
     }
 
+    public async Task<string> ApplyRemoteBlockShareToCurrentHostAsync(ChatRoomBlockShareInfo detailInfo)
+    {
+        if (detailInfo == null)
+            return "detail info is null";
+
+        if (_hostOnly && !IsHost())
+        {
+            if (_debugLog)
+                Log("Ignore direct detail apply on non-host coordinator.");
+
+            return "current user is not host";
+        }
+
+        string shareId = NormalizeText(detailInfo.BlockShareId);
+        if (string.IsNullOrWhiteSpace(shareId))
+            return "shareId is empty";
+
+        int savedSeq = detailInfo.UserLevelSeq;
+        if (savedSeq <= 0)
+            return "userLevelSeq is invalid";
+
+        string saveKey = BuildSaveDedupeKey(shareId, savedSeq);
+        if (!_inProgressSaveKeys.Add(saveKey))
+        {
+            if (_debugLog)
+                Log($"Skip duplicate direct detail apply. shareId={shareId}, savedSeq={savedSeq}");
+
+            return "apply already in progress";
+        }
+
+        try
+        {
+            LogMappingNeeded($"Mapping trigger. source=detail-direct, shareId={shareId}, savedSeq={savedSeq}");
+
+            int preSlots = _slotRegistry.MaxCount;
+            int preCars = _bindingStore.CountRuntimeCars();
+
+            string userId = ResolveCurrentHostUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                _statusReporter?.SetWarning($"Direct apply but current host userId unresolved. shareId={shareId}, savedSeq={savedSeq}");
+                return "current host userId unresolved";
+            }
+
+            EnsureParticipantSlotAndCar(userId, userName: userId, source: "detail-current-host", ownerPlayer: ResolveCurrentHostPlayer());
+            if (!_slotRegistry.TryGetSlotByUserId(userId, out HostParticipantSlot approvedSlot) || approvedSlot == null)
+            {
+                LogMappingNeeded($"Current host slot unresolved(detail). shareId={shareId}, targetUser={userId}, savedSeq={savedSeq}");
+                _statusReporter?.SetWarning($"direct apply ignored: current host slot unresolved. shareId={shareId}, user={userId}, savedSeq={savedSeq}");
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                return "current host slot unresolved";
+            }
+
+            _bindingStore.UpsertParticipant(approvedSlot);
+
+            if (_bindingStore.TryActivateExistingCodeVersion(
+                    userId,
+                    shareId,
+                    savedSeq,
+                    out HostCarBinding existingBinding,
+                    out HostCodeVersion existingVersion))
+            {
+                if (existingBinding != null)
+                {
+                    existingBinding.SlotIndex = approvedSlot.SlotIndex;
+                    existingBinding.UserName = approvedSlot.UserName;
+                }
+
+                LogMappingNeeded($"Reapply existing host version(detail). shareId={shareId}, savedSeq={savedSeq}, user={userId}");
+
+                if (existingBinding == null ||
+                    existingBinding.RuntimeRefs == null ||
+                    existingBinding.RuntimeRefs.Executor == null ||
+                    existingBinding.RuntimeRefs.Physics == null)
+                {
+                    _statusReporter?.SetError($"Runtime refs missing(existing detail version). user={userId}, shareId={shareId}");
+                    LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, existingBinding != null ? existingBinding.RuntimeRefs : null);
+                    LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                    UpdateSummary();
+                    return "runtime refs missing(existing version)";
+                }
+
+                if (existingVersion == null || string.IsNullOrWhiteSpace(existingVersion.Json))
+                {
+                    existingBinding.LastError = "existing json missing";
+                    _statusReporter?.SetError($"Runtime load failed(existing detail json missing). user={userId}, shareId={shareId}");
+                    LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, existingBinding.RuntimeRefs);
+                    LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                    UpdateSummary();
+                    return "existing json missing";
+                }
+
+                bool reloaded = _runtimeBinder.TryApplyJson(
+                    existingBinding.RuntimeRefs.Executor,
+                    existingVersion.Json,
+                    $"detail-duplicate:{shareId}:{userId}:version={existingVersion.VersionKey}",
+                    out string duplicateLoadError);
+                existingBinding.RuntimeReady = reloaded;
+                if (!reloaded)
+                {
+                    existingBinding.LastError = duplicateLoadError;
+                    _statusReporter?.SetError(
+                        $"Runtime load failed(detail duplicate). user={userId}, shareId={shareId}, error={duplicateLoadError}");
+                    LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, existingBinding.RuntimeRefs);
+                    LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                    UpdateSummary();
+                    return duplicateLoadError;
+                }
+
+                existingBinding.LastError = string.Empty;
+                _statusReporter?.SetInfo(
+                    $"Host code applied(existing detail version). user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}");
+                LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, existingBinding.RuntimeRefs);
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                UpdateSummary();
+                return string.Empty;
+            }
+
+            ResolvedCodePayload payload = _codeResolver.ResolveFromBlockShareDetail(userId, detailInfo);
+            if (payload == null || !payload.IsSuccess)
+            {
+                string error = payload != null ? payload.Error : "payload is null";
+                if (_bindingStore.TryGetBinding(userId, out HostCarBinding failedBinding) && failedBinding != null)
+                    failedBinding.LastError = error;
+
+                _statusReporter?.SetError($"Detail code resolve failed. user={userId}, shareId={shareId}, error={error}");
+                LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, null);
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                UpdateSummary();
+                return error;
+            }
+
+            HostCarBinding binding = _bindingStore.UpsertCode(payload);
+            if (binding == null)
+            {
+                _statusReporter?.SetError($"Detail code mapping failed. user={userId}, shareId={shareId}, savedSeq={savedSeq}");
+                LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, null);
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                UpdateSummary();
+                return "code mapping failed";
+            }
+
+            binding.SlotIndex = approvedSlot.SlotIndex;
+            binding.UserName = approvedSlot.UserName;
+
+            if (!binding.TryGetActiveCodeVersion(out HostCodeVersion activeVersion) ||
+                activeVersion == null ||
+                string.IsNullOrWhiteSpace(activeVersion.Json))
+            {
+                binding.LastError = "active json missing";
+                _statusReporter?.SetError(
+                    $"Detail code mapping failed(active json missing). user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}");
+                LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                UpdateSummary();
+                return "active json missing";
+            }
+
+            if (binding.RuntimeRefs == null || binding.RuntimeRefs.Executor == null || binding.RuntimeRefs.Physics == null)
+            {
+                binding.LastError = "runtime refs missing";
+                _statusReporter?.SetError($"Detail runtime refs missing. user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}");
+                LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                UpdateSummary();
+                return "runtime refs missing";
+            }
+
+            bool loaded = _runtimeBinder.TryApplyJson(
+                binding.RuntimeRefs.Executor,
+                activeVersion.Json,
+                $"detail:{shareId}:{userId}:version={activeVersion.VersionKey}",
+                out string loadError);
+            binding.RuntimeReady = loaded;
+            if (!loaded)
+            {
+                binding.LastError = loadError;
+                _statusReporter?.SetError($"Detail runtime load failed. user={userId}, shareId={shareId}, error={loadError}");
+                LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
+                LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+                UpdateSummary();
+                return loadError;
+            }
+
+            binding.LastError = string.Empty;
+            _statusReporter?.SetInfo(
+                $"Host code applied(detail). user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}");
+            LogBlue(
+                $"Host applied remote block share detail directly. user={userId}, slot={approvedSlot.SlotIndex}, shareId={shareId}, savedSeq={savedSeq}, jsonLen={activeVersion.Json.Length}");
+            LogSaveTarget(shareId, savedSeq, userId, approvedSlot.SlotIndex, binding.RuntimeRefs);
+            LogSaveIntegrity(shareId, savedSeq, preSlots, preCars);
+            UpdateSummary();
+            return string.Empty;
+        }
+        finally
+        {
+            _inProgressSaveKeys.Remove(saveKey);
+        }
+    }
+
     public void HandlePhotonCodeSelection(string userIdRaw, int userLevelSeq, string fileNameRaw, PlayerRef sourcePlayer)
     {
         if (!IsHost())

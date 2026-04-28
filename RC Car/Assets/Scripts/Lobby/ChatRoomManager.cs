@@ -81,7 +81,9 @@ public class ChatRoomManager : MonoBehaviour
         "blockJson",
         "blockCodeJson",
         "workspaceJson",
-        "payloadJson"
+        "payloadJson",
+        "jsonLongText",
+        "json_data"
     };
 
     private static readonly string[] _detailXmlCandidateKeys =
@@ -92,7 +94,9 @@ public class ChatRoomManager : MonoBehaviour
         "blockXml",
         "blockCodeXml",
         "workspaceXml",
-        "payloadXml"
+        "payloadXml",
+        "xmlLongText",
+        "xml_data"
     };
 
     private void Awake()
@@ -1836,7 +1840,9 @@ public class ChatRoomManager : MonoBehaviour
                 UserId = string.Empty,
                 UserLevelSeq = 0,
                 Message = string.Empty,
-                CreatedAtUtc = string.Empty
+                CreatedAtUtc = string.Empty,
+                Json = string.Empty,
+                Xml = string.Empty
             };
         }
 
@@ -1944,6 +1950,8 @@ public class ChatRoomManager : MonoBehaviour
                 string.Empty);
         }
 
+        PopulateBlockShareDetailCodePayload(info, body);
+
         if (string.IsNullOrWhiteSpace(info.BlockShareId))
         {
             Log(
@@ -1953,6 +1961,18 @@ public class ChatRoomManager : MonoBehaviour
         }
 
         return info;
+    }
+
+    private static void PopulateBlockShareDetailCodePayload(ChatRoomBlockShareInfo info, string responseBody)
+    {
+        if (info == null)
+            return;
+
+        string jsonData = TryExtractBlockShareDetailJson(responseBody);
+        string xmlData = TryExtractBlockShareDetailXml(responseBody);
+
+        info.Json = string.IsNullOrWhiteSpace(jsonData) ? string.Empty : jsonData.Trim();
+        info.Xml = string.IsNullOrWhiteSpace(xmlData) ? string.Empty : xmlData.Trim();
     }
 
     private static JoinRequestPayload[] ExtractJoinRequestPayloads(string body)
@@ -2514,12 +2534,12 @@ public class ChatRoomManager : MonoBehaviour
             return null;
 
         string trimmed = responseBody.Trim();
-        if (LooksLikeJson(trimmed))
-            return trimmed;
-
-        string jsonFromField = ExtractFirstJsonScalarByKeys(trimmed, _detailJsonCandidateKeys);
+        string jsonFromField = ExtractFirstJsonValueByKeys(trimmed, _detailJsonCandidateKeys);
         if (LooksLikeJson(jsonFromField))
             return jsonFromField.Trim();
+
+        if (LooksLikeJson(trimmed) && !LooksLikeBlockShareMetadataEnvelope(trimmed))
+            return trimmed;
 
         return null;
     }
@@ -2533,13 +2553,32 @@ public class ChatRoomManager : MonoBehaviour
         if (LooksLikeXml(trimmed))
             return trimmed;
 
-        string xmlFromField = ExtractFirstJsonScalarByKeys(trimmed, _detailXmlCandidateKeys);
+        string xmlFromField = ExtractFirstJsonValueByKeys(trimmed, _detailXmlCandidateKeys);
         if (LooksLikeXml(xmlFromField))
             return xmlFromField.Trim();
 
         string xmlFromRawText = TryFindXmlFragment(trimmed);
         if (LooksLikeXml(xmlFromRawText))
             return xmlFromRawText.Trim();
+
+        return null;
+    }
+
+    private static string ExtractFirstJsonValueByKeys(string json, string[] candidateKeys)
+    {
+        if (string.IsNullOrWhiteSpace(json) || candidateKeys == null || candidateKeys.Length == 0)
+            return null;
+
+        for (int i = 0; i < candidateKeys.Length; i++)
+        {
+            string key = candidateKeys[i];
+            if (string.IsNullOrWhiteSpace(key))
+                continue;
+
+            string value = ExtractJsonValueByKey(json, key);
+            if (!string.IsNullOrWhiteSpace(value))
+                return value.Trim();
+        }
 
         return null;
     }
@@ -2563,6 +2602,47 @@ public class ChatRoomManager : MonoBehaviour
         return null;
     }
 
+    private static string ExtractJsonValueByKey(string json, string key)
+    {
+        string scalar = ExtractJsonScalarAsString(json, key);
+        if (!string.IsNullOrWhiteSpace(scalar))
+            return scalar.Trim();
+
+        if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(key))
+            return null;
+
+        string pattern = $"\"{Regex.Escape(key)}\"\\s*:\\s*";
+        Match match = Regex.Match(json, pattern, RegexOptions.IgnoreCase);
+        if (!match.Success)
+            return null;
+
+        int valueStart = match.Index + match.Length;
+        while (valueStart < json.Length && char.IsWhiteSpace(json[valueStart]))
+            valueStart++;
+
+        if (valueStart >= json.Length)
+            return null;
+
+        char start = json[valueStart];
+        if (start == '{')
+        {
+            int end = FindMatchingJsonBracket(json, valueStart, '{', '}');
+            if (end >= valueStart)
+                return json.Substring(valueStart, end - valueStart + 1);
+
+            return null;
+        }
+
+        if (start == '[')
+        {
+            int end = FindMatchingJsonBracket(json, valueStart, '[', ']');
+            if (end >= valueStart)
+                return json.Substring(valueStart, end - valueStart + 1);
+        }
+
+        return null;
+    }
+
     private static bool LooksLikeJson(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -2571,6 +2651,42 @@ public class ChatRoomManager : MonoBehaviour
         string trimmed = value.Trim();
         return (trimmed.StartsWith("{", StringComparison.Ordinal) && trimmed.EndsWith("}", StringComparison.Ordinal)) ||
                (trimmed.StartsWith("[", StringComparison.Ordinal) && trimmed.EndsWith("]", StringComparison.Ordinal));
+    }
+
+    private static bool LooksLikeBlockShareMetadataEnvelope(string value)
+    {
+        if (!LooksLikeJson(value))
+            return false;
+
+        string[] metadataKeys =
+        {
+            "shareId",
+            "blockShareId",
+            "roomId",
+            "userId",
+            "userLevelSeq",
+            "sourceUserLevelSeq",
+            "createdAt",
+            "message",
+            "success",
+            "status",
+            "code",
+            "responseCode"
+        };
+
+        int matches = 0;
+        for (int i = 0; i < metadataKeys.Length; i++)
+        {
+            string pattern = $"\"{Regex.Escape(metadataKeys[i])}\"\\s*:";
+            if (!Regex.IsMatch(value, pattern, RegexOptions.IgnoreCase))
+                continue;
+
+            matches++;
+            if (matches >= 2)
+                return true;
+        }
+
+        return false;
     }
 
     private static bool LooksLikeXml(string value)
@@ -3432,6 +3548,8 @@ public sealed class ChatRoomBlockShareInfo
     public int UserLevelSeq;
     public string Message;
     public string CreatedAtUtc;
+    public string Json;
+    public string Xml;
 }
 
 [Serializable]

@@ -14,7 +14,7 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
 {
     private const string BlueLogColor = "#33A6FF";
     private const string DiagnosticLogColor = "#FF4D4D";
-    private const string SaveToMyLevelEndpointRoute = "POST /api/chat/block-shares/{shareId}/save-to-my-level";
+    private const string BlockShareDetailEndpointRoute = "GET /api/chat/rooms/{roomId}/block-shares/{shareId}";
     private const string OverlayCanvasName = "Canvas Car Renders";
     private const string OverlayRenderName = "RCCarRender";
     private const string UpdateButtonName = "But_Update";
@@ -33,11 +33,12 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
     [SerializeField] private bool _enforceDedicatedButtonOwnership = true;
 
     private ChatRoomManager _boundManager;
+    private HostNetworkCarCoordinator _hostCoordinator;
     private bool _isSaving;
     private string _activeShareId = string.Empty;
     private string _activeFileNameHint = string.Empty;
     private int _activeUserLevelSeqHint;
-    private TaskCompletionSource<SaveAwaitResult> _saveAwaitTcs;
+    private TaskCompletionSource<DetailAwaitResult> _detailAwaitTcs;
     private bool _saveButtonBlockedByOwnership;
     private bool _lastInteractableState;
     private bool _hasLoggedInteractableState;
@@ -47,14 +48,14 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
     private BlockShareSaveButtonClickProxy _saveButtonProxy;
     private string _lastRaycastProbeSummary = string.Empty;
 
-    private const float SaveAwaitTimeoutSeconds = 20f;
+    private const float DetailAwaitTimeoutSeconds = 20f;
     private const float BusyWaitTimeoutSeconds = 10f;
 
-    private sealed class SaveAwaitResult
+    private sealed class DetailAwaitResult
     {
         public bool Success;
         public string Message;
-        public ChatRoomBlockShareSaveInfo Info;
+        public ChatRoomBlockShareInfo Info;
     }
 
     private void OnEnable()
@@ -91,7 +92,7 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
         _activeShareId = string.Empty;
         _activeFileNameHint = string.Empty;
         _activeUserLevelSeqHint = 0;
-        _saveAwaitTcs = null;
+        _detailAwaitTcs = null;
         _saveButtonBlockedByOwnership = false;
         _hasLoggedInteractableState = false;
         _lastInteractableReason = string.Empty;
@@ -107,19 +108,19 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
 
         if (_saveButtonBlockedByOwnership)
         {
-            SetStatus("Save is blocked: button ownership conflict.");
+            SetStatus("Apply is blocked: button ownership conflict.");
             return;
         }
 
         if (!IsCurrentUserHost())
         {
-            SetStatus("Save is host-only.");
+            SetStatus("Apply is host-only.");
             return;
         }
 
         if (_isSaving)
         {
-            SetStatus("Save is already running.");
+            SetStatus("Apply is already running.");
             return;
         }
 
@@ -144,8 +145,8 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
         }
 
         LogDiagnostic(
-            $"Save request accepted. shareId={shareId}, selectedObject={DescribeCurrentSelectedObject()}, saveButton={DescribeButton(_saveButton)}, sourcePanel={DescribeGameObject(_sourcePanel != null ? _sourcePanel.gameObject : null)}");
-        _ = SaveSelectedShareAsync(shareId);
+            $"Apply request accepted. shareId={shareId}, selectedObject={DescribeCurrentSelectedObject()}, saveButton={DescribeButton(_saveButton)}, sourcePanel={DescribeGameObject(_sourcePanel != null ? _sourcePanel.gameObject : null)}");
+        _ = FetchDetailAndApplySelectedShareAsync(shareId);
     }
 
     private void BindButtons()
@@ -268,9 +269,9 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
 
         UnbindManagerEvents();
         _boundManager = manager;
-        _boundManager.OnBlockShareSaveSucceeded += HandleSaveSucceeded;
-        _boundManager.OnBlockShareSaveFailed += HandleSaveFailed;
-        _boundManager.OnBlockShareSaveCanceled += HandleSaveCanceled;
+        _boundManager.OnBlockShareDetailFetchSucceeded += HandleDetailFetchSucceeded;
+        _boundManager.OnBlockShareDetailFetchFailed += HandleDetailFetchFailed;
+        _boundManager.OnBlockShareDetailFetchCanceled += HandleDetailFetchCanceled;
     }
 
     private void UnbindManagerEvents()
@@ -278,22 +279,22 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
         if (_boundManager == null)
             return;
 
-        _boundManager.OnBlockShareSaveSucceeded -= HandleSaveSucceeded;
-        _boundManager.OnBlockShareSaveFailed -= HandleSaveFailed;
-        _boundManager.OnBlockShareSaveCanceled -= HandleSaveCanceled;
+        _boundManager.OnBlockShareDetailFetchSucceeded -= HandleDetailFetchSucceeded;
+        _boundManager.OnBlockShareDetailFetchFailed -= HandleDetailFetchFailed;
+        _boundManager.OnBlockShareDetailFetchCanceled -= HandleDetailFetchCanceled;
         _boundManager = null;
     }
 
-    private void HandleSaveSucceeded(ChatRoomBlockShareSaveInfo info)
+    private void HandleDetailFetchSucceeded(ChatRoomBlockShareInfo info)
     {
         if (!_isSaving)
             return;
 
-        string shareId = info != null ? info.ShareId : string.Empty;
+        string shareId = info != null ? info.BlockShareId : string.Empty;
         if (!IsActiveShare(shareId))
             return;
 
-        CompleteCurrentSave(new SaveAwaitResult
+        CompleteCurrentDetail(new DetailAwaitResult
         {
             Success = true,
             Message = string.Empty,
@@ -301,7 +302,7 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
         });
     }
 
-    private void HandleSaveFailed(string shareId, string message)
+    private void HandleDetailFetchFailed(string roomId, string shareId, string message)
     {
         if (!_isSaving)
             return;
@@ -309,15 +310,15 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
         if (!IsActiveShare(shareId))
             return;
 
-        CompleteCurrentSave(new SaveAwaitResult
+        CompleteCurrentDetail(new DetailAwaitResult
         {
             Success = false,
-            Message = string.IsNullOrWhiteSpace(message) ? "save failed" : message,
+            Message = string.IsNullOrWhiteSpace(message) ? "detail fetch failed" : message,
             Info = null
         });
     }
 
-    private void HandleSaveCanceled(string shareId)
+    private void HandleDetailFetchCanceled(string roomId, string shareId)
     {
         if (!_isSaving)
             return;
@@ -325,10 +326,10 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
         if (!IsActiveShare(shareId))
             return;
 
-        CompleteCurrentSave(new SaveAwaitResult
+        CompleteCurrentDetail(new DetailAwaitResult
         {
             Success = false,
-            Message = "save canceled",
+            Message = "detail fetch canceled",
             Info = null
         });
     }
@@ -349,7 +350,7 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
         return string.IsNullOrWhiteSpace(shareId) ? string.Empty : shareId.Trim();
     }
 
-    private async Task SaveSelectedShareAsync(string shareIdRaw)
+    private async Task FetchDetailAndApplySelectedShareAsync(string shareIdRaw)
     {
         string shareId = string.IsNullOrWhiteSpace(shareIdRaw) ? string.Empty : shareIdRaw.Trim();
         if (string.IsNullOrWhiteSpace(shareId))
@@ -362,38 +363,67 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
         {
             if (_boundManager == null)
             {
-                SetStatus("Save stopped(manager-null).");
+                SetStatus("Apply stopped(manager-null).");
                 return;
             }
 
             bool isIdle = await WaitUntilManagerIdleAsync(BusyWaitTimeoutSeconds);
             if (!isIdle)
             {
-                SetStatus($"Save skipped(busy-timeout). shareId={shareId}");
+                SetStatus($"Apply skipped(busy-timeout). shareId={shareId}");
+                return;
+            }
+
+            string roomId = ResolveSelectedRoomId();
+            if (string.IsNullOrWhiteSpace(roomId))
+            {
+                SetStatus($"Apply stopped(roomId-null). shareId={shareId}");
+                return;
+            }
+
+            HostNetworkCarCoordinator hostCoordinator = ResolveHostCoordinator();
+            if (hostCoordinator == null)
+            {
+                SetStatus("HostNetworkCarCoordinator is null.");
                 return;
             }
 
             _activeShareId = shareId;
             CaptureActiveSelectionHints(_activeShareId);
-            _saveAwaitTcs = new TaskCompletionSource<SaveAwaitResult>();
+            _detailAwaitTcs = new TaskCompletionSource<DetailAwaitResult>();
 
-            LogBlue($"Endpoint intent=save-to-my-level, route={SaveToMyLevelEndpointRoute}, shareId={_activeShareId}");
-            _boundManager.SaveBlockShareToMyLevel(_activeShareId, ResolveTokenOverride());
-            SetStatus($"Apply-to-host requested. shareId={_activeShareId}");
+            LogBlue($"Endpoint intent=detail-fetch, route={BlockShareDetailEndpointRoute}, roomId={roomId}, shareId={_activeShareId}");
+            _boundManager.FetchBlockShareDetail(roomId, _activeShareId, ResolveTokenOverride());
+            SetStatus($"Apply-to-host requested. roomId={roomId}, shareId={_activeShareId}");
 
-            SaveAwaitResult result = await AwaitCurrentSaveAsync(SaveAwaitTimeoutSeconds);
-            if (result != null && result.Success)
-            {
-                ChatRoomBlockShareSaveInfo info = result.Info;
-                SetStatus($"Apply-to-host success. shareId={_activeShareId}, savedSeq={info?.SavedUserLevelSeq}");
-                _ = DebugLogSavedBlockCodeDataAsync(info);
-            }
-            else
+            DetailAwaitResult result = await AwaitCurrentDetailAsync(DetailAwaitTimeoutSeconds);
+            if (result == null || !result.Success)
             {
                 string message = result != null && !string.IsNullOrWhiteSpace(result.Message)
                     ? result.Message
-                    : "save failed";
+                    : "detail fetch failed";
                 SetStatus($"Apply-to-host failed. shareId={_activeShareId}, message={message}");
+            }
+            else if (result.Info == null)
+            {
+                SetStatus($"Apply-to-host failed. shareId={_activeShareId}, message=empty detail result");
+            }
+            else
+            {
+                string applyError = await hostCoordinator.ApplyRemoteBlockShareToCurrentHostAsync(result.Info);
+                if (string.IsNullOrWhiteSpace(applyError))
+                {
+                    SetStatus($"Apply-to-host success. shareId={_activeShareId}, userLevelSeq={result.Info.UserLevelSeq}");
+                    if (_debugLog)
+                    {
+                        LogBlue(
+                            $"Direct detail apply completed. shareId={_activeShareId}, jsonLen={(result.Info.Json ?? string.Empty).Length}, xmlLen={(result.Info.Xml ?? string.Empty).Length}");
+                    }
+                }
+                else
+                {
+                    SetStatus($"Apply-to-host failed. shareId={_activeShareId}, message={applyError}");
+                }
             }
 
             if (_refreshListAfterSave && _sourcePanel != null)
@@ -403,7 +433,7 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
         {
             _isSaving = false;
             _activeShareId = string.Empty;
-            _saveAwaitTcs = null;
+            _detailAwaitTcs = null;
             UpdateButtonInteractable();
         }
     }
@@ -427,27 +457,27 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
         return true;
     }
 
-    private async Task<SaveAwaitResult> AwaitCurrentSaveAsync(float timeoutSeconds)
+    private async Task<DetailAwaitResult> AwaitCurrentDetailAsync(float timeoutSeconds)
     {
-        if (_saveAwaitTcs == null)
+        if (_detailAwaitTcs == null)
         {
-            return new SaveAwaitResult
+            return new DetailAwaitResult
             {
                 Success = false,
-                Message = "internal save waiter is null",
+                Message = "internal detail waiter is null",
                 Info = null
             };
         }
 
         float timeout = Mathf.Max(1f, timeoutSeconds);
         float deadline = Time.realtimeSinceStartup + timeout;
-        Task<SaveAwaitResult> waitTask = _saveAwaitTcs.Task;
+        Task<DetailAwaitResult> waitTask = _detailAwaitTcs.Task;
 
         while (!waitTask.IsCompleted)
         {
             if (Time.realtimeSinceStartup >= deadline)
             {
-                return new SaveAwaitResult
+                return new DetailAwaitResult
                 {
                     Success = false,
                     Message = "timeout",
@@ -458,23 +488,49 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
             await Task.Yield();
         }
 
-        return waitTask.Result ?? new SaveAwaitResult
+        return waitTask.Result ?? new DetailAwaitResult
         {
             Success = false,
-            Message = "empty save result",
+            Message = "empty detail result",
             Info = null
         };
     }
 
-    private void CompleteCurrentSave(SaveAwaitResult result)
+    private void CompleteCurrentDetail(DetailAwaitResult result)
     {
-        if (_saveAwaitTcs == null)
+        if (_detailAwaitTcs == null)
             return;
 
-        if (_saveAwaitTcs.Task.IsCompleted)
+        if (_detailAwaitTcs.Task.IsCompleted)
             return;
 
-        _saveAwaitTcs.TrySetResult(result);
+        _detailAwaitTcs.TrySetResult(result);
+    }
+
+    private string ResolveSelectedRoomId()
+    {
+        ChatRoomBlockShareInfo selectedDetail = _sourcePanel != null ? _sourcePanel.SelectedDetailInfo : null;
+        if (selectedDetail != null && !string.IsNullOrWhiteSpace(selectedDetail.RoomId))
+            return selectedDetail.RoomId.Trim();
+
+        string roomId = NetworkRoomIdentity.ResolveApiRoomId();
+        if (!string.IsNullOrWhiteSpace(roomId))
+            return roomId.Trim();
+
+        RoomInfo room = RoomSessionContext.CurrentRoom;
+        if (room != null && !string.IsNullOrWhiteSpace(room.RoomId))
+            return room.RoomId.Trim();
+
+        return string.Empty;
+    }
+
+    private HostNetworkCarCoordinator ResolveHostCoordinator()
+    {
+        if (_hostCoordinator != null)
+            return _hostCoordinator;
+
+        _hostCoordinator = FindObjectOfType<HostNetworkCarCoordinator>(true);
+        return _hostCoordinator;
     }
 
     private void CaptureActiveSelectionHints(string shareId)
@@ -947,6 +1003,9 @@ public class BlockShareSaveToMyLevelButton : MonoBehaviour
     private void SetStatus(string message)
     {
         string text = string.IsNullOrWhiteSpace(message) ? string.Empty : message;
+
+        if (_sourcePanel != null)
+            _sourcePanel.SetStatus(text);
 
         if (_debugLog && !string.IsNullOrWhiteSpace(text))
             Debug.Log($"[BlockShareSaveToMyLevelButton] {text}");
