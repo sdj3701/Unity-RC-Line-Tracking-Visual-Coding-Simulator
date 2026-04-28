@@ -108,7 +108,117 @@ public sealed class ChatRoomBlockShareListService : IBlockShareListService
             });
         }
 
-        return items;
+        return CollapseLatestItemsPerUser(items);
+    }
+
+    private static IReadOnlyList<BlockShareListItemViewModel> CollapseLatestItemsPerUser(
+        List<BlockShareListItemViewModel> items)
+    {
+        if (items == null || items.Count <= 1)
+            return items ?? (IReadOnlyList<BlockShareListItemViewModel>)Array.Empty<BlockShareListItemViewModel>();
+
+        var bestByUser = new Dictionary<string, BlockShareListItemViewModel>(StringComparer.Ordinal);
+        var indexByUser = new Dictionary<string, int>(StringComparer.Ordinal);
+        var passthrough = new List<(int Index, BlockShareListItemViewModel Item)>();
+
+        for (int i = 0; i < items.Count; i++)
+        {
+            BlockShareListItemViewModel candidate = items[i];
+            if (candidate == null)
+                continue;
+
+            string userId = Normalize(candidate.UserId);
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                passthrough.Add((i, candidate));
+                continue;
+            }
+
+            if (!bestByUser.TryGetValue(userId, out BlockShareListItemViewModel currentBest))
+            {
+                bestByUser[userId] = candidate;
+                indexByUser[userId] = i;
+                continue;
+            }
+
+            int currentIndex = indexByUser.TryGetValue(userId, out int storedIndex) ? storedIndex : -1;
+            if (!IsCandidateNewer(candidate, i, currentBest, currentIndex))
+                continue;
+
+            bestByUser[userId] = candidate;
+            indexByUser[userId] = i;
+        }
+
+        var ordered = new List<(int Index, BlockShareListItemViewModel Item)>(bestByUser.Count + passthrough.Count);
+        foreach (KeyValuePair<string, BlockShareListItemViewModel> pair in bestByUser)
+        {
+            if (pair.Value == null)
+                continue;
+
+            int index = indexByUser.TryGetValue(pair.Key, out int storedIndex) ? storedIndex : int.MaxValue;
+            ordered.Add((index, pair.Value));
+        }
+
+        ordered.AddRange(passthrough);
+        ordered.Sort((left, right) => left.Index.CompareTo(right.Index));
+
+        var collapsed = new List<BlockShareListItemViewModel>(ordered.Count);
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            if (ordered[i].Item != null)
+                collapsed.Add(ordered[i].Item);
+        }
+
+        return collapsed;
+    }
+
+    private static bool IsCandidateNewer(
+        BlockShareListItemViewModel candidate,
+        int candidateIndex,
+        BlockShareListItemViewModel currentBest,
+        int currentIndex)
+    {
+        bool hasCandidateTime = TryParseCreatedAtUtc(candidate != null ? candidate.CreatedAtUtc : null, out DateTime candidateTime);
+        bool hasCurrentTime = TryParseCreatedAtUtc(currentBest != null ? currentBest.CreatedAtUtc : null, out DateTime currentTime);
+
+        if (hasCandidateTime && hasCurrentTime)
+        {
+            int compare = DateTime.Compare(candidateTime, currentTime);
+            if (compare != 0)
+                return compare > 0;
+        }
+        else if (hasCandidateTime)
+        {
+            return true;
+        }
+        else if (hasCurrentTime)
+        {
+            return false;
+        }
+
+        return candidateIndex >= currentIndex;
+    }
+
+    private static bool TryParseCreatedAtUtc(string raw, out DateTime value)
+    {
+        value = default;
+        string createdAt = Normalize(raw);
+        if (string.IsNullOrWhiteSpace(createdAt))
+            return false;
+
+        if (DateTimeOffset.TryParse(createdAt, out DateTimeOffset parsedOffset))
+        {
+            value = parsedOffset.UtcDateTime;
+            return true;
+        }
+
+        if (DateTime.TryParse(createdAt, out DateTime parsedDateTime))
+        {
+            value = parsedDateTime.ToUniversalTime();
+            return true;
+        }
+
+        return false;
     }
 
     private static string BuildDisplayLabel(string userId, string fileName, int userLevelSeq)
