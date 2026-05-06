@@ -9,6 +9,7 @@ public sealed class HostParticipantSlotRegistry
         new SortedDictionary<int, string>();
 
     public int MaxCount { get; private set; }
+    public int ActiveCount => _slotByUserId.Count;
 
     public bool TryRegisterUser(string userIdRaw, string userNameRaw, out HostParticipantSlot slot)
     {
@@ -77,6 +78,22 @@ public sealed class HostParticipantSlotRegistry
 
         userId = string.Empty;
         return false;
+    }
+
+    public bool TryRemoveUser(string userIdRaw, out HostParticipantSlot removedSlot)
+    {
+        removedSlot = null;
+
+        string userId = string.IsNullOrWhiteSpace(userIdRaw) ? string.Empty : userIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(userId))
+            return false;
+
+        if (!_slotByUserId.TryGetValue(userId, out removedSlot) || removedSlot == null)
+            return false;
+
+        _slotByUserId.Remove(userId);
+        _userIdBySlot.Remove(removedSlot.SlotIndex);
+        return true;
     }
 
     public IReadOnlyCollection<HostParticipantSlot> GetAll()

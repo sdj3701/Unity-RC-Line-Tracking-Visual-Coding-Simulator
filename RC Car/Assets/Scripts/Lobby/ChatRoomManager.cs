@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Auth;
+using RC.App.Defines;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -19,6 +20,7 @@ public class ChatRoomManager : MonoBehaviour
     [SerializeField] private string _joinRequestsEndpointTemplate = "http://ioteacher.com/api/chat/rooms/{roomId}/join-requests";
     [SerializeField] private string _joinRequestDecisionEndpointTemplate = "http://ioteacher.com/api/chat/join-requests/{requestId}/decision";
     [SerializeField] private string _myJoinRequestStatusEndpointTemplate = "http://ioteacher.com/api/chat/my/join-request/{requestId}";
+    [SerializeField] private string _leaveRoomEndpointTemplate = "http://ioteacher.com" + ApiRoutes.ChatRoomLeave;
     [SerializeField] private string _blockShareEndpointTemplate = "http://ioteacher.com/api/chat/rooms/{roomId}/block-shares";
     [SerializeField] private string _blockShareDetailEndpointTemplate = "http://ioteacher.com/api/chat/rooms/{roomId}/block-shares/{shareId}";
     [SerializeField] private string _saveBlockShareToMyLevelEndpointTemplate = "http://ioteacher.com/api/chat/block-shares/{shareId}/save-to-my-level";
@@ -53,6 +55,10 @@ public class ChatRoomManager : MonoBehaviour
     public event Action<ChatRoomJoinRequestInfo> OnMyJoinRequestStatusFetchSucceeded;
     public event Action<string, string> OnMyJoinRequestStatusFetchFailed;
     public event Action<string> OnMyJoinRequestStatusFetchCanceled;
+    public event Action<string> OnLeaveRoomStarted;
+    public event Action<ChatRoomLeaveInfo> OnLeaveRoomSucceeded;
+    public event Action<string, string> OnLeaveRoomFailed;
+    public event Action<string> OnLeaveRoomCanceled;
     public event Action<string, int, int> OnBlockShareListFetchStarted;
     public event Action<ChatRoomBlockShareListInfo> OnBlockShareListFetchSucceeded;
     public event Action<string, int, int, string> OnBlockShareListFetchFailed;
@@ -174,6 +180,117 @@ public class ChatRoomManager : MonoBehaviour
     public void FetchMyJoinRequestStatus(string requestIdRaw, string accessTokenOverride = null)
     {
         _ = FetchMyJoinRequestStatusAsync(requestIdRaw, accessTokenOverride);
+    }
+
+    public void LeaveRoom(string roomIdRaw, string accessTokenOverride = null)
+    {
+        _ = LeaveRoomAsync(roomIdRaw, accessTokenOverride);
+    }
+
+    public async Task<ChatRoomLeaveInfo> LeaveRoomAsync(string roomIdRaw, string accessTokenOverride = null)
+    {
+        if (IsBusy)
+        {
+            EmitLeaveRoomFailure(roomIdRaw, "ChatRoomManager is busy.");
+            return ChatRoomLeaveInfo.Failed(roomIdRaw, 0, "ChatRoomManager is busy.", string.Empty);
+        }
+
+        string roomId = string.IsNullOrWhiteSpace(roomIdRaw) ? string.Empty : roomIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(roomId))
+        {
+            EmitLeaveRoomFailure(roomIdRaw, "Room ID is empty.");
+            return ChatRoomLeaveInfo.Failed(roomIdRaw, 0, "Room ID is empty.", string.Empty);
+        }
+
+        string endpoint = BuildRoomScopedEndpoint(_leaveRoomEndpointTemplate, roomId, "participants/me");
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            EmitLeaveRoomFailure(roomId, "Leave room API URL is empty.");
+            return ChatRoomLeaveInfo.Failed(roomId, 0, "Leave room API URL is empty.", string.Empty);
+        }
+
+        string accessToken = ResolveAccessToken(accessTokenOverride);
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            EmitLeaveRoomFailure(roomId, "Leave room requires an access token.");
+            return ChatRoomLeaveInfo.Failed(roomId, 0, "Leave room requires an access token.", string.Empty);
+        }
+
+        IsBusy = true;
+        _requestCancellation = new CancellationTokenSource();
+
+        try
+        {
+            OnLeaveRoomStarted?.Invoke(roomId);
+
+            using (var request = new UnityWebRequest(endpoint, UnityWebRequest.kHttpVerbDELETE))
+            {
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.timeout = Mathf.Max(1, _requestTimeoutSeconds);
+                request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+
+                bool isCanceled = await SendRequestAsync(request, _requestCancellation.Token);
+                if (isCanceled)
+                {
+                    OnLeaveRoomCanceled?.Invoke(roomId);
+                    Log($"Leave room canceled. roomId={roomId}");
+                    return ChatRoomLeaveInfo.CreateCanceled(roomId);
+                }
+
+                string body = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+                bool success = request.responseCode >= 200 &&
+                               request.responseCode < 300 &&
+                               request.result != UnityWebRequest.Result.ConnectionError &&
+                               request.result != UnityWebRequest.Result.DataProcessingError &&
+                               !HasExplicitFailureFlag(body);
+
+                if (!success)
+                {
+                    BasicServiceResponse response = TryParseJson<BasicServiceResponse>(body);
+                    string errorMessage = FirstNonEmpty(
+                        response != null ? response.message : null,
+                        response != null ? response.error : null,
+                        request.error,
+                        $"HTTP {request.responseCode}",
+                        "Leave room failed.");
+
+                    EmitLeaveRoomFailure(roomId, errorMessage);
+                    return ChatRoomLeaveInfo.Failed(roomId, request.responseCode, errorMessage, body);
+                }
+
+                var info = new ChatRoomLeaveInfo
+                {
+                    RoomId = roomId,
+                    Success = true,
+                    Canceled = false,
+                    ResponseCode = request.responseCode,
+                    ResponseBody = body,
+                    Message = "Leave room completed."
+                };
+                OnLeaveRoomSucceeded?.Invoke(info);
+                Log($"Leave room completed. roomId={roomId}, code={info.ResponseCode}");
+                return info;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            OnLeaveRoomCanceled?.Invoke(roomId);
+            Log($"Leave room canceled by token. roomId={roomId}");
+            return ChatRoomLeaveInfo.CreateCanceled(roomId);
+        }
+        catch (Exception e)
+        {
+            string message = $"Leave room exception: {e.Message}";
+            EmitLeaveRoomFailure(roomId, message);
+            return ChatRoomLeaveInfo.Failed(roomId, 0, message, string.Empty);
+        }
+        finally
+        {
+            IsBusy = false;
+            _requestCancellation?.Dispose();
+            _requestCancellation = null;
+        }
     }
 
     /// <summary>
@@ -3107,6 +3224,16 @@ public class ChatRoomManager : MonoBehaviour
         Log($"My join request status fetch failed: requestId={requestId}, message={message}");
     }
 
+    private void EmitLeaveRoomFailure(string roomId, string userMessage)
+    {
+        string message = string.IsNullOrWhiteSpace(userMessage)
+            ? "Leave room failed."
+            : userMessage;
+
+        OnLeaveRoomFailed?.Invoke(roomId ?? string.Empty, message);
+        Log($"Leave room failed: roomId={roomId}, message={message}");
+    }
+
     private void EmitBlockShareListFetchFailure(string roomId, int page, int size, string userMessage)
     {
         string message = string.IsNullOrWhiteSpace(userMessage)
@@ -3525,6 +3652,43 @@ public sealed class ChatRoomJoinRequestDecisionInfo
     public string Status;
     public long ResponseCode;
     public string ResponseBody;
+}
+
+[Serializable]
+public sealed class ChatRoomLeaveInfo
+{
+    public string RoomId;
+    public bool Success;
+    public bool Canceled;
+    public long ResponseCode;
+    public string Message;
+    public string ResponseBody;
+
+    public static ChatRoomLeaveInfo Failed(string roomId, long responseCode, string message, string responseBody)
+    {
+        return new ChatRoomLeaveInfo
+        {
+            RoomId = roomId ?? string.Empty,
+            Success = false,
+            Canceled = false,
+            ResponseCode = responseCode,
+            Message = string.IsNullOrWhiteSpace(message) ? "Leave room failed." : message.Trim(),
+            ResponseBody = responseBody ?? string.Empty
+        };
+    }
+
+    public static ChatRoomLeaveInfo CreateCanceled(string roomId)
+    {
+        return new ChatRoomLeaveInfo
+        {
+            RoomId = roomId ?? string.Empty,
+            Success = false,
+            Canceled = true,
+            ResponseCode = 0,
+            Message = "Leave room canceled.",
+            ResponseBody = string.Empty
+        };
+    }
 }
 
 [Serializable]

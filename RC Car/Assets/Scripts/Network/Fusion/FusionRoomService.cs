@@ -241,6 +241,12 @@ namespace RC.Network.Fusion
                 return false;
             }
 
+            if (connection.IsLeavingRoom)
+            {
+                SetError("Photon room leave is in progress. Wait until cleanup finishes before starting another room operation.", warning: true);
+                return false;
+            }
+
             if (connection.IsInGameSession)
             {
                 SetError("Already in a Photon game session. Leave the current room before starting another.", warning: true);

@@ -127,6 +127,33 @@ public class But_RoomList : MonoBehaviour
         ExecuteConfirm();
     }
 
+    public static void ResetAllJoinFlowState()
+    {
+        SharedControllerByPanelKey.Clear();
+
+        But_RoomList[] controllers = FindObjectsOfType<But_RoomList>(true);
+        for (int i = 0; i < controllers.Length; i++)
+        {
+            if (controllers[i] != null)
+                controllers[i].ResetJoinFlowState();
+        }
+    }
+
+    public void ResetJoinFlowState()
+    {
+        UnbindSharedHandlers();
+        StopJoinApprovalPolling();
+        CompletePendingPhotonApiJoinRequest(false, "reset");
+        _pendingPhotonApiRoomId = string.Empty;
+        _isSharedControllerOwner = false;
+        _sharedPanelKey = 0;
+        SelectedRoomId = null;
+        ClearSpawnedToggles();
+
+        if (_roomListPanel != null)
+            _roomListPanel.SetActive(false);
+    }
+
     private void ExecuteFetchRoomList()
     {
         if (_usePhotonRooms)

@@ -797,6 +797,73 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: -1760, y: 70}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!1 &243920149
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 243920150}
+  - component: {fileID: 243920152}
+  - component: {fileID: 243920151}
+  m_Layer: 0
+  m_Name: End_Map_00
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &243920150
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 243920149}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -4.019, y: 1.441, z: -15.383}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1440618605}
+  m_RootOrder: 0
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &243920151
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 243920149}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5c6883a57b5f47568608f16302cc8fa4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  courseController: {fileID: 0}
+  carLayerMask:
+    serializedVersion: 2
+    m_Bits: 256
+  finishOnce: 1
+  requireForwardPass: 1
+  requireNetworkStateAuthority: 1
+  drawGizmos: 1
+  debugLog: 0
+--- !u!65 &243920152
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 243920149}
+  m_Material: {fileID: 0}
+  m_IsTrigger: 1
+  m_Enabled: 1
+  serializedVersion: 2
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1001 &244362910
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -882,6 +949,18 @@ Transform:
     type: 3}
   m_PrefabInstance: {fileID: 244362910}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &244362912 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 7992547460853634590, guid: e981d8875be24c94287a83ae3388e9e6,
+    type: 3}
+  m_PrefabInstance: {fileID: 244362910}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 76e354bc301c16d4bb0bebc6c2d0de54, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &246890285
 GameObject:
   m_ObjectHideFlags: 0
@@ -3056,9 +3135,10 @@ MonoBehaviour:
   useFixedSpawnPoseForRuntimeMaps: 1
   runtimeSpawnPoseSourceIndex: 3
   planeRenderer: {fileID: 431358711}
-  carTransform: {fileID: 0}
-  carPhysics: {fileID: 0}
+  carTransform: {fileID: 244362911}
+  carPhysics: {fileID: 244362912}
   buttonRestart: {fileID: 0}
+  courseController: {fileID: 1440618606}
   changeMapButton: {fileID: 418235354}
   currentMapIndex: 0
   logRuntimeMapActions: 1
@@ -4181,7 +4261,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &979852357
 Transform:
   m_ObjectHideFlags: 0
@@ -5540,6 +5620,69 @@ MonoBehaviour:
   references:
     version: 2
     RefIds: []
+--- !u!1 &1440618604
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1440618605}
+  - component: {fileID: 1440618606}
+  m_Layer: 0
+  m_Name: 'RCCarCourseController '
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1440618605
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1440618604}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 243920150}
+  m_Father: {fileID: 0}
+  m_RootOrder: 11
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1440618606
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1440618604}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ee7a91ad8e2147c88a37ef8af8dfbdf0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  endTriggersByMap: []
+  autoFindEndTriggersOnStart: 1
+  disableInactiveEndTriggers: 1
+  resetCourseOnMapApply: 1
+  finishWholeCourseOnFirstCar: 1
+  stopCarOnFinish: 1
+  stopAllCarsOnFinish: 1
+  stopRigidbodyOnFinish: 1
+  invokeHostStopButtonOnFinish: 1
+  beginRunIfFinishArrivesBeforeBegin: 1
+  carSearchRoot: {fileID: 244362911}
+  hostNetworkCarCoordinator: {fileID: 1173993790}
+  debugLog: 1
+  state: 0
+  currentMapIndex: -1
+  runStartedAt: -1
+  lastFinishElapsedSeconds: 0
+  lastFinishedCar: {fileID: 0}
 --- !u!1 &1444673720
 GameObject:
   m_ObjectHideFlags: 0

@@ -17,6 +17,9 @@ public class ButtonRestart : MonoBehaviour
     [Tooltip("현재 맵과 리스타트 위치 동기화용 ChangeMap")]
     public ChangeMap changeMap;
 
+    [Tooltip("리스타트 시 도착 판정 상태를 초기화할 코스 컨트롤러")]
+    public RCCarCourseController courseController;
+
     [Tooltip("활성화 시 리스타트 전에 현재 맵 스폰 위치로 기준값을 동기화")]
     public bool syncWithCurrentMapOnRestart = true;
 
@@ -129,6 +132,11 @@ public class ButtonRestart : MonoBehaviour
         carTransform.position = initialPosition;
         carTransform.rotation = initialRotation;
 
+        if (courseController != null)
+        {
+            courseController.ResetCourse();
+        }
+
         Debug.Log($"[ButtonRestart] 차량 리스타트 완료 - 위치: {initialPosition}");
     }
 
@@ -171,6 +179,16 @@ public class ButtonRestart : MonoBehaviour
         if (changeMap == null)
         {
             changeMap = FindObjectOfType<ChangeMap>();
+        }
+
+        if (courseController == null && changeMap != null)
+        {
+            courseController = changeMap.courseController;
+        }
+
+        if (courseController == null)
+        {
+            courseController = FindObjectOfType<RCCarCourseController>();
         }
     }
 }

@@ -26,6 +26,8 @@ namespace RC.App.Defines
         public const string ChatJoinRequestDecision = "/api/chat/join-requests/{requestId}/decision";
         /// <summary>내 입장 요청 상태 조회 경로 템플릿.</summary>
         public const string ChatMyJoinRequestStatus = "/api/chat/my/join-request/{requestId}";
+        /// <summary>채팅방 나가기 경로 템플릿.</summary>
+        public const string ChatRoomLeave = "/api/chat/rooms/{roomId}/participants/me";
         /// <summary>블록 공유 저장 경로 템플릿.</summary>
         public const string ChatSaveBlockShareToMyLevel = "/api/chat/block-shares/{shareId}/save-to-my-level";
         /// <summary>유저 레벨 상세 조회 경로 템플릿.</summary>
@@ -42,6 +44,12 @@ namespace RC.App.Defines
         /// </summary>
         public static string ChatJoinRequests(string roomId)
             => "/api/chat/rooms/" + Escape(roomId) + "/join-requests";
+
+        /// <summary>
+        /// roomId를 포함한 채팅방 나가기 경로를 만든다.
+        /// </summary>
+        public static string ChatRoomLeaveEndpoint(string roomId)
+            => "/api/chat/rooms/" + Escape(roomId) + "/participants/me";
 
         /// <summary>
         /// roomId를 포함한 블록 공유 목록 경로를 만든다.

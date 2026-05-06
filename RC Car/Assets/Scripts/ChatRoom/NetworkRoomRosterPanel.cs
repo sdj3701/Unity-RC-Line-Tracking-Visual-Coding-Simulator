@@ -77,6 +77,30 @@ public sealed class NetworkRoomRosterPanel : MonoBehaviour
         RefreshAll(forceApiFetch: true);
     }
 
+    public void ClearSnapshots()
+    {
+        _apiJoinRequests.Clear();
+        _participantsSnapshot = _showParticipantHeader ? "Participants\n(none)" : "(none)";
+        _waitingSnapshot = _showWaitingHeader ? "Waiting\n(none)" : "(none)";
+
+        if (_participantsText != null)
+            _participantsText.text = _participantsSnapshot;
+        if (_waitingText != null)
+            _waitingText.text = _waitingSnapshot;
+
+        SetStatus(string.Empty);
+    }
+
+    public static void ClearAllSnapshots()
+    {
+        NetworkRoomRosterPanel[] panels = FindObjectsOfType<NetworkRoomRosterPanel>(true);
+        for (int i = 0; i < panels.Length; i++)
+        {
+            if (panels[i] != null)
+                panels[i].ClearSnapshots();
+        }
+    }
+
     private void BindFusion()
     {
         FusionConnectionManager manager = FusionConnectionManager.GetOrCreate();

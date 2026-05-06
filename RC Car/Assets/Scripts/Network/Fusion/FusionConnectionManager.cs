@@ -18,6 +18,15 @@ namespace RC.Network.Fusion
         AutoReject
     }
 
+    public enum FusionRoomExitReason
+    {
+        None,
+        UserLeave,
+        HostClosed,
+        Disconnected,
+        ShutdownFailed
+    }
+
     public sealed class FusionPendingJoinRequestInfo
     {
         public string RequestId { get; set; }
@@ -154,11 +163,15 @@ namespace RC.Network.Fusion
         private bool _isConnectingToLobby;
         private bool _isInSessionLobby;
         private bool _isInGameSession;
+        private bool _isLeavingRoom;
+        private bool _roomExitCompletionNotified;
 
         public event Action<IReadOnlyList<SessionInfo>> OnSessionListChanged;
         public event Action<IReadOnlyList<FusionPendingJoinRequestInfo>> OnPendingJoinRequestsChanged;
         public event Action<int, int> OnPlayerCountChanged;
         public event Action<string> OnStatusChanged;
+        public event Action<FusionRoomExitReason> OnRoomExitStarted;
+        public event Action<FusionRoomExitReason, bool, string> OnRoomExitCompleted;
 
         public NetworkRunner Runner => _runner;
         public IReadOnlyList<SessionInfo> SessionInfos => _sessionInfos;
@@ -169,7 +182,9 @@ namespace RC.Network.Fusion
         public bool IsConnectingToLobby => _isConnectingToLobby;
         public bool IsInSessionLobby => _isInSessionLobby;
         public bool IsInGameSession => _isInGameSession;
+        public bool IsLeavingRoom => _isLeavingRoom;
         public bool IsPhotonConnected => _runner != null && !_runner.IsShutdown && (_isInSessionLobby || _isInGameSession || _runner.IsRunning);
+        public FusionRoomExitReason LastExitReason { get; private set; } = FusionRoomExitReason.None;
         public string LastStatusMessage { get; private set; }
         public string LastErrorMessage { get; private set; }
 
@@ -220,6 +235,12 @@ namespace RC.Network.Fusion
 
         public async Task<bool> ConnectToPhotonLobbyAsync()
         {
+            if (_isLeavingRoom)
+            {
+                SetStatus("Photon lobby connection blocked while room leave is in progress.", warning: true);
+                return false;
+            }
+
             if (_isConnectingToLobby)
             {
                 SetStatus("Photon lobby connection is already in progress.", warning: true);
@@ -364,6 +385,9 @@ namespace RC.Network.Fusion
         {
             _isInGameSession = true;
             _isInSessionLobby = false;
+            _isLeavingRoom = false;
+            _roomExitCompletionNotified = false;
+            LastExitReason = FusionRoomExitReason.None;
             FusionRoomSessionContext.UpdateFromRunner(_runner);
             SetStatus("Photon game session started.");
             UpdatePlayerCount(_runner);
@@ -377,6 +401,7 @@ namespace RC.Network.Fusion
             ClearPendingJoinRequests();
             ClearManualApprovals();
             FusionRoomSessionContext.Clear();
+            RoomSessionContext.Clear();
             OnSessionListChanged?.Invoke(_sessionInfos);
         }
 
@@ -396,29 +421,72 @@ namespace RC.Network.Fusion
             return CompletePendingJoinRequest(requestId, approve: false);
         }
 
-        public async Task ShutdownAsync()
+        public Task<bool> LeaveRoomAsync()
         {
+            return LeaveRoomAsync(FusionRoomExitReason.UserLeave);
+        }
+
+        public async Task<bool> LeaveRoomAsync(FusionRoomExitReason exitReason)
+        {
+            if (_isLeavingRoom)
+            {
+                SetStatus("Photon room leave is already in progress.", warning: true);
+                return false;
+            }
+
+            FusionRoomExitReason resolvedExitReason = exitReason == FusionRoomExitReason.None
+                ? FusionRoomExitReason.UserLeave
+                : exitReason;
+
+            _isLeavingRoom = true;
+            _roomExitCompletionNotified = false;
+            LastExitReason = resolvedExitReason;
+            OnRoomExitStarted?.Invoke(resolvedExitReason);
+
             if (_runner == null)
-                return;
+            {
+                SetStatus($"Photon room leave requested without active runner. reason={resolvedExitReason}", warning: true);
+                MarkGameSessionEnded();
+                _isLeavingRoom = false;
+                NotifyRoomExitCompleted(resolvedExitReason, true, LastStatusMessage);
+                return true;
+            }
 
             NetworkRunner runner = _runner;
-            SetStatus("Photon shutdown requested.");
+            bool success = true;
+            string completionMessage = string.Empty;
+            SetStatus($"Photon room leave requested. reason={resolvedExitReason}");
 
             try
             {
                 UnregisterCallbacksFromRunner(runner);
                 if (!runner.IsShutdown)
                     await runner.Shutdown(false, ShutdownReason.Ok, false);
+
+                completionMessage = $"Photon room leave completed. reason={resolvedExitReason}";
+                SetStatus(completionMessage);
             }
             catch (Exception e)
             {
-                SetStatus($"Photon shutdown failed: {e.Message}", warning: true);
+                success = false;
+                LastExitReason = FusionRoomExitReason.ShutdownFailed;
+                completionMessage = $"Photon room leave shutdown failed: {e.Message}";
+                SetStatus(completionMessage, warning: true);
             }
             finally
             {
                 CleanupRunner(runner);
                 MarkGameSessionEnded();
+                _isLeavingRoom = false;
+                NotifyRoomExitCompleted(LastExitReason, success, string.IsNullOrWhiteSpace(completionMessage) ? LastStatusMessage : completionMessage);
             }
+
+            return success;
+        }
+
+        public async Task ShutdownAsync()
+        {
+            await LeaveRoomAsync(FusionRoomExitReason.UserLeave);
         }
 
         private string ResolveCustomLobbyName()
@@ -495,15 +563,29 @@ namespace RC.Network.Fusion
         public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason)
         {
             SetStatus($"Photon runner shutdown. reason={shutdownReason}", warning: shutdownReason != ShutdownReason.Ok);
+            FusionRoomExitReason reason = _isLeavingRoom
+                ? LastExitReason
+                : ResolveShutdownExitReason(runner, shutdownReason);
+
             MarkGameSessionEnded();
             CleanupRunner(runner);
+            _isLeavingRoom = false;
+            LastExitReason = reason;
+            NotifyRoomExitCompleted(reason, shutdownReason == ShutdownReason.Ok, LastStatusMessage);
         }
 
         public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason)
         {
             SetStatus($"Disconnected from Photon server. reason={reason}", warning: true);
-            _isInSessionLobby = false;
-            _isInGameSession = false;
+            FusionRoomExitReason exitReason = _isLeavingRoom
+                ? LastExitReason
+                : ResolveDisconnectedExitReason(runner);
+
+            MarkGameSessionEnded();
+            CleanupRunner(runner);
+            _isLeavingRoom = false;
+            LastExitReason = exitReason;
+            NotifyRoomExitCompleted(exitReason, false, LastStatusMessage);
         }
 
         public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token)
@@ -1032,6 +1114,34 @@ namespace RC.Network.Fusion
         private static string Normalize(string value)
         {
             return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+        }
+
+        private FusionRoomExitReason ResolveShutdownExitReason(NetworkRunner runner, ShutdownReason shutdownReason)
+        {
+            if (shutdownReason == ShutdownReason.Ok)
+                return FusionRoomExitReason.UserLeave;
+
+            if (runner != null && runner.IsClient && !runner.IsServer)
+                return FusionRoomExitReason.HostClosed;
+
+            return FusionRoomExitReason.Disconnected;
+        }
+
+        private FusionRoomExitReason ResolveDisconnectedExitReason(NetworkRunner runner)
+        {
+            if (runner != null && runner.IsClient && !runner.IsServer)
+                return FusionRoomExitReason.HostClosed;
+
+            return FusionRoomExitReason.Disconnected;
+        }
+
+        private void NotifyRoomExitCompleted(FusionRoomExitReason reason, bool success, string message)
+        {
+            if (_roomExitCompletionNotified)
+                return;
+
+            _roomExitCompletionNotified = true;
+            OnRoomExitCompleted?.Invoke(reason, success, message ?? string.Empty);
         }
 
         private readonly struct PendingJoinRequest

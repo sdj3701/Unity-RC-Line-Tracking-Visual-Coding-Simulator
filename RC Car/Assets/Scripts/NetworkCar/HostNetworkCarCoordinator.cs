@@ -169,6 +169,11 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
 
     private void OnClickStop()
     {
+        StopHostExecutionFromButton();
+    }
+
+    public void StopHostExecutionFromButton()
+    {
         if (_executionScheduler == null)
             return;
 
@@ -436,6 +441,15 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
     public bool TryGetSlotIndexForUser(string userIdRaw, out int slotIndex)
     {
         return _slotRegistry.TryGetSlotIndexByUserId(userIdRaw, out slotIndex);
+    }
+
+    public void PrepareForLocalRoomExit()
+    {
+        if (_executionScheduler != null)
+            _executionScheduler.StopExecution();
+
+        _statusReporter?.SetInfo("Room exit requested. Local host execution stopped.");
+        UpdateSummary();
     }
 
     private async Task<string> ApplyRemoteBlockShareDetailToTargetAsync(
@@ -1386,6 +1400,106 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
         return default;
     }
 
+    private string ResolveLeavingUserId(NetworkRunner runner, PlayerRef player)
+    {
+        if (_userIdByPlayer.TryGetValue(player, out string mappedUserId) &&
+            !string.IsNullOrWhiteSpace(mappedUserId))
+        {
+            return mappedUserId.Trim();
+        }
+
+        string resolvedUserId = ResolveFusionUserId(runner, player);
+        return string.IsNullOrWhiteSpace(resolvedUserId) ? string.Empty : resolvedUserId.Trim();
+    }
+
+    private void CleanupParticipantForUser(NetworkRunner runner, string userIdRaw, PlayerRef player, string source)
+    {
+        if (_hostOnly && !IsHost())
+        {
+            if (_debugLog)
+                Log($"Skip participant cleanup on non-host. source={source}, user={userIdRaw}, player={player}");
+
+            return;
+        }
+
+        string userId = NormalizeText(userIdRaw);
+        if (string.IsNullOrWhiteSpace(userId))
+            return;
+
+        if (_executionScheduler != null && _executionScheduler.IsRunning)
+            _executionScheduler.StopExecution();
+
+        HostCarBinding removedBinding = null;
+        bool removedBindingFound = _bindingStore.TryRemoveBinding(userId, out removedBinding);
+        if (removedBindingFound)
+            CleanupRuntimeRefs(runner, removedBinding.RuntimeRefs, userId, source);
+
+        bool removedSlot = _slotRegistry.TryRemoveUser(userId, out HostParticipantSlot slot);
+        RemoveShareOwnerMappingsForUser(userId);
+
+        if (_debugLog)
+        {
+            int slotIndex = slot != null ? slot.SlotIndex : 0;
+            Log($"Participant cleaned up. source={source}, user={userId}, player={player}, removedBinding={removedBindingFound}, removedSlot={removedSlot}, slot={slotIndex}");
+        }
+
+        _statusReporter?.SetInfo($"Participant left. user={userId}, player={player}");
+    }
+
+    private void CleanupRuntimeRefs(NetworkRunner runner, HostCarRuntimeRefs refs, string userId, string source)
+    {
+        if (refs == null)
+            return;
+
+        if (refs.Physics != null && refs.Physics.IsRunning)
+            refs.Physics.StopRunning();
+
+        if (refs.NetworkObject != null &&
+            runner != null &&
+            runner.IsRunning &&
+            !runner.IsShutdown &&
+            runner.IsServer)
+        {
+            try
+            {
+                runner.Despawn(refs.NetworkObject);
+                return;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[HostNetworkCarCoordinator] Network despawn failed. source={source}, user={userId}, message={e.Message}");
+            }
+        }
+
+        if (refs.CarObject != null)
+            Destroy(refs.CarObject);
+    }
+
+    private void RemoveShareOwnerMappingsForUser(string userIdRaw)
+    {
+        string userId = NormalizeText(userIdRaw);
+        if (string.IsNullOrWhiteSpace(userId) || _shareToUserId.Count == 0)
+            return;
+
+        List<string> removeKeys = null;
+        foreach (KeyValuePair<string, string> pair in _shareToUserId)
+        {
+            if (!string.Equals(NormalizeText(pair.Value), userId, StringComparison.Ordinal))
+                continue;
+
+            if (removeKeys == null)
+                removeKeys = new List<string>();
+
+            removeKeys.Add(pair.Key);
+        }
+
+        if (removeKeys == null)
+            return;
+
+        for (int i = 0; i < removeKeys.Count; i++)
+            _shareToUserId.Remove(removeKeys[i]);
+    }
+
     private bool IsHost()
     {
         if (_boundRunner != null && _boundRunner.IsRunning && !_boundRunner.IsShutdown)
@@ -1417,11 +1531,18 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
 
     public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
     {
-        if (_userIdByPlayer.TryGetValue(player, out string userId))
+        string userId = ResolveLeavingUserId(runner, player);
+        if (!string.IsNullOrWhiteSpace(userId))
         {
             _statusReporter?.SetInfo($"Photon player left. user={userId}, player={player}");
-            _userIdByPlayer.Remove(player);
+            CleanupParticipantForUser(runner, userId, player, "player-left");
         }
+        else
+        {
+            _statusReporter?.SetWarning($"Photon player left but userId was unresolved. player={player}");
+        }
+
+        _userIdByPlayer.Remove(player);
 
         UpdateSummary();
     }
@@ -1511,7 +1632,7 @@ public class HostNetworkCarCoordinator : MonoBehaviour, INetworkRunnerCallbacks
         if (_statusReporter == null)
             return;
 
-        int maxCount = _slotRegistry.MaxCount;
+        int maxCount = _slotRegistry.ActiveCount;
         int mappedCount = _bindingStore.CountMappedCode();
         bool running = _executionScheduler != null && _executionScheduler.IsRunning;
         int currentSlot = _executionScheduler != null ? _executionScheduler.CurrentSlot : 0;

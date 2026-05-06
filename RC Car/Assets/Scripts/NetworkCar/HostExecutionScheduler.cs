@@ -68,8 +68,9 @@ public class HostExecutionScheduler : MonoBehaviour
 
         while (true)
         {
+            int activeCount = _slotRegistry != null ? _slotRegistry.ActiveCount : 0;
             int maxCount = _slotRegistry != null ? _slotRegistry.MaxCount : 0;
-            if (maxCount <= 0)
+            if (activeCount <= 0 || maxCount <= 0)
             {
                 _statusReporter?.SetWarning("No approved slots. Waiting...");
                 yield return new WaitForSeconds(waitSeconds);

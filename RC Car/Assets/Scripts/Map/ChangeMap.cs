@@ -53,6 +53,9 @@ public class ChangeMap : MonoBehaviour
     [Tooltip("리스타트 기준 위치 동기화용 ButtonRestart")]
     public ButtonRestart buttonRestart;
 
+    [Tooltip("맵별 도착 트리거와 완료 상태 관리용 컨트롤러")]
+    public RCCarCourseController courseController;
+
     [Tooltip("맵 변경 버튼(비우면 현재 오브젝트 Button 자동 사용)")]
     public Button changeMapButton;
 
@@ -136,6 +139,7 @@ public class ChangeMap : MonoBehaviour
         }
 
         SyncRestartInitialPosition();
+        SyncCourseController();
 
         Debug.Log($"[ChangeMap] 맵 변경 완료 -> 인덱스: {currentMapIndex} (static={StaticMapCount}, runtime={RuntimeMapCount})");
     }
@@ -350,6 +354,16 @@ public class ChangeMap : MonoBehaviour
         }
     }
 
+    void SyncCourseController()
+    {
+        if (courseController == null)
+        {
+            return;
+        }
+
+        courseController.ApplyMapEndTrigger(currentMapIndex);
+    }
+
     bool TryGetSpawnPose(int mapIndex, out Vector3 position, out Quaternion rotation)
     {
         if (TryGetStaticSpawnPose(mapIndex, out position, out rotation))
@@ -485,6 +499,21 @@ public class ChangeMap : MonoBehaviour
         if (buttonRestart == null)
         {
             buttonRestart = FindObjectOfType<ButtonRestart>();
+        }
+
+        if (courseController == null && buttonRestart != null)
+        {
+            courseController = buttonRestart.courseController;
+        }
+
+        if (courseController == null)
+        {
+            courseController = FindObjectOfType<RCCarCourseController>();
+        }
+
+        if (buttonRestart != null && buttonRestart.courseController == null)
+        {
+            buttonRestart.courseController = courseController;
         }
     }
 

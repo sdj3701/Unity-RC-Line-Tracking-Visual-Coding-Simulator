@@ -164,6 +164,22 @@ public sealed class HostCarBindingStore
         return _bindingByUserId.TryGetValue(userId, out binding) && binding != null;
     }
 
+    public bool TryRemoveBinding(string userIdRaw, out HostCarBinding binding)
+    {
+        string userId = string.IsNullOrWhiteSpace(userIdRaw) ? string.Empty : userIdRaw.Trim();
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            binding = null;
+            return false;
+        }
+
+        if (!_bindingByUserId.TryGetValue(userId, out binding) || binding == null)
+            return false;
+
+        _bindingByUserId.Remove(userId);
+        return true;
+    }
+
     public bool TryGetBindingBySlot(int slotIndex, out HostCarBinding binding)
     {
         foreach (var pair in _bindingByUserId)
