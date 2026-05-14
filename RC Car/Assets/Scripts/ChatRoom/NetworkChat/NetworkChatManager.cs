@@ -29,7 +29,7 @@ public sealed class NetworkChatManager : NetworkBehaviour
     private float _nextLocalSendTime;
 
     private const int RpcMessageCharacterLimit = 64;
-    private const int RpcSenderNameCharacterLimit = 32;
+    private const int RpcSenderUserIdCharacterLimit = 32;
 
     public static NetworkChatManager Instance { get; private set; }
 
@@ -91,18 +91,18 @@ public sealed class NetworkChatManager : NetworkBehaviour
         }
 
         _nextLocalSendTime = Time.unscaledTime + Mathf.Max(0f, _localSendCooldownSeconds);
+        string senderUserId = TrimForNetwork(ResolveLocalUserId(), RpcSenderUserIdCharacterLimit);
 
         if (Object != null && Runner != null && Runner.IsRunning && !Runner.IsShutdown)
         {
             LogDebug("Sending chat through spawned NetworkObject RPC.");
-            RPC_SendChatMessage(normalized);
+            RPC_SendChatMessage(senderUserId, normalized);
         }
         else
         {
             LogDebug("Sending chat through runner static RPC fallback.");
             long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            string senderName = TrimForNetwork(ResolveLocalDisplayName(), RpcSenderNameCharacterLimit);
-            RPC_BroadcastChatMessage(runner, runner.LocalPlayer, senderName, normalized, now);
+            RPC_BroadcastChatMessage(runner, runner.LocalPlayer, senderUserId, normalized, now);
         }
 
         return true;
@@ -116,6 +116,26 @@ public sealed class NetworkChatManager : NetworkBehaviour
     public void ClearLocalHistory()
     {
         _localHistory.Clear();
+    }
+
+    public string ResolveLocalUserId()
+    {
+        UserInfo currentUser = AuthManager.Instance != null ? AuthManager.Instance.CurrentUser : null;
+        if (currentUser != null && !string.IsNullOrWhiteSpace(currentUser.userId))
+            return TrimForNetwork(currentUser.userId, 64);
+
+        NetworkRunner runner = ActiveRunner;
+        if (runner != null)
+        {
+            string playerUserId = runner.GetPlayerUserId(runner.LocalPlayer);
+            if (!string.IsNullOrWhiteSpace(playerUserId))
+                return TrimForNetwork(playerUserId, 64);
+
+            if (!string.IsNullOrWhiteSpace(runner.UserId))
+                return TrimForNetwork(runner.UserId, 64);
+        }
+
+        return runner != null ? runner.LocalPlayer.ToString() : "Player";
     }
 
     public string ResolveLocalDisplayName()
@@ -146,7 +166,10 @@ public sealed class NetworkChatManager : NetworkBehaviour
     }
 
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
-    private void RPC_SendChatMessage(NetworkString<_64> message, RpcInfo info = default)
+    private void RPC_SendChatMessage(
+        NetworkString<_32> senderUserId,
+        NetworkString<_64> message,
+        RpcInfo info = default)
     {
         if (Object == null || !Object.HasStateAuthority)
             return;
@@ -159,28 +182,34 @@ public sealed class NetworkChatManager : NetworkBehaviour
         if (string.IsNullOrWhiteSpace(normalized))
             return;
 
-        string senderName = TrimForNetwork(ResolveSenderName(sender), RpcSenderNameCharacterLimit);
+        string resolvedUserId = TrimForNetwork(
+            ResolveSenderUserId(sender, senderUserId.ToString()),
+            RpcSenderUserIdCharacterLimit);
         long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        RPC_ReceiveChatMessage(sender, senderName, normalized, now);
+        RPC_ReceiveChatMessage(sender, resolvedUserId, normalized, now);
     }
 
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_ReceiveChatMessage(
         PlayerRef sender,
-        NetworkString<_32> senderName,
+        NetworkString<_32> senderUserId,
         NetworkString<_64> message,
         long unixTimeMilliseconds,
         RpcInfo info = default)
     {
-        ReceiveChatMessage(sender, senderName.ToString(), message.ToString(), unixTimeMilliseconds);
+        ReceiveChatMessage(
+            sender,
+            senderUserId.ToString(),
+            message.ToString(),
+            unixTimeMilliseconds);
     }
 
     [Rpc(RpcSources.All, RpcTargets.All)]
     private static void RPC_BroadcastChatMessage(
         NetworkRunner runner,
         PlayerRef sender,
-        NetworkString<_32> senderName,
+        NetworkString<_32> senderUserId,
         NetworkString<_64> message,
         long unixTimeMilliseconds,
         RpcInfo info = default)
@@ -195,10 +224,18 @@ public sealed class NetworkChatManager : NetworkBehaviour
             return;
         }
 
-        manager.ReceiveChatMessage(sender, senderName.ToString(), message.ToString(), unixTimeMilliseconds);
+        manager.ReceiveChatMessage(
+            sender,
+            senderUserId.ToString(),
+            message.ToString(),
+            unixTimeMilliseconds);
     }
 
-    private void ReceiveChatMessage(PlayerRef sender, string senderName, string message, long unixTimeMilliseconds)
+    private void ReceiveChatMessage(
+        PlayerRef sender,
+        string senderUserId,
+        string message,
+        long unixTimeMilliseconds)
     {
         string text = NormalizeMessage(message, MaxMessageLength);
         if (string.IsNullOrWhiteSpace(text))
@@ -206,7 +243,8 @@ public sealed class NetworkChatManager : NetworkBehaviour
 
         var chatMessage = new NetworkChatMessage(
             sender,
-            TrimForNetwork(senderName, 64),
+            TrimForNetwork(senderUserId, RpcSenderUserIdCharacterLimit),
+            TrimForNetwork(senderUserId, RpcSenderUserIdCharacterLimit),
             text,
             unixTimeMilliseconds);
 
@@ -214,7 +252,7 @@ public sealed class NetworkChatManager : NetworkBehaviour
         OnMessageReceived?.Invoke(chatMessage);
 
         if (_debugLog)
-            Debug.Log($"[NetworkChatManager] received sender={sender}, name={chatMessage.SenderName}, text={chatMessage.Message}");
+            Debug.Log($"[NetworkChatManager] received sender={sender}, userId={chatMessage.SenderUserId}, name={chatMessage.SenderName}, text={chatMessage.Message}");
     }
 
     private bool CanAcceptFromSender(PlayerRef sender)
@@ -235,27 +273,17 @@ public sealed class NetworkChatManager : NetworkBehaviour
         return true;
     }
 
-    private string ResolveSenderName(PlayerRef sender)
+    private string ResolveSenderUserId(PlayerRef sender, string suppliedUserId)
     {
         NetworkRunner runner = ActiveRunner;
-        if (runner != null)
+        if (runner != null && _fallbackToPhotonUserId)
         {
-            if (sender == runner.LocalPlayer)
-            {
-                string localDisplayName = ResolveLocalDisplayName();
-                if (!string.IsNullOrWhiteSpace(localDisplayName))
-                    return localDisplayName;
-            }
-
-            if (_fallbackToPhotonUserId)
-            {
-                string userId = runner.GetPlayerUserId(sender);
-                if (!string.IsNullOrWhiteSpace(userId))
-                    return TrimForNetwork(userId, 64);
-            }
+            string userId = runner.GetPlayerUserId(sender);
+            if (!string.IsNullOrWhiteSpace(userId))
+                return TrimForNetwork(userId, 64);
         }
 
-        return sender.ToString();
+        return FirstNonEmpty(suppliedUserId, sender.ToString());
     }
 
     private void AddToLocalHistory(NetworkChatMessage message)

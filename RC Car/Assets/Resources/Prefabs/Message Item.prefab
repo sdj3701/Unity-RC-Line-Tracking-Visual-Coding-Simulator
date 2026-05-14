@@ -158,11 +158,12 @@ MonoBehaviour:
   _rowLayoutGroup: {fileID: 0}
   _bubbleLayoutElement: {fileID: 0}
   _senderLayoutElement: {fileID: 0}
-  _mineBubbleColor: {r: 1, g: 1, b: 1, a: 1}
+  _mineBubbleColor: {r: 1, g: 0.86, b: 0.04, a: 1}
   _otherBubbleColor: {r: 1, g: 1, b: 1, a: 1}
   _messageTextColor: {r: 0.02, g: 0.02, b: 0.02, a: 1}
   _timeTextColor: {r: 0.16, g: 0.22, b: 0.28, a: 1}
   _senderNameTextColor: {r: 0.18, g: 0.22, b: 0.28, a: 1}
+  _prefixSenderIdToMessage: 1
   _minBubbleWidth: 48
   _maxBubbleWidth: 420
   _maxBubbleWidthRatio: 0.72

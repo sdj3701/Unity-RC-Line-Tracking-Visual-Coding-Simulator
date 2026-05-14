@@ -437,6 +437,21 @@ public sealed class NetworkChatUIController : MonoBehaviour
         bubbleFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
         bubbleFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
+        GameObject senderObject = new GameObject("SenderNameText", typeof(RectTransform), typeof(LayoutElement), typeof(TextMeshProUGUI));
+        RectTransform senderRect = senderObject.GetComponent<RectTransform>();
+        senderRect.SetParent(bubbleRect, false);
+        LayoutElement senderLayout = senderObject.GetComponent<LayoutElement>();
+        senderLayout.ignoreLayout = true;
+
+        TextMeshProUGUI senderText = senderObject.GetComponent<TextMeshProUGUI>();
+        senderText.text = string.Empty;
+        senderText.fontSize = 12f;
+        senderText.color = new Color(0.18f, 0.22f, 0.28f, 1f);
+        senderText.alignment = TextAlignmentOptions.Left;
+        senderText.enableWordWrapping = true;
+        senderText.raycastTarget = false;
+        senderObject.SetActive(false);
+
         GameObject messageObject = new GameObject("MessageText", typeof(RectTransform), typeof(TextMeshProUGUI));
         RectTransform messageRect = messageObject.GetComponent<RectTransform>();
         messageRect.SetParent(bubbleRect, false);
@@ -463,7 +478,7 @@ public sealed class NetworkChatUIController : MonoBehaviour
         timeText.raycastTarget = false;
 
         NetworkChatMessageItem item = itemObject.GetComponent<NetworkChatMessageItem>();
-        item.BindReferences(rowRect, bubbleRect, bubbleImage, messageText, timeText, null, rowLayoutGroup, bubbleLayout);
+        item.BindReferences(rowRect, bubbleRect, bubbleImage, messageText, timeText, senderText, rowLayoutGroup, bubbleLayout, senderLayout);
         itemObject.SetActive(false);
 
         LogDebug("Default ChatMessageItem template was created under Content Root.");

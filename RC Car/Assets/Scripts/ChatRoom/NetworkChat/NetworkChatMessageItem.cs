@@ -28,6 +28,7 @@ public sealed class NetworkChatMessageItem : MonoBehaviour
     [SerializeField] private Color _messageTextColor = new Color(0.02f, 0.02f, 0.02f, 1f);
     [SerializeField] private Color _timeTextColor = new Color(0.16f, 0.22f, 0.28f, 1f);
     [SerializeField] private Color _senderNameTextColor = new Color(0.18f, 0.22f, 0.28f, 1f);
+    [SerializeField] private bool _prefixSenderIdToMessage = true;
 
     [Header("Layout")]
     [SerializeField, Min(40f)] private float _minBubbleWidth = 48f;
@@ -82,9 +83,14 @@ public sealed class NetworkChatMessageItem : MonoBehaviour
         AutoBindReferences();
 
         string text = string.IsNullOrWhiteSpace(message.Message) ? string.Empty : message.Message.Trim();
+        string senderLabel = ResolveSenderLabel(message);
+        string displayText = _prefixSenderIdToMessage && !string.IsNullOrWhiteSpace(senderLabel)
+            ? $"[{senderLabel}] {text}"
+            : text;
+
         if (_messageText != null)
         {
-            _messageText.text = text;
+            _messageText.text = displayText;
             _messageText.alignment = TextAlignmentOptions.Left;
             _messageText.enableWordWrapping = true;
             _messageText.color = _messageTextColor;
@@ -97,11 +103,14 @@ public sealed class NetworkChatMessageItem : MonoBehaviour
             _timeText.alignment = TextAlignmentOptions.Bottom;
         }
 
-        bool shouldShowSenderName = !isMine && showSenderName && !string.IsNullOrWhiteSpace(message.SenderName);
+        bool shouldShowSenderName =
+            showSenderName &&
+            !_prefixSenderIdToMessage &&
+            !string.IsNullOrWhiteSpace(senderLabel);
         if (_senderNameText != null)
         {
             _senderNameText.gameObject.SetActive(shouldShowSenderName);
-            _senderNameText.text = shouldShowSenderName ? message.SenderName.Trim() : string.Empty;
+            _senderNameText.text = shouldShowSenderName ? senderLabel : string.Empty;
             _senderNameText.color = _senderNameTextColor;
             _senderNameText.alignment = TextAlignmentOptions.Left;
         }
@@ -120,16 +129,164 @@ public sealed class NetworkChatMessageItem : MonoBehaviour
             $"rowLayout={_rowLayoutGroup != null}, bubbleImage={_bubbleImage != null}, " +
             $"bubbleLayout={_bubbleLayoutElement != null}, messageText={_messageText != null}");
         ApplySide(side);
-        ApplyBubbleWidth(text);
+        ApplyBubbleWidth(displayText);
     }
 
     private void AutoBindReferences()
     {
-        if (_rowRoot == null)
-            _rowRoot = transform as RectTransform;
+        RectTransform itemRect = transform as RectTransform;
+        if (!HasUsableBubbleStructure(itemRect))
+            BuildRuntimeMessageStructure(itemRect);
 
-        if (_rowLayoutGroup == null && _rowRoot != null)
-            _rowLayoutGroup = _rowRoot.GetComponent<HorizontalLayoutGroup>();
+        BindExistingReferences();
+    }
+
+    private bool HasUsableBubbleStructure(RectTransform itemRect)
+    {
+        if (itemRect == null)
+            return false;
+
+        TMP_Text messageText = IsUsableMessageText(_messageText, itemRect)
+            ? _messageText
+            : FindTextByName("MessageText");
+        RectTransform bubbleRoot = _bubbleRoot != null && _bubbleRoot != itemRect
+            ? _bubbleRoot
+            : (messageText != null ? messageText.transform.parent as RectTransform : null);
+        Image bubbleImage = _bubbleImage != null && _bubbleImage.transform != transform
+            ? _bubbleImage
+            : (bubbleRoot != null ? bubbleRoot.GetComponent<Image>() : null);
+        HorizontalLayoutGroup rowLayout = _rowLayoutGroup != null
+            ? _rowLayoutGroup
+            : GetComponentInChildren<HorizontalLayoutGroup>(true);
+
+        return messageText != null &&
+               bubbleRoot != null &&
+               bubbleRoot != itemRect &&
+               bubbleImage != null &&
+               rowLayout != null;
+    }
+
+    private void BuildRuntimeMessageStructure(RectTransform itemRect)
+    {
+        if (itemRect == null)
+            return;
+
+        TMP_Text sourceText = _messageText != null ? _messageText : GetComponent<TMP_Text>();
+        if (sourceText == null)
+            sourceText = GetComponentInChildren<TMP_Text>(true);
+
+        TMP_FontAsset sourceFont = sourceText != null ? sourceText.font : null;
+        string templateText = sourceText != null && !string.IsNullOrEmpty(sourceText.text)
+            ? sourceText.text
+            : "Message";
+
+        if (sourceText != null && sourceText.transform == transform)
+            sourceText.enabled = false;
+
+        LayoutElement itemLayout = GetOrAdd<LayoutElement>(gameObject);
+        itemLayout.flexibleWidth = 1f;
+        itemLayout.minHeight = 28f;
+
+        VerticalLayoutGroup itemLayoutGroup = GetOrAdd<VerticalLayoutGroup>(gameObject);
+        itemLayoutGroup.padding = new RectOffset(0, 0, 0, 0);
+        itemLayoutGroup.spacing = 0f;
+        itemLayoutGroup.childAlignment = TextAnchor.MiddleCenter;
+        itemLayoutGroup.childControlWidth = true;
+        itemLayoutGroup.childControlHeight = true;
+        itemLayoutGroup.childForceExpandWidth = true;
+        itemLayoutGroup.childForceExpandHeight = false;
+
+        ContentSizeFitter itemFitter = GetOrAdd<ContentSizeFitter>(gameObject);
+        itemFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        itemFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        RectTransform rowRect = FindDirectChild(itemRect, "RowLayout");
+        if (rowRect == null)
+            rowRect = CreateRectChild(itemRect, "RowLayout");
+
+        LayoutElement rowLayout = GetOrAdd<LayoutElement>(rowRect.gameObject);
+        rowLayout.flexibleWidth = 1f;
+        rowLayout.minHeight = 28f;
+
+        HorizontalLayoutGroup rowLayoutGroup = GetOrAdd<HorizontalLayoutGroup>(rowRect.gameObject);
+        rowLayoutGroup.padding = new RectOffset(0, 0, 0, 0);
+        rowLayoutGroup.spacing = 4f;
+        rowLayoutGroup.childAlignment = TextAnchor.MiddleRight;
+        rowLayoutGroup.childControlWidth = true;
+        rowLayoutGroup.childControlHeight = true;
+        rowLayoutGroup.childForceExpandWidth = false;
+        rowLayoutGroup.childForceExpandHeight = false;
+
+        ContentSizeFitter rowFitter = GetOrAdd<ContentSizeFitter>(rowRect.gameObject);
+        rowFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        rowFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        RectTransform bubbleRect = FindDirectChild(rowRect, "Bubble");
+        if (bubbleRect == null)
+            bubbleRect = CreateRectChild(rowRect, "Bubble");
+
+        Image bubbleImage = GetOrAdd<Image>(bubbleRect.gameObject);
+        bubbleImage.raycastTarget = false;
+
+        LayoutElement bubbleLayout = GetOrAdd<LayoutElement>(bubbleRect.gameObject);
+        bubbleLayout.minWidth = _minBubbleWidth;
+        bubbleLayout.preferredWidth = 120f;
+        bubbleLayout.flexibleWidth = 0f;
+
+        VerticalLayoutGroup bubbleLayoutGroup = GetOrAdd<VerticalLayoutGroup>(bubbleRect.gameObject);
+        bubbleLayoutGroup.padding = new RectOffset(10, 10, 6, 6);
+        bubbleLayoutGroup.spacing = 2f;
+        bubbleLayoutGroup.childAlignment = TextAnchor.MiddleLeft;
+        bubbleLayoutGroup.childControlWidth = true;
+        bubbleLayoutGroup.childControlHeight = true;
+        bubbleLayoutGroup.childForceExpandWidth = false;
+        bubbleLayoutGroup.childForceExpandHeight = false;
+
+        ContentSizeFitter bubbleFitter = GetOrAdd<ContentSizeFitter>(bubbleRect.gameObject);
+        bubbleFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        bubbleFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        TextMeshProUGUI senderText = FindTextByName("SenderNameText") as TextMeshProUGUI;
+        if (senderText == null)
+            senderText = CreateTextChild(bubbleRect, "SenderNameText", sourceFont, 12f, _senderNameTextColor);
+
+        LayoutElement senderLayout = GetOrAdd<LayoutElement>(senderText.gameObject);
+        senderLayout.ignoreLayout = true;
+        senderText.gameObject.SetActive(false);
+
+        TextMeshProUGUI messageText = FindTextByName("MessageText") as TextMeshProUGUI;
+        if (messageText == null || messageText.transform == transform)
+            messageText = CreateTextChild(bubbleRect, "MessageText", sourceFont, 18f, _messageTextColor);
+
+        messageText.text = templateText;
+        messageText.enableWordWrapping = true;
+        messageText.raycastTarget = false;
+
+        TextMeshProUGUI timeText = FindTextByName("TimeText") as TextMeshProUGUI;
+        if (timeText == null)
+            timeText = CreateTextChild(rowRect, "TimeText", sourceFont, 12f, _timeTextColor);
+
+        LayoutElement timeLayout = GetOrAdd<LayoutElement>(timeText.gameObject);
+        timeLayout.minWidth = 58f;
+        timeLayout.flexibleWidth = 0f;
+        timeText.raycastTarget = false;
+
+        _rowRoot = rowRect;
+        _bubbleRoot = bubbleRect;
+        _bubbleImage = bubbleImage;
+        _messageText = messageText;
+        _timeText = timeText;
+        _senderNameText = senderText;
+        _rowLayoutGroup = rowLayoutGroup;
+        _bubbleLayoutElement = bubbleLayout;
+        _senderLayoutElement = senderLayout;
+
+        LogDebug("Runtime chat message layout was created from a simple prefab.");
+    }
+
+    private void BindExistingReferences()
+    {
+        RectTransform itemRect = transform as RectTransform;
 
         if (_rowLayoutGroup == null)
             _rowLayoutGroup = GetComponentInChildren<HorizontalLayoutGroup>(true);
@@ -137,63 +294,182 @@ public sealed class NetworkChatMessageItem : MonoBehaviour
         if (_rowLayoutGroup != null)
             _rowRoot = _rowLayoutGroup.transform as RectTransform;
 
-        if (_rowLayoutGroup == null && _rowRoot != null)
-        {
-            _rowLayoutGroup = _rowRoot.gameObject.AddComponent<HorizontalLayoutGroup>();
-            _rowLayoutGroup.spacing = 4f;
-            _rowLayoutGroup.childControlWidth = true;
-            _rowLayoutGroup.childControlHeight = true;
-            _rowLayoutGroup.childForceExpandWidth = false;
-            _rowLayoutGroup.childForceExpandHeight = false;
-            LogDebug("HorizontalLayoutGroup was missing and has been added at runtime.");
-        }
+        if (!IsUsableMessageText(_messageText, itemRect))
+            _messageText = FindTextByName("MessageText") ?? FindFirstUsableText(itemRect);
 
-        if (_messageText == null)
-            _messageText = GetComponentInChildren<TMP_Text>(true);
-
-        if (_bubbleRoot == null && _messageText != null)
-            _bubbleRoot = _messageText.transform.parent as RectTransform;
-
-        if (_bubbleImage == null && _bubbleRoot != null)
-            _bubbleImage = _bubbleRoot.GetComponent<Image>();
-
-        if (_bubbleImage == null && _messageText != null)
-            _bubbleImage = FindClosestImage(_messageText.transform);
-
-        if (_bubbleImage == null)
-            _bubbleImage = GetComponentInChildren<Image>(true);
-
-        if (_bubbleImage != null &&
-            (_bubbleRoot == null || _bubbleRoot.GetComponent<Image>() == null))
-        {
-            _bubbleRoot = _bubbleImage.transform as RectTransform;
-        }
-
-        if (_bubbleImage == null && _bubbleRoot != null)
-        {
-            _bubbleImage = _bubbleRoot.gameObject.AddComponent<Image>();
-            _bubbleImage.raycastTarget = false;
-            LogDebug("Bubble Image was missing and has been added at runtime.");
-        }
-
-        if (_bubbleLayoutElement == null && _bubbleRoot != null)
-            _bubbleLayoutElement = _bubbleRoot.GetComponent<LayoutElement>();
-
-        if (_bubbleLayoutElement == null && _bubbleRoot != null)
-            _bubbleLayoutElement = _bubbleRoot.gameObject.AddComponent<LayoutElement>();
+        if (_senderNameText == null)
+            _senderNameText = FindTextByName("SenderNameText");
 
         if (_timeText == null)
+            _timeText = FindTextByName("TimeText") ?? FindFirstTextExcept(_messageText, _senderNameText);
+
+        if (_bubbleRoot == null || _bubbleRoot == itemRect)
+            _bubbleRoot = _messageText != null ? _messageText.transform.parent as RectTransform : null;
+
+        if (_bubbleRoot == itemRect)
+            _bubbleRoot = null;
+
+        if ((_bubbleImage == null || _bubbleImage.transform == transform) && _bubbleRoot != null)
+            _bubbleImage = _bubbleRoot.GetComponent<Image>();
+
+        if (_bubbleImage == null)
+            _bubbleImage = FindFirstChildImage();
+
+        if (_bubbleImage != null && (_bubbleRoot == null || _bubbleRoot.GetComponent<Image>() == null))
+            _bubbleRoot = _bubbleImage.transform as RectTransform;
+
+        if (_bubbleImage == null && _bubbleRoot != null)
         {
-            TMP_Text[] texts = GetComponentsInChildren<TMP_Text>(true);
-            for (int i = 0; i < texts.Length; i++)
+            _bubbleImage = GetOrAdd<Image>(_bubbleRoot.gameObject);
+            _bubbleImage.raycastTarget = false;
+            LogDebug("Bubble Image was missing and has been added to Bubble at runtime.");
+        }
+
+        if (_bubbleLayoutElement == null && _bubbleRoot != null)
+            _bubbleLayoutElement = GetOrAdd<LayoutElement>(_bubbleRoot.gameObject);
+
+        if (_senderLayoutElement == null && _senderNameText != null)
+            _senderLayoutElement = GetOrAdd<LayoutElement>(_senderNameText.gameObject);
+    }
+
+    private static T GetOrAdd<T>(GameObject target) where T : Component
+    {
+        T component = target.GetComponent<T>();
+        return component != null ? component : target.AddComponent<T>();
+    }
+
+    private static RectTransform FindDirectChild(RectTransform parent, string childName)
+    {
+        if (parent == null)
+            return null;
+
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            Transform child = parent.GetChild(i);
+            if (child != null && child.name == childName)
+                return child as RectTransform;
+        }
+
+        return null;
+    }
+
+    private static RectTransform CreateRectChild(RectTransform parent, string childName)
+    {
+        GameObject childObject = new GameObject(childName, typeof(RectTransform));
+        RectTransform rect = childObject.GetComponent<RectTransform>();
+        rect.SetParent(parent, false);
+        rect.anchorMin = new Vector2(0f, 1f);
+        rect.anchorMax = new Vector2(1f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.sizeDelta = new Vector2(0f, rect.sizeDelta.y);
+        return rect;
+    }
+
+    private static TextMeshProUGUI CreateTextChild(
+        RectTransform parent,
+        string childName,
+        TMP_FontAsset font,
+        float fontSize,
+        Color color)
+    {
+        GameObject textObject = new GameObject(childName, typeof(RectTransform), typeof(TextMeshProUGUI));
+        RectTransform rect = textObject.GetComponent<RectTransform>();
+        rect.SetParent(parent, false);
+
+        TextMeshProUGUI text = textObject.GetComponent<TextMeshProUGUI>();
+        if (font != null)
+            text.font = font;
+
+        text.text = string.Empty;
+        text.fontSize = fontSize;
+        text.color = color;
+        text.alignment = TextAlignmentOptions.Left;
+        text.enableWordWrapping = true;
+        text.raycastTarget = false;
+        return text;
+    }
+
+    private TMP_Text FindTextByName(string textName)
+    {
+        TMP_Text[] texts = GetComponentsInChildren<TMP_Text>(true);
+        for (int i = 0; i < texts.Length; i++)
+        {
+            if (texts[i] != null && texts[i].name == textName)
+                return texts[i];
+        }
+
+        return null;
+    }
+
+    private TMP_Text FindFirstUsableText(RectTransform itemRect)
+    {
+        TMP_Text[] texts = GetComponentsInChildren<TMP_Text>(true);
+        for (int i = 0; i < texts.Length; i++)
+        {
+            if (IsUsableMessageText(texts[i], itemRect))
+                return texts[i];
+        }
+
+        return null;
+    }
+
+    private TMP_Text FindFirstTextExcept(params TMP_Text[] excluded)
+    {
+        TMP_Text[] texts = GetComponentsInChildren<TMP_Text>(true);
+        for (int i = 0; i < texts.Length; i++)
+        {
+            TMP_Text candidate = texts[i];
+            if (candidate == null)
+                continue;
+
+            bool isExcluded = false;
+            if (excluded != null)
             {
-                if (texts[i] != null && texts[i] != _messageText)
+                for (int j = 0; j < excluded.Length; j++)
                 {
-                    _timeText = texts[i];
-                    break;
+                    if (candidate == excluded[j])
+                    {
+                        isExcluded = true;
+                        break;
+                    }
                 }
             }
+
+            if (!isExcluded)
+                return candidate;
         }
+
+        return null;
+    }
+
+    private Image FindFirstChildImage()
+    {
+        Image[] images = GetComponentsInChildren<Image>(true);
+        for (int i = 0; i < images.Length; i++)
+        {
+            if (images[i] != null && images[i].transform != transform)
+                return images[i];
+        }
+
+        return null;
+    }
+
+    private bool IsUsableMessageText(TMP_Text text, RectTransform itemRect)
+    {
+        return text != null &&
+               text.transform != transform &&
+               (itemRect == null || text.transform.parent != itemRect);
+    }
+
+    private static string ResolveSenderLabel(NetworkChatMessage message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.SenderUserId))
+            return message.SenderUserId.Trim();
+
+        if (!string.IsNullOrWhiteSpace(message.SenderName))
+            return message.SenderName.Trim();
+
+        return message.Sender.ToString();
     }
 
     private void ApplySide(NetworkChatBubbleSide side)
