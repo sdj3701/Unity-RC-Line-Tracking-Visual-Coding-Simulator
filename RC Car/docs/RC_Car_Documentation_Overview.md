@@ -1,7 +1,7 @@
 # RC Car Documentation Overview
 
 작성일: 2026-04-28
-최근 갱신: 2026-05-12
+최근 갱신: 2026-05-14
 
 이 문서는 `RC Car/docs` 아래에 흩어져 있는 문서와 계획서를 하나의 진입 문서로 정리한 통합 가이드다.
 원본 문서를 삭제하거나 대체하지 않고, 빠르게 전체 구조를 파악하고 필요한 원문으로 이동하기 위한 인덱스 역할을 한다.
@@ -16,10 +16,11 @@
 이 프로젝트는 `BlocksEngine2`로 작성한 블록 코드를 저장하고, 이를 런타임 JSON으로 변환한 뒤 `VirtualArduino` 계열 런타임을 통해 RC카 라인트레이싱을 시뮬레이션하는 Unity 프로젝트다.
 
 핵심 씬:
-- `Assets/Scenes/TestLogin.unity`: 로그인 및 토큰 인증 진입
-- `Assets/Scenes/TestCreateBlock.unity`: 블록 작성, 저장/불러오기, 주행 테스트
-- `Assets/Scenes/Car.unity`: 주행 전용 경로
-- `Assets/Scenes/03_NetworkCarTest.unity`: 네트워크 차량/공유 실험 씬
+- `Assets/Scenes/00_Login.unity`: 현재 로그인 진입 씬
+- `Assets/Scenes/01_Lobby.unity`: 방 목록, 생성, 입장 흐름을 담당하는 로비 씬
+- `Assets/Scenes/02_SingleCreateBlock.unity`: 블록 작성, 저장/불러오기, 단일 주행 테스트 씬
+- `Assets/Scenes/03_NetworkCarTest.unity`: 네트워크 차량, 공유, 채팅 실험 씬
+- `Assets/Scenes/Miro Test Scene.unity`: 미로 생성/저장/맵 통합 테스트 씬
 
 핵심 실행 체인:
 1. 사용자가 BlocksEngine2에서 블록을 작성한다.
@@ -114,6 +115,7 @@
 ### 5.2 인증, 로그인, 로비, 채팅
 - `documents/auth`는 이미 존재하는 인증 코드의 함수별 설명서다.
 - `plans/auth`는 로그인 구조 개선, 로비 분리, 채팅 연계, 참가 요청 UI 개편까지 포함한 설계/리팩토링 계획 묶음이다.
+- 현재 소스 기준 채팅은 더 이상 계획만 있는 상태가 아니다. `Assets/Scripts/ChatRoom/NetworkChat` 아래에 Fusion RPC 기반 `NetworkChatManager`, 메시지 모델, 메시지 아이템, UI 컨트롤러가 실제 구현되어 있다.
 
 ### 5.3 블록 런타임
 - `documents/block-runtime`는 블록 편집기 동작, XML 저장 구조, XML -> JSON 변환, JSON 실행, 네트워크 API 연동, `not` 연산 설계까지 포함한다.
@@ -135,7 +137,7 @@
 - `documents/engine/ChangeLog.md`는 프로젝트 자체 문서라기보다 BlocksEngine2 계열 변경 이력 참고 자료에 가깝다.
 - 버전 업그레이드나 호환성 점검이 필요할 때만 선택적으로 보면 된다.
 
-## 6. 현재 소스 폴더 구성 (2026-05-12 기준)
+## 6. 현재 소스 폴더 구성 (2026-05-14 기준)
 
 이 문서의 앞부분이 "무슨 문서를 읽어야 하는가"에 초점을 맞췄다면, 이 섹션은 "현재 소스가 실제로 어디에 어떻게 놓여 있는가"를 빠르게 파악하기 위한 요약이다.
 
@@ -165,21 +167,23 @@
 ### 6.3 현재 구현 기준으로 눈에 띄는 구조
 - 표준 RC카 실행 경로는 여전히 `Assets/Scripts/Core/VirtualArduino` 아래 7개 파일을 중심으로 유지된다.
 - 레거시 경로도 완전히 제거된 것은 아니다. `Assets/Scripts/Core/Legacy`에 5개 파일이 있고, `Assets/Scripts/Car/Legacy`에 `RCCar.cs`, `RCCarSensor.cs`가 남아 있다.
+- 씬 이름도 상수로 정리되어 있다. `Assets/Scripts/App/Defines/AppScenes.cs`에서 현재 기준 씬 이름을 `00_Login`, `01_Lobby`, `02_SingleCreateBlock`, `03_NetworkCarTest`로 관리한다.
 - `ChatRoom`은 실제 코드 기준으로도 분리 작업이 진행된 상태다.
 - `Assets/Scripts/ChatRoom/BlockShare`에 21개 파일이 있어 업로드, 로컬 목록, 원격 목록, 저장 버튼, 서비스/리포지토리/프로바이더 인터페이스까지 분리되어 있다.
 - `Assets/Scripts/ChatRoom/NetworkChat`에 4개 파일이 있어 네트워크 채팅 모델, 매니저, 메시지 아이템, UI 컨트롤러가 따로 존재한다.
+- 현재 채팅 구현은 단순 텍스트 전달 수준이 아니라, 로컬 히스토리 보관, 송신 쿨다운, StateAuthority 수신 제한, Runner fallback RPC, 메시지 버블 UI 자동 바인딩과 런타임 템플릿 생성까지 포함한다.
 - `Assets/Scripts/Network/Fusion`에 11개 파일이 있어 Photon 연결과 방 수명주기 계층이 별도 모듈로 정리되어 있다.
 - `Assets/Scripts/Map`에는 문서에서 계획 단계로 보이던 `MiroMapBaker`, `MiroMazeRemoteRepository`, `MiroRuntimeMapCatalogPersistence`가 실제 코드로 존재한다. 즉 맵-미로 통합은 계획만 있는 상태가 아니라 일부 구현이 이미 들어와 있다.
 
 ### 6.4 최근 작업 흔적과 반영 메모
 - 최근 수정 시각 기준으로 `Assets/Scenes/03_NetworkCarTest.unity`가 2026-05-11에 다시 저장되어 있다. 현재 네트워크 씬이 가장 활발하게 손대는 영역으로 보는 것이 맞다.
-- `Assets/Scripts/ChatRoom/NetworkChat/NetworkChatManager.cs`, `NetworkChatUIController.cs`, `NetworkChatMessageItem.cs`가 2026-05-11에 수정되어, 채팅 UI/흐름이 최근 작업 대상이었음을 보여준다.
+- `Assets/Scripts/ChatRoom/NetworkChat/NetworkChatManager.cs`, `NetworkChatUIController.cs`, `NetworkChatMessageItem.cs`, `NetworkChatMessage.cs`는 2026-05-14에 다시 수정되었다. 즉 지난 문서 갱신 이후에도 채팅 계층이 추가 작업 중이다.
+- 이 채팅 계층은 `NetworkChatManager`가 메시지 길이 제한, 로컬 쿨다운, 발신자별 accept cooldown, 로컬 히스토리, RPC 브로드캐스트를 담당하고, `NetworkChatUIController`가 입력창/버튼/스크롤/메시지 프리팹을 자동 연결하는 구조다.
 - `Assets/Scripts/Map/ChangeMap.cs`, `RCCarCourseController.cs`, `RCCarEndTrigger.cs`와 `Assets/Scripts/NetworkCar/HostNetworkCarCoordinator.cs`, `HostExecutionScheduler.cs`, `HostRuntimeBinder.cs`는 2026-05-06에 수정되어, 맵 진행 흐름과 Host 실행 체인도 최근 보강된 상태다.
 - `Assets/Scripts/Network/Fusion/NetworkRoomExitController.cs`도 2026-05-06 수정 기록이 있어, 방 종료/이탈 흐름까지 실제 코드 작업이 이어진 것으로 보인다.
 - 문서 기준으로는 `plans/network/ReNetworkUIPlan.md`, `ReSavelButtonPlan.md`, `ReShareUIIPlan.md`, `RCCarSyncPlan.md`가 2026-04-27~2026-04-28에 최신 상태였고, 현재 소스는 그 이후 채팅/맵/Host 실행 쪽이 추가 진행된 흔적을 보인다.
 - 현재 워킹트리에는 미커밋 변경 흔적도 있다.
-- `Assets/AddressableAssetsData/link.xml`, `link.xml.meta`는 삭제 상태다.
-- `UserSettings/Layouts/default-2021.dwlt`는 수정 상태다.
+- 현재 확인된 변경은 `Assets/AddressableAssetsData/Windows/addressables_content_state.bin` 수정 1건이다.
 
 ## 7. 원본 문서 인덱스
 
